@@ -6,6 +6,8 @@ import type {
   BackgroundActionSearchResultSummary, CandidateDetail, CandidateQueryPage, CompletedStateDetail,
   HealthResponse,
   SnapshotSummary,
+  LeagueRefreshProfile, SnapshotRefreshRequest, SnapshotRefreshSubmission,
+  SnapshotRefreshRecord, SnapshotRefreshResult,
   BackgroundProgress, BaselineAnalysisRequest, ActionSearchRequest,
 } from "../types/api";
 
@@ -51,6 +53,11 @@ export const api = {
   snapshots: (signal?: AbortSignal) => getJson<readonly SnapshotSummary[]>("/api/v1/snapshots", signal),
   snapshot: (snapshotId: string, signal?: AbortSignal) =>
     getJson<SnapshotSummary>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}`, signal),
+  refreshProfile:(signal?:AbortSignal)=>getJson<LeagueRefreshProfile>("/api/v1/refresh/profile",signal),
+  submitRefresh:(request:SnapshotRefreshRequest,signal?:AbortSignal)=>postJson<SnapshotRefreshSubmission>("/api/v1/refreshes",request,signal),
+  refresh:(refreshId:string,signal?:AbortSignal)=>getJson<SnapshotRefreshRecord>(`/api/v1/refreshes/${encodeURIComponent(refreshId)}`,signal),
+  cancelRefresh:(refreshId:string,signal?:AbortSignal)=>postJson<SnapshotRefreshRecord>(`/api/v1/refreshes/${encodeURIComponent(refreshId)}/cancel`,{},signal),
+  refreshResult:(refreshId:string,signal?:AbortSignal)=>getJson<SnapshotRefreshResult>(`/api/v1/refreshes/${encodeURIComponent(refreshId)}/result`,signal),
   runs: (signal?: AbortSignal) => getJson<readonly BackgroundRunRecord[]>("/api/v1/runs?limit=50", signal),
   submitBaseline:(request:BaselineAnalysisRequest,signal?:AbortSignal)=>postJson<BackgroundRunSubmission>("/api/v1/runs/baseline",request,signal),
   submitActionSearch:(request:ActionSearchRequest,signal?:AbortSignal)=>postJson<BackgroundRunSubmission>("/api/v1/runs/action-search",request,signal),

@@ -8,6 +8,13 @@ background submission, lifecycle/progress, cancellation, durable local run
 metadata, retained queries, and cleanup. Neither adds analytical rules,
 authentication, or frontend code. See `RUN_MANAGEMENT.md` for M6.2 details.
 
+M8.2 additively exposes a separate asynchronous ingestion-job contract at
+`/api/v1/refresh/profile` and `/api/v1/refreshes`. It reuses the M1 adapter and
+append-only snapshot store; it is not an analytical run type. The browser can
+select only the configured server-side league profile and an explicit simulation
+start week. Credentials, arbitrary URLs, and filesystem paths are absent from the
+DTO. See [`M8_2_REAL_LEAGUE_VALIDATION.md`](M8_2_REAL_LEAGUE_VALIDATION.md).
+
 ## Boundaries
 
 `fantasy_football.app.contracts` contains frozen Pydantic DTOs with public schema

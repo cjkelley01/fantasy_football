@@ -38,7 +38,7 @@ function Assert-WarRoomHealthIdentity(
 ) {
     $uri = "http://127.0.0.1:$Port/api/v1/health"
     try { $health = Invoke-RestMethod -Uri $uri -TimeoutSec $TimeoutSeconds }
-    catch { throw "The launcher-owned process did not provide a healthy War Room identity at $uri." }
+    catch { throw "The launcher-owned process did not provide a healthy War Room identity at $uri; no process was trusted or stopped." }
     if (
         [string]$health.api_schema_version -ne "1.0" -or
         [string]$health.service -ne "fantasy-football-application" -or

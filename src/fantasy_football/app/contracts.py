@@ -456,6 +456,65 @@ class HealthResponse(ContractModel):
     launcher_run_id: str | None = None
 
 
+RefreshStatus = Literal[
+    "queued", "running", "cancel_requested", "completed", "cancelled", "failed",
+    "interrupted",
+]
+
+
+class LeagueRefreshProfile(ContractModel):
+    """Sanitized server-side ESPN connection profile; never contains secrets."""
+
+    profile_id: Literal["configured_local_league"] = "configured_local_league"
+    league_id: PositiveInt
+    season: Annotated[int, Field(strict=True, ge=2000)]
+    credential_mode: Literal["public", "private_credentials_configured"]
+    manual_rule_configuration_available: bool
+
+
+class SnapshotRefreshRequest(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    profile_id: Literal["configured_local_league"] = "configured_local_league"
+    league_id: PositiveInt
+    season: Annotated[int, Field(strict=True, ge=2000)]
+    first_simulation_week: Annotated[int, Field(strict=True, ge=1, le=25)]
+
+
+class SnapshotRefreshSubmission(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    refresh_id: str
+    status: RefreshStatus
+    created_at_utc: datetime
+
+
+class SnapshotRefreshRecord(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    refresh_id: str
+    status: RefreshStatus
+    stage: Literal[
+        "queued", "retrieving_and_validating", "publishing", "verifying",
+        "completed", "cancelled", "failed", "interrupted",
+    ]
+    league_id: int
+    season: int
+    first_simulation_week: int
+    created_at_utc: datetime
+    started_at_utc: datetime | None = None
+    finished_at_utc: datetime | None = None
+    snapshot_id: str | None = None
+    publication_committed: bool = False
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class SnapshotRefreshResult(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    refresh: SnapshotRefreshRecord
+    snapshot: SnapshotSummary
+    validation_findings: tuple[str, ...]
+    unresolved_capabilities: tuple[str, ...]
+
+
 RunType = Literal["baseline", "manual_scenario", "action_search"]
 RunStatus = Literal[
     "queued", "running", "cancel_requested", "completed", "cancelled", "failed",
