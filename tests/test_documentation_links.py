@@ -67,6 +67,7 @@ def test_authoritative_documents_share_current_product_direction() -> None:
     assert "docs/M7_5_SIMULATION_CENTER.md" in readme
     assert "docs/POST_M7_CONSOLIDATION_AUDIT.md" in readme
     assert "docs/M8_1_LOCAL_INSTALLATION.md" in readme
+    assert "docs/M8_2_REAL_LEAGUE_VALIDATION.md" in readme
     assert "docs/M7_1_VISUAL_DIRECTION_REVIEW.md" in readme
     assert "M8 — Local V1 release" in roadmap
     assert "Integrated CLI V1" not in master_spec
@@ -93,7 +94,9 @@ def test_current_m7_parent_and_m8_status_are_aligned() -> None:
     for document in documents.values():
         assert "M7.1–M7.5" in document
         assert "M8.1" in document
-        assert "M8.2–M8.4 are not started" in document
+        assert "M8.2" in document
+        assert "M8.3–M8.4 are not started" in document
+        assert "M8.2" in document and "REVIEW PENDING" in document
 
 
 def test_current_m5_parent_status_and_ui_vision_are_aligned() -> None:

@@ -4,7 +4,7 @@ Source: extracted from sections 12 through 12.5 of the approved `Fantasy Footbal
 
 ## Status policy
 
-M0–M6.4, the pre-M7 consolidation checkpoint, M7.1–M7.5, and the post-M7 consolidation checkpoint are **COMPLETE AND ACCEPTED**. M8.1 is **IMPLEMENTED — REVIEW PENDING**; M8.2–M8.4 are not started. No legacy implementation is credited toward these statuses.
+M0–M6.4, the pre-M7 consolidation checkpoint, M7.1–M7.5, the post-M7 consolidation checkpoint, and M8.1 are **COMPLETE AND ACCEPTED**. M8.2 is **IMPLEMENTED — REVIEW PENDING**; M8.3–M8.4 are not started. No legacy implementation is credited toward these statuses.
 
 Dependencies are sequential within each milestone and across the M0 → M8 milestone order unless the source explicitly identifies independent work with verified shared interfaces. A work package cannot be complete until its stated gate passes.
 
@@ -32,7 +32,7 @@ Dependencies are sequential within each milestone and across the M0 → M8 miles
 
 #### M7 — Analytics-first interactive application [COMPLETE AND ACCEPTED]. The accepted analytical workspaces include the League Overview, Opportunity Explorer, Trade Lab, and Simulation Center with explicit run configuration, source-backed monitoring, cancellation, retained history, and result navigation through API 1.0. M8 remains staged, guided by the [premium football analytics design vision](UI_DESIGN_VISION.md). PASS: principal workflows are navigable without low-level Python commands and every analytical claim reconciles with the backend.
 
-#### M8 — Local V1 release [IN PROGRESS — M8.1 REVIEW PENDING]. Local startup/install is implemented; real-league validation, runtime/recovery verification, security review, and final acceptance remain deferred. PASS: a clean local installation supports ESPN refresh → season outlook → action analysis → result exploration without notebooks or spreadsheets.
+#### M8 — Local V1 release [IN PROGRESS — M8.2 REVIEW PENDING]. Local startup/install is accepted and the browser refresh/end-to-end validation workflow is implemented; runtime/recovery certification, security review, and final acceptance remain deferred. PASS: a clean local installation supports ESPN refresh → season outlook → action analysis → result exploration without notebooks or spreadsheets.
 
 ### 12.1A Detailed milestone work packages and verification gates
 
@@ -168,15 +168,15 @@ UI prototypes may use clearly labeled representative data during M6; production 
 
 #### M8 — Local V1 release
 
-M8.1 [IMPLEMENTED — REVIEW PENDING, 31 October 2026] Reproducible Windows setup, locked dependencies, production frontend/API startup, launcher-owned graceful shutdown, and persistent local storage. See `M8_1_LOCAL_INSTALLATION.md`.
+M8.1 [COMPLETE AND ACCEPTED, 31 October 2026] Reproducible Windows setup, locked dependencies, production frontend/API startup, launcher-owned graceful shutdown, and persistent local storage. See `M8_1_LOCAL_INSTALLATION.md`.
 
-M8.2 Complete end-to-end workflow and representative real-league validation.
+M8.2 [IMPLEMENTED — REVIEW PENDING, 31 October 2026] Add a secret-free configured-league profile, asynchronous browser refresh lifecycle, accepted adapter/translator reuse, append-only atomic publication, safe cancellation and pre/post-commit diagnostics, validation findings, and automatic selection of the verified new snapshot. Existing baseline, opportunity, Trade Lab, retained-result, and restart paths remain authoritative. Fixture evidence is not live ESPN evidence; authorized private-league reconciliation is recorded separately when executed. See `M8_2_REAL_LEAGUE_VALIDATION.md`.
 
 M8.3 Validate runtime, resource use, interruption, and recovery.
 
 M8.4 Complete release documentation, known limitations, localhost security review, and final acceptance checklist. GATE: a clean local installation supports ESPN refresh → season outlook → action analysis → result exploration without notebooks or spreadsheets.
 
-Cross-milestone release discipline: Every task must state its input contract, output artifact, tests and expected behavior on invalid input. Run a minimal end-to-end smoke path after each relevant change, and update the master specification with actual implemented behavior. Benchmark before adopting complex optimization; any optimization must match reference feasible sequences, final states and path-indexed outputs. M0–M6.4, the pre-M7 checkpoint, M7.1–M7.5, and the post-M7 checkpoint are complete and accepted; M8.1 is implemented for review; M8.2–M8.4 are not started.
+Cross-milestone release discipline: Every task must state its input contract, output artifact, tests and expected behavior on invalid input. Run a minimal end-to-end smoke path after each relevant change, and update the master specification with actual implemented behavior. Benchmark before adopting complex optimization; any optimization must match reference feasible sequences, final states and path-indexed outputs. M0–M6.4, the pre-M7 checkpoint, M7.1–M7.5, the post-M7 checkpoint, and M8.1 are complete and accepted; M8.2 is implemented for review; M8.3–M8.4 are not started.
 
 ### 12.2 Practical development method
 

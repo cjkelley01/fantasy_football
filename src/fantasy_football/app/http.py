@@ -35,12 +35,18 @@ from fantasy_football.app.contracts import (
     ErrorDetail,
     ErrorResponse,
     HealthResponse,
+    LeagueRefreshProfile,
     ManualScenarioRequest,
     ManualScenarioResult,
     SnapshotListQuery,
+    SnapshotRefreshRecord,
+    SnapshotRefreshRequest,
+    SnapshotRefreshResult,
+    SnapshotRefreshSubmission,
     SnapshotSelector,
     SnapshotSummary,
 )
+from fantasy_football.app.refresh import SnapshotRefreshCoordinator
 from fantasy_football.app.service import (
     ApplicationDependencies,
     ApplicationService,
@@ -73,6 +79,7 @@ def create_app(
     *,
     database_path: str | Path = "outputs/fantasy_football.sqlite3",
     background_coordinator: BackgroundRunCoordinator | None = None,
+    refresh_coordinator: SnapshotRefreshCoordinator | None = None,
     frontend_directory: str | Path | None = None,
     launcher_run_id: str | None = None,
 ) -> FastAPI:
@@ -94,9 +101,14 @@ def create_app(
                 "run scripts/setup-local.ps1 to rebuild it."
             )
 
-    application_service = service or ApplicationService(
-        ApplicationDependencies(SnapshotStore(database_path))
-    )
+    snapshot_store = SnapshotStore(database_path)
+    application_service = service or ApplicationService(ApplicationDependencies(snapshot_store))
+    owned_refresh_coordinator = None
+    if refresh_coordinator is None and service is None:
+        refresh_coordinator = SnapshotRefreshCoordinator.production(
+            snapshot_store, application_service
+        )
+        owned_refresh_coordinator = refresh_coordinator
     temporary_run_store = None
     if background_coordinator is None:
         if service is None:
@@ -115,6 +127,8 @@ def create_app(
     async def lifespan(_app: FastAPI):
         yield
         background_coordinator.close()
+        if owned_refresh_coordinator is not None:
+            owned_refresh_coordinator.close()
         if temporary_run_store is not None:
             for suffix in ("", "-wal", "-shm"):
                 try:
@@ -131,6 +145,7 @@ def create_app(
     )
     app.state.application_service = application_service
     app.state.background_coordinator = background_coordinator
+    app.state.refresh_coordinator = refresh_coordinator
     app.state.temporary_run_store = temporary_run_store
     app.state.frontend_root = frontend_root
     app.add_middleware(
@@ -157,6 +172,15 @@ def create_app(
 
     def runs(request: Request) -> BackgroundRunCoordinator:
         return request.app.state.background_coordinator
+
+    def refreshes(request: Request) -> SnapshotRefreshCoordinator:
+        coordinator = request.app.state.refresh_coordinator
+        if coordinator is None:
+            raise ApplicationServiceError(
+                "snapshot_refresh_unavailable", "unsupported_configuration",
+                "Snapshot refresh is unavailable in this application configuration.",
+            )
+        return coordinator
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(_request: Request, exc: RequestValidationError):
@@ -230,6 +254,43 @@ def create_app(
         return current.inspect_snapshot(
             SnapshotSelector(snapshot_id=snapshot_id, league_id=league_id, season=season)
         )
+
+    @app.get("/api/v1/refresh/profile", response_model=LeagueRefreshProfile)
+    def refresh_profile(
+        coordinator: SnapshotRefreshCoordinator = Depends(refreshes),
+    ) -> LeagueRefreshProfile:
+        return coordinator.profile()
+
+    @app.post(
+        "/api/v1/refreshes", response_model=SnapshotRefreshSubmission,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def submit_refresh(
+        body: SnapshotRefreshRequest,
+        coordinator: SnapshotRefreshCoordinator = Depends(refreshes),
+    ) -> SnapshotRefreshSubmission:
+        return coordinator.submit(body)
+
+    @app.get("/api/v1/refreshes/{refresh_id}", response_model=SnapshotRefreshRecord)
+    def get_refresh(
+        refresh_id: str,
+        coordinator: SnapshotRefreshCoordinator = Depends(refreshes),
+    ) -> SnapshotRefreshRecord:
+        return coordinator.get(refresh_id)
+
+    @app.post("/api/v1/refreshes/{refresh_id}/cancel", response_model=SnapshotRefreshRecord)
+    def cancel_refresh(
+        refresh_id: str,
+        coordinator: SnapshotRefreshCoordinator = Depends(refreshes),
+    ) -> SnapshotRefreshRecord:
+        return coordinator.cancel(refresh_id)
+
+    @app.get("/api/v1/refreshes/{refresh_id}/result", response_model=SnapshotRefreshResult)
+    def get_refresh_result(
+        refresh_id: str,
+        coordinator: SnapshotRefreshCoordinator = Depends(refreshes),
+    ) -> SnapshotRefreshResult:
+        return coordinator.result(refresh_id)
 
     @app.post("/api/v1/analyses/baseline", response_model=BaselineAnalysisResult)
     def baseline(

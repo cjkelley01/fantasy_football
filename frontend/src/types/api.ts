@@ -19,6 +19,13 @@ export interface HealthResponse {
   readonly launcher_run_id: string | null;
 }
 
+export type RefreshStatus = "queued"|"running"|"cancel_requested"|"completed"|"cancelled"|"failed"|"interrupted";
+export interface LeagueRefreshProfile {readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly credential_mode:"public"|"private_credentials_configured";readonly manual_rule_configuration_available:boolean;}
+export interface SnapshotRefreshRequest {readonly api_schema_version:"1.0";readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly first_simulation_week:number;}
+export interface SnapshotRefreshSubmission {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly created_at_utc:string;}
+export interface SnapshotRefreshRecord {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly stage:"queued"|"retrieving_and_validating"|"publishing"|"verifying"|"completed"|"cancelled"|"failed"|"interrupted";readonly league_id:number;readonly season:number;readonly first_simulation_week:number;readonly created_at_utc:string;readonly started_at_utc:string|null;readonly finished_at_utc:string|null;readonly snapshot_id:string|null;readonly publication_committed:boolean;readonly error_code:string|null;readonly error_message:string|null;}
+export interface SnapshotRefreshResult {readonly api_schema_version:"1.0";readonly refresh:SnapshotRefreshRecord;readonly snapshot:SnapshotSummary;readonly validation_findings:readonly string[];readonly unresolved_capabilities:readonly string[];}
+
 export interface TeamSummary {
   readonly team_id: number;
   readonly display_name: string;
