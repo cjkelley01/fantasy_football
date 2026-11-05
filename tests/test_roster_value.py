@@ -1,15 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from decimal import Decimal
 import random
 import time
+from dataclasses import replace
+from decimal import Decimal
 
 import pytest
 
 from fantasy_football.canonical.model import (
-    FantasyTeam,
     FantasyMatchup,
+    FantasyTeam,
     LineupSlotNamespace,
     LineupSlotRule,
     Player,
@@ -26,7 +26,10 @@ from fantasy_football.evolving_state import (
     add_player,
     initialize_evolving_state,
 )
-from fantasy_football.lineup_optimizer import optimize_candidate_lineup, optimize_starting_lineup
+from fantasy_football.lineup_optimizer import (
+    optimize_candidate_lineup,
+    optimize_starting_lineup,
+)
 from fantasy_football.roster_value import (
     ReplacementAccessContext,
     RosterValuationError,
@@ -154,7 +157,7 @@ def _overlap_snapshot(pool_specs=((100, (0,), 10.0), (200, (23,), 9.0), (300, (0
     )
 
 
-def _large_valuation_snapshot(candidate_count: int = 240):
+def _large_valuation_snapshot(candidate_count: int = 240, *, team_count: int = 14):
     snapshot = canonical_snapshot()
     source_id = snapshot.sources[0].source_id
     slots = (
@@ -167,17 +170,17 @@ def _large_valuation_snapshot(candidate_count: int = 240):
         LineupSlotRule(21, 2, SlotKind.RESERVE, "IR"),
     )
     rules = replace(
-        snapshot.rules, team_count=14, lineup_slots=slots,
+        snapshot.rules, team_count=team_count, lineup_slots=slots,
         position_limits=tuple(PositionLimit(position_id, 20) for position_id in (1, 2, 4, 6)),
     )
     teams = tuple(FantasyTeam(
         team_id, f"Team {team_id}", 0, 0, 0, 0.0, 0.0, team_id, None, team_id, None,
-    ) for team_id in range(1, 15))
+    ) for team_id in range(1, team_count + 1))
     players, rosters, player_weeks = [], [], []
     position_slots = ((1, (0, 20)), (2, (2, 23, 20)), (4, (4, 23, 20)), (6, (6, 23, 20)))
     omitted = {1: 6, 2: 0, 3: 2, 4: 4}
     next_id = 1000
-    for team_id in range(1, 15):
+    for team_id in range(1, team_count + 1):
         for position_id, eligible in position_slots:
             next_id += 1
             is_rostered = omitted.get(team_id) != eligible[0]
@@ -226,7 +229,13 @@ def _large_valuation_snapshot(candidate_count: int = 240):
         player_weeks=tuple(sorted(player_weeks, key=lambda item: (item.player_id, item.scoring_week))),
         fantasy_matchups=tuple(
             FantasyMatchup(100 + index, 1, home, away)
-            for index, (home, away) in enumerate(zip(range(1, 8), range(8, 15)), start=1)
+            for index, (home, away) in enumerate(
+                zip(
+                    range(1, (team_count // 2) + 1),
+                    range((team_count // 2) + 1, team_count + 1),
+                ),
+                start=1,
+            )
         ) + tuple(item for item in snapshot.fantasy_matchups if item.matchup_period_id != 1),
     )
 
@@ -348,6 +357,22 @@ def _assert_production_matches_oracle(
         statuses=statuses, context=context, target_owned_ids=target_owned,
         target_vacancy_count=target_lineup.vacancy_count,
     )
+    unpruned, unpruned_vacancies, _unpruned_lineups, _unpruned_explored = (
+        _allocate_opponents(
+            snapshot,
+            state,
+            target_team_id=target_team_id,
+            week=week,
+            pool=pool,
+            statuses=statuses,
+            context=context,
+            target_owned_ids=target_owned,
+            target_vacancy_count=target_lineup.vacancy_count,
+            use_exact_candidate_dominance=False,
+        )
+    )
+    assert production == unpruned
+    assert vacancies == unpruned_vacancies
     oracle = exhaustive_allocation_oracle(
         snapshot, state, target_team_id=target_team_id, week=week, pool=pool,
         statuses=statuses, context=context,
@@ -624,6 +649,18 @@ def test_representative_14_team_exact_workload_records_runtime_and_memory() -> N
     assert all(len(week.competing_demands) == 3 for week in result.weeks)
     assert all(week.allocation_states_explored > 0 for week in result.weeks)
     assert elapsed < 30.0
+
+
+def test_representative_8_team_exact_workload_preserves_full_candidate_pool() -> None:
+    snapshot = _large_valuation_snapshot(candidate_count=120, team_count=8)
+    state = _state(snapshot)
+    started = time.perf_counter()
+    result = value_roster(snapshot, state, 1)
+    elapsed = time.perf_counter() - started
+    assert len(result.weeks) == 3
+    assert all(week.replacement_candidate_count == 124 for week in result.weeks)
+    assert all(len(week.competing_demands) == 3 for week in result.weeks)
+    assert elapsed < 15.0
 
 
 def test_actual_add_and_compound_result_use_same_unified_value_without_mutation() -> None:

@@ -49,4 +49,30 @@ On 19 October 2026, the corrected small baseline (four teams, two competing mand
 
 The larger synthetic benchmark used 14 teams, five configured starter categories (QB/RB/WR/TE/FLEX), 240 generated pool players plus four deliberately unrostered shortage players (**244 positive candidates/week**), three simultaneous opposing mandatory vacancies, overlapping RB/WR/TE FLEX eligibility, and three weeks. It completed in **2.307 seconds** without instrumentation (**0.769 seconds/week**). A separate `tracemalloc` run completed in **12.614 seconds** (**4.205 seconds/week**) with **1,620,592 bytes (1.55 MiB)** peak traced Python memory. Each week recorded 10 accepted allocation transitions after exact branch-and-bound. These are synthetic reference benchmarks on the development environment, not live ESPN-league measurements. Runtime remains combinatorial in difficult universes where full coverage is impossible or many assignments tie; no top-N cutoff, team cutoff, independent positional pool, or approximate fallback is used.
 
+The M8.2 scalability follow-up adds only lossless execution reductions. A bounded
+per-snapshot lineup workspace indexes canonical players, player-weeks, slots, and
+memoizes complete exact lineup keys. Identical completed transaction effects reuse
+V(R) only when the key retains the acting team and every evolving-state field other
+than the explanatory ledger. Repeated evolving-state validation is skipped only for
+the exact same already-accepted immutable object within one weekly execution.
+
+Two exact dominance rules are independently disableable in tests:
+
+- If limited replacement players have identical starting-slot edges, no solution
+  using at most `k` limited players can use a player below the best `k` in that
+  equivalence class. Projection and stable player ID are the complete ordering.
+- For opponent allocation, players are equivalent only when both their starting-
+  slot edges and their legally accessible opponent-team set are identical. Because
+  at most the demonstrated vacancy count can be consumed, members below that count
+  cannot occur in an optimal coverage/improvement/stable-tie result. They remain in
+  the target's residual pool; the optimization removes only dominated opponent
+  branches.
+
+The original exhaustive leaf oracle remains independent. Default and dominance-
+disabled production allocation agree with it across the existing adversarial and
+seeded overlap universes. Current synthetic timings on the same development host
+are 0.06 seconds for an eight-team/124-candidate/three-week fixture and 0.14 seconds
+for the fourteen-team/244-candidate/three-week fixture. These measurements replace
+neither the oracle nor the earlier historical benchmark and are not live ESPN data.
+
 M2.3d now consumes this evaluator for every qualifying complete legal resulting roster. It does not treat marginal replacement assignments as ownership: after each executed transaction it calls V(R) against the newly shared evolving state, and it refuses to rank a materially incomplete valuation. Candidate choice remains the highest resulting V(R), not an independent add score, drop score, or immediate-week projection gain. See `docs/WEEKLY_TRANSACTIONS.md`. M2.3e must still add global complete-cycle lookahead; the M2.3c allocation oracle validates replacement estimation rather than that future transaction cycle.

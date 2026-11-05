@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+from collections import OrderedDict
+from contextvars import ContextVar
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from enum import StrEnum
-import hashlib
-import json
+from functools import wraps
 from typing import Iterable
 
 from fantasy_football.canonical.model import (
+    SCHEMA_VERSION,
     InterpretationStatus,
     LeagueSnapshot,
     RosterEntry,
-    SCHEMA_VERSION,
     SlotKind,
 )
 from fantasy_football.canonical.validation import validate_snapshot
@@ -45,6 +48,33 @@ class TransactionStateError(ValueError):
     ) -> None:
         super().__init__(message)
         self.code = code
+
+
+_STATE_VALIDATION_CACHE: ContextVar[
+    OrderedDict[tuple[int, int], tuple[object, object]] | None
+] = ContextVar(
+    "evolving_state_validation_cache", default=None
+)
+
+
+def evolving_state_validation_scope(function):
+    """Bound repeated validation by exact object identity during one operation.
+
+    Every distinct immutable state is still validated fully. The bounded cache
+    only avoids rescanning a state that was already accepted in this execution.
+    """
+
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        if _STATE_VALIDATION_CACHE.get() is not None:
+            return function(*args, **kwargs)
+        token = _STATE_VALIDATION_CACHE.set(OrderedDict())
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _STATE_VALIDATION_CACHE.reset(token)
+
+    return wrapped
 
 
 class AcquisitionAvailability(StrEnum):
@@ -369,6 +399,14 @@ def _assert_snapshot(state: EvolvingLeagueState, snapshot: LeagueSnapshot) -> No
 def validate_evolving_state(state: EvolvingLeagueState, snapshot: LeagueSnapshot) -> None:
     """Validate modeled ownership, capacity, availability, priority, and ledger invariants."""
 
+    cache = _STATE_VALIDATION_CACHE.get()
+    identity = (id(state), id(snapshot))
+    if cache is not None:
+        accepted = cache.get(identity)
+        if accepted is not None and accepted[0] is state and accepted[1] is snapshot:
+            cache.move_to_end(identity)
+            return
+
     validate_snapshot(snapshot)
     _assert_snapshot(state, snapshot)
     if state.source_schema_version != SCHEMA_VERSION:
@@ -477,6 +515,11 @@ def validate_evolving_state(state: EvolvingLeagueState, snapshot: LeagueSnapshot
             _fail("strict IR evidence checksum disagrees with source provenance")
     if tuple(record.sequence for record in state.ledger) != tuple(range(1, len(state.ledger) + 1)):
         _fail("transaction ledger sequences must be contiguous from one")
+    if cache is not None:
+        cache[identity] = (state, snapshot)
+        cache.move_to_end(identity)
+        while len(cache) > 4_096:
+            cache.popitem(last=False)
 
 
 def initialize_evolving_state(

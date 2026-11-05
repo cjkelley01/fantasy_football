@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-import math
 from typing import Iterable
 
 from fantasy_football.canonical.model import LeagueSnapshot, RosterEntry, SlotKind
@@ -17,9 +17,11 @@ from fantasy_football.evolving_state import (
 )
 from fantasy_football.lineup_optimizer import (
     LineupAssignment,
+    LineupOptimizationWorkspace,
     StartingSlot,
     optimize_candidate_lineup,
     optimize_starting_lineup,
+    prepare_lineup_optimization,
 )
 
 
@@ -119,12 +121,11 @@ def _nonreserve_owned_ids(
     ))
 
 
-def _exact_total(snapshot: LeagueSnapshot, week: int, assignments: Iterable[LineupAssignment]) -> Decimal:
-    projections = {
-        item.player_id: item.effective_projection for item in snapshot.player_weeks
-        if item.season == snapshot.season and item.scoring_week == week
-    }
-    return sum((Decimal.from_float(projections[item.player_id]) for item in assignments), Decimal(0))
+def _exact_total(assignments: Iterable[LineupAssignment]) -> Decimal:
+    return sum(
+        (Decimal.from_float(item.effective_projection) for item in assignments),
+        Decimal(0),
+    )
 
 
 def _state_maps(state: EvolvingLeagueState):
@@ -192,10 +193,14 @@ def _allocate_opponents(
     context: ReplacementAccessContext,
     target_owned_ids: tuple[int, ...],
     target_vacancy_count: int,
+    workspace: LineupOptimizationWorkspace | None = None,
+    use_exact_candidate_dominance: bool = True,
 ) -> tuple[_OpponentState, tuple[VacancyIdentity, ...], dict[int, object], int]:
+    workspace = workspace or prepare_lineup_optimization(snapshot)
     opponent_lineups = {
         team.team_id: optimize_starting_lineup(
-            snapshot, team.team_id, week, roster_entries=state.roster_entries
+            snapshot, team.team_id, week, roster_entries=state.roster_entries,
+            workspace=workspace,
         )
         for team in snapshot.teams if team.team_id != target_team_id
     }
@@ -217,7 +222,7 @@ def _allocate_opponents(
         for team_id in opponent_lineups
     }
     base_exact = {
-        team_id: _exact_total(snapshot, week, lineup.assignments)
+        team_id: _exact_total(lineup.assignments)
         for team_id, lineup in opponent_lineups.items()
     }
     cache: dict[tuple[int, tuple[int, ...]], tuple[int, Decimal]] = {}
@@ -229,11 +234,12 @@ def _allocate_opponents(
                 snapshot, week, tuple(sorted(owned_by_team[team_id] + assigned)),
                 limited_player_ids=frozenset(assigned),
                 maximum_limited_players=len(assigned),
+                workspace=workspace,
             )
             base = opponent_lineups[team_id]
             cache[key] = (
                 base.vacancy_count - len(combined.vacant_slots),
-                _exact_total(snapshot, week, combined.assignments) - base_exact[team_id],
+                _exact_total(combined.assignments) - base_exact[team_id],
             )
         return cache[key]
 
@@ -242,16 +248,74 @@ def _allocate_opponents(
     }
     explored_states = 1
     vacancy_indices = {
-        team_id: tuple(index for index, vacancy in enumerate(vacancies) if vacancy.team_id == team_id)
+        team_id: indices
         for team_id in opponent_lineups
+        if (
+            indices := tuple(
+                index
+                for index, vacancy in enumerate(vacancies)
+                if vacancy.team_id == team_id
+            )
+        )
     }
     projection_by_player = {
         record.player_id: Decimal.from_float(record.effective_projection)
         for record in snapshot.player_weeks
         if record.season == snapshot.season and record.scoring_week == week
     }
-    ordered_pool = tuple(sorted(pool, key=lambda player_id: (-projection_by_player[player_id], player_id)))
     full_coverage = len(vacancies)
+    opponent_pool = pool
+    if use_exact_candidate_dominance:
+        starter_slot_ids = frozenset(
+            rule.slot_id
+            for rule in snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.STARTER and rule.capacity > 0
+        )
+        players = {player.player_id: player for player in snapshot.players}
+        equivalent: dict[
+            tuple[tuple[int, ...], tuple[int, ...]], list[int]
+        ] = {}
+        for player_id in pool:
+            allowed_teams = tuple(
+                team_id
+                for team_id in vacancy_indices
+                if _opponent_team_allowed(
+                    state,
+                    target_team_id=target_team_id,
+                    opponent_team_id=team_id,
+                    status=statuses[player_id],
+                    context=context,
+                )
+            )
+            if not allowed_teams:
+                continue
+            eligibility = tuple(
+                sorted(
+                    starter_slot_ids.intersection(
+                        players[player_id].eligible_lineup_slot_ids
+                    )
+                )
+            )
+            if eligibility:
+                equivalent.setdefault((eligibility, allowed_teams), []).append(
+                    player_id
+                )
+        retained: list[int] = []
+        for group in equivalent.values():
+            group.sort(
+                key=lambda player_id: (
+                    -projection_by_player[player_id],
+                    player_id,
+                )
+            )
+            retained.extend(group[:full_coverage])
+        opponent_pool = tuple(retained)
+    ordered_pool = tuple(
+        sorted(
+            opponent_pool,
+            key=lambda player_id: (-projection_by_player[player_id], player_id),
+        )
+    )
     for player_offset, player_id in enumerate(ordered_pool):
         updated = dict(states)
         for value in states.values():
@@ -326,8 +390,9 @@ def _allocate_opponents(
             snapshot, week, tuple(sorted(target_owned_ids + remaining)),
             limited_player_ids=frozenset(remaining),
             maximum_limited_players=target_vacancy_count,
+            workspace=workspace,
         )
-        return (_exact_total(snapshot, week, combined.assignments), item.assignments)
+        return (_exact_total(combined.assignments), item.assignments)
 
     chosen = min(finalists, key=target_outcome)
     return chosen, vacancies, opponent_lineups, explored_states
@@ -350,19 +415,24 @@ def exhaustive_allocation_oracle(
     lineups are optimized only after a complete allocation has been enumerated.
     """
 
+    workspace = prepare_lineup_optimization(snapshot)
     opponents = tuple(sorted(team.team_id for team in snapshot.teams if team.team_id != target_team_id))
     base_lineups = {
-        team_id: optimize_starting_lineup(snapshot, team_id, week, roster_entries=state.roster_entries)
+        team_id: optimize_starting_lineup(
+            snapshot, team_id, week, roster_entries=state.roster_entries,
+            workspace=workspace,
+        )
         for team_id in opponents
     }
     base_exact = {
-        team_id: _exact_total(snapshot, week, lineup.assignments)
+        team_id: _exact_total(lineup.assignments)
         for team_id, lineup in base_lineups.items()
     }
     owned = {team_id: _nonreserve_owned_ids(snapshot, state, team_id) for team_id in opponents}
     target_owned = _nonreserve_owned_ids(snapshot, state, target_team_id)
     target_base = optimize_starting_lineup(
-        snapshot, target_team_id, week, roster_entries=state.roster_entries
+        snapshot, target_team_id, week, roster_entries=state.roster_entries,
+        workspace=workspace,
     )
     best_key: tuple[object, ...] | None = None
     best: AllocationOracleResult | None = None
@@ -399,6 +469,7 @@ def exhaustive_allocation_oracle(
                 tuple(sorted(owned[team_id] + assigned)),
                 limited_player_ids=frozenset(assigned),
                 maximum_limited_players=len(assigned),
+                workspace=workspace,
             )
             filled = base_lineups[team_id].vacancy_count - len(lineup.vacant_slots)
             # An allocation is feasible only when each allocated player fills one
@@ -406,7 +477,7 @@ def exhaustive_allocation_oracle(
             if filled != len(assigned):
                 return
             coverage += filled
-            improvement += _exact_total(snapshot, week, lineup.assignments) - base_exact[team_id]
+            improvement += _exact_total(lineup.assignments) - base_exact[team_id]
 
         consumed = {player_id for _, player_id in assignments}
         remaining = tuple(player_id for player_id in pool if player_id not in consumed)
@@ -416,8 +487,9 @@ def exhaustive_allocation_oracle(
             tuple(sorted(target_owned + remaining)),
             limited_player_ids=frozenset(remaining),
             maximum_limited_players=target_base.vacancy_count,
+            workspace=workspace,
         )
-        target_points = _exact_total(snapshot, week, target.assignments)
+        target_points = _exact_total(target.assignments)
         stable = tuple(sorted(assignments))
         key = (-coverage, -improvement, target_points, stable)
         if best_key is None or key < best_key:
@@ -453,6 +525,7 @@ def _materially_unresolved_players(
     target_owned_ids: tuple[int, ...],
     target_vacancy_count: int,
     baseline_target_points: Decimal,
+    workspace: LineupOptimizationWorkspace,
 ) -> tuple[int, ...]:
     """Return unknown-status players that could change the target valuation."""
 
@@ -482,6 +555,7 @@ def _materially_unresolved_players(
             context=context,
             target_owned_ids=target_owned_ids,
             target_vacancy_count=target_vacancy_count,
+            workspace=workspace,
         )
         consumed = {assigned_player for _, assigned_player in opponent.assignments}
         remaining = tuple(item for item in hypothetical_pool if item not in consumed)
@@ -491,8 +565,9 @@ def _materially_unresolved_players(
             tuple(sorted(target_owned_ids + remaining)),
             limited_player_ids=frozenset(remaining),
             maximum_limited_players=target_vacancy_count,
+            workspace=workspace,
         )
-        if _exact_total(snapshot, week, target.assignments) != baseline_target_points:
+        if _exact_total(target.assignments) != baseline_target_points:
             material.append(player_id)
     return tuple(material)
 
@@ -504,6 +579,7 @@ def value_roster(
     *,
     first_scoring_week: int | None = None,
     access_context: ReplacementAccessContext = ReplacementAccessContext.FUTURE_CONSERVATIVE,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> RosterValueResult:
     """Return equal-weighted replacement-adjusted remaining-season V(R)."""
 
@@ -527,9 +603,21 @@ def value_roster(
     projection_by_key = {
         (item.player_id, item.scoring_week): item.effective_projection for item in snapshot.player_weeks
     }
+    workspace = (
+        prepare_lineup_optimization(snapshot)
+        if lineup_workspace is None
+        else lineup_workspace
+    )
+    if workspace.snapshot is not snapshot:
+        raise RosterValuationError(
+            "lineup workspace belongs to a different canonical snapshot object"
+        )
     weeks: list[WeekRosterValue] = []
     for week in range(first_week, snapshot.final_simulation_week + 1):
-        owned = optimize_starting_lineup(snapshot, team_id, week, roster_entries=state.roster_entries)
+        owned = optimize_starting_lineup(
+            snapshot, team_id, week, roster_entries=state.roster_entries,
+            workspace=workspace,
+        )
         pool, statuses, inaccessible = _available_pool(
             snapshot, state, target_team_id=team_id, week=week, context=access_context
         )
@@ -537,6 +625,7 @@ def value_roster(
             snapshot, state, target_team_id=team_id, week=week, pool=pool,
             statuses=statuses, context=access_context, target_owned_ids=owned_ids,
             target_vacancy_count=owned.vacancy_count,
+            workspace=workspace,
         )
         consumed = {player_id for _, player_id in opponent.assignments}
         remaining = tuple(player_id for player_id in pool if player_id not in consumed)
@@ -544,6 +633,7 @@ def value_roster(
             snapshot, week, tuple(sorted(owned_ids + remaining)),
             limited_player_ids=frozenset(remaining),
             maximum_limited_players=owned.vacancy_count,
+            workspace=workspace,
         )
         replacement_ids = {item.player_id for item in combined.assignments if item.player_id not in owned_ids}
         opponent_assignments: list[ReplacementAssignment] = []
@@ -558,7 +648,8 @@ def value_roster(
                     snapshot, week, tuple(sorted(team_players + tuple(
                         p for index, p in opponent.assignments
                         if opponent_vacancies[index].team_id == vacancy.team_id
-                    )))
+                    ))),
+                    workspace=workspace,
                 ).assignments if item.player_id == player_id
             )
             opponent_assignments.append(ReplacementAssignment(
@@ -587,7 +678,8 @@ def value_roster(
             context=access_context,
             target_owned_ids=owned_ids,
             target_vacancy_count=owned.vacancy_count,
-            baseline_target_points=_exact_total(snapshot, week, combined.assignments),
+            baseline_target_points=_exact_total(combined.assignments),
+            workspace=workspace,
         )
         weeks.append(WeekRosterValue(
             week,

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from decimal import Decimal
 import itertools
 import random
+from dataclasses import replace
+from decimal import Decimal
 
 import pytest
 
@@ -22,6 +22,7 @@ from fantasy_football.lineup_optimizer import (
     LineupOptimizationError,
     StartingSlot,
     VacancyReason,
+    optimize_candidate_lineup,
     optimize_starting_lineup,
 )
 from tests.canonical_fixtures import canonical_snapshot
@@ -374,3 +375,39 @@ def test_seeded_random_cases_match_independent_exhaustive_reference() -> None:
         slots, expected = _reference(snapshot, 15)
         observed = tuple(_assignment_map(result).get(slot) for slot in slots)
         assert observed == expected
+
+
+def test_limited_player_dominance_matches_unpruned_exact_solver() -> None:
+    rng = random.Random(20261104)
+    eligibility_options = ((1,), (2,), (1, 2), (2, 3), (1, 2, 3))
+    for maximum in range(4):
+        specs = tuple(
+            _present(
+                player_id,
+                rng.choice(eligibility_options),
+                float(rng.randint(1, 20)),
+            )
+            for player_id in range(1, 31)
+        )
+        snapshot = _lineup_snapshot(
+            starters=((1, 1), (2, 2), (3, 1)),
+            player_specs=specs,
+        )
+        player_ids = tuple(player.player_id for player in snapshot.players)
+        limited = frozenset(player_ids)
+        optimized = optimize_candidate_lineup(
+            snapshot,
+            15,
+            player_ids,
+            limited_player_ids=limited,
+            maximum_limited_players=maximum,
+        )
+        reference = optimize_candidate_lineup(
+            snapshot,
+            15,
+            player_ids,
+            limited_player_ids=limited,
+            maximum_limited_players=maximum,
+            use_exact_limited_dominance=False,
+        )
+        assert optimized == reference

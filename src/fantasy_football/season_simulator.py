@@ -22,7 +22,11 @@ from fantasy_football.evolving_state import (
     reset_waiver_priority,
     validate_evolving_state,
 )
-from fantasy_football.lineup_optimizer import OptimizedLineup, optimize_starting_lineup
+from fantasy_football.lineup_optimizer import (
+    OptimizedLineup,
+    optimize_starting_lineup,
+    prepare_lineup_optimization,
+)
 from fantasy_football.postseason import (
     ConsolationLadderConfiguration,
     MatchupStatus,
@@ -599,6 +603,7 @@ def simulate_deterministic_season(
         evolving = initial_evolving_state
     postseason: PostseasonState | None = None
     weeks: list[SeasonWeekTransition] = []
+    lineup_workspace = prepare_lineup_optimization(snapshot)
 
     for scoring_week in range(
         snapshot.first_simulation_week, snapshot.final_simulation_week + 1
@@ -673,6 +678,7 @@ def simulate_deterministic_season(
             evolving,
             transaction_policy,
             eligible_team_ids=eligible_team_ids,
+            lineup_workspace=lineup_workspace,
         )
         if (
             phase is MatchupPhase.POSTSEASON
