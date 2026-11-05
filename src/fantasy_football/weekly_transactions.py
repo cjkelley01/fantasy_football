@@ -19,8 +19,8 @@ from fantasy_football.evolving_state import (
     activate_from_ir,
     add_player,
     apply_successful_waiver_priority,
+    drop_player,
     place_on_ir,
-    replace_player,
     validate_evolving_state,
 )
 from fantasy_football.lineup_optimizer import optimize_starting_lineup
@@ -228,7 +228,6 @@ def _correction_states(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
     team_id: int,
-    acquisition_player_id: int,
 ) -> tuple[EvolvingLeagueState, ...]:
     """Exhaustively enumerate finite reactive IR correction effects.
 
@@ -422,10 +421,14 @@ def _enumerate_plans(
     unresolved = 0
     evaluations = 0
     valuation_seconds = 0.0
+    # Correction reachability depends on the acting roster, evidence, and IR
+    # policy—not on the eventual acquisition identity. Explore this exact graph
+    # once and reuse its immutable states for every declared pool candidate.
+    corrections = _correction_states(snapshot, state, team_id)
+    correction_count = len(corrections)
+    dropped_states: dict[tuple[int, int], EvolvingLeagueState | TransactionStateError] = {}
     for player_id in available:
         player_had_structural_option = False
-        corrections = _correction_states(snapshot, state, team_id, player_id)
-        correction_count += len(corrections)
         for corrected in corrections:
             owned = _team_owned(corrected, team_id)
             for slot_id in _ordinary_slot_ids(snapshot, player_id):
@@ -450,13 +453,28 @@ def _enumerate_plans(
                     # Drops are reactive only when the no-drop add is illegal.
                     for drop_id in owned:
                         attempted += 1
+                        drop_key = (id(corrected), drop_id)
+                        dropped = dropped_states.get(drop_key)
+                        if dropped is None:
+                            try:
+                                dropped = drop_player(
+                                    corrected,
+                                    snapshot,
+                                    team_id=team_id,
+                                    player_id=drop_id,
+                                    phase=TransactionPhase.ROSTER_CORRECTION,
+                                )
+                            except TransactionStateError as exc:
+                                dropped = exc
+                            dropped_states[drop_key] = dropped
                         try:
-                            resulting = replace_player(
-                                corrected,
+                            if isinstance(dropped, TransactionStateError):
+                                raise dropped
+                            resulting = add_player(
+                                dropped,
                                 snapshot,
                                 team_id=team_id,
-                                drop_player_id=drop_id,
-                                add_player_id=player_id,
+                                player_id=player_id,
                                 lineup_slot_id=slot_id,
                                 phase=phase,
                             )

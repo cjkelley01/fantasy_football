@@ -10,6 +10,7 @@ from enum import Enum
 
 from fantasy_football.canonical.model import LeagueSnapshot
 from fantasy_football.canonical.serialization import snapshot_to_json
+from fantasy_football.canonical.validation import validated_snapshot
 from fantasy_football.evolving_state import EvolvingLeagueState, IRPolicy
 from fantasy_football.player_outcomes import PlayerOutcomeModel, projection_class_counts
 from fantasy_football.postseason import ConsolationLadderConfiguration
@@ -301,18 +302,19 @@ def run_monte_carlo_path(
     if path_index not in config.path_indices:
         raise MonteCarloError(f"path_index={path_index} is outside configured range")
     try:
-        scenario = model.generate_scenario(
-            snapshot, master_seed=config.master_seed, path_index=path_index
-        )
-        season = simulate_deterministic_season(
-            snapshot,
-            scenario,
-            ir_policy=config.ir_policy,
-            transaction_policy=config.transaction_policy,
-            postseason_transaction_policy=config.postseason_transaction_policy,
-            consolation_configuration=config.consolation_configuration,
-            initial_evolving_state=config.initial_evolving_state,
-        )
+        with validated_snapshot(snapshot):
+            scenario = model.generate_scenario(
+                snapshot, master_seed=config.master_seed, path_index=path_index
+            )
+            season = simulate_deterministic_season(
+                snapshot,
+                scenario,
+                ir_policy=config.ir_policy,
+                transaction_policy=config.transaction_policy,
+                postseason_transaction_policy=config.postseason_transaction_policy,
+                consolation_configuration=config.consolation_configuration,
+                initial_evolving_state=config.initial_evolving_state,
+            )
     except ValueError as exc:
         raise MonteCarloError(f"invalid path {path_index}: {exc}") from exc
     teams = tuple(

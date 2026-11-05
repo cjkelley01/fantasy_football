@@ -31,6 +31,7 @@ from fantasy_football.canonical.validation import (
     CanonicalValidationError,
     require_understood_rules,
     validate_snapshot,
+    validated_snapshot,
 )
 from tests.canonical_fixtures import canonical_snapshot
 
@@ -52,6 +53,18 @@ def test_representative_snapshot_is_valid_and_immutable() -> None:
         snapshot.season = 2027  # type: ignore[misc]
     assert next(item for item in snapshot.player_weeks if item.player_id == -101).projected_lineup_available is False
     assert next(item for item in snapshot.player_weeks if item.player_id == 1).projected_lineup_available is True
+
+
+def test_validated_snapshot_context_is_identity_scoped_and_fail_closed() -> None:
+    snapshot = canonical_snapshot()
+    invalid = replace(snapshot, final_simulation_week=1)
+    with validated_snapshot(snapshot):
+        validate_snapshot(snapshot)
+        with pytest.raises(CanonicalValidationError):
+            validate_snapshot(invalid)
+    with pytest.raises(CanonicalValidationError):
+        with validated_snapshot(invalid):
+            pass
 
 
 def test_deterministic_round_trip_preserves_null_zero_negative_and_unresolved_rules() -> None:
