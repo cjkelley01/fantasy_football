@@ -55,6 +55,7 @@ export const api = {
     getJson<SnapshotSummary>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}`, signal),
   refreshProfile:(signal?:AbortSignal)=>getJson<LeagueRefreshProfile>("/api/v1/refresh/profile",signal),
   submitRefresh:(request:SnapshotRefreshRequest,signal?:AbortSignal)=>postJson<SnapshotRefreshSubmission>("/api/v1/refreshes",request,signal),
+  currentRefresh:(signal?:AbortSignal)=>getJson<SnapshotRefreshRecord|null>("/api/v1/refreshes/current",signal),
   refresh:(refreshId:string,signal?:AbortSignal)=>getJson<SnapshotRefreshRecord>(`/api/v1/refreshes/${encodeURIComponent(refreshId)}`,signal),
   cancelRefresh:(refreshId:string,signal?:AbortSignal)=>postJson<SnapshotRefreshRecord>(`/api/v1/refreshes/${encodeURIComponent(refreshId)}/cancel`,{},signal),
   refreshResult:(refreshId:string,signal?:AbortSignal)=>getJson<SnapshotRefreshResult>(`/api/v1/refreshes/${encodeURIComponent(refreshId)}/result`,signal),

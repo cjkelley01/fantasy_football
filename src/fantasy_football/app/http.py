@@ -271,6 +271,14 @@ def create_app(
     ) -> SnapshotRefreshSubmission:
         return coordinator.submit(body)
 
+    @app.get(
+        "/api/v1/refreshes/current", response_model=SnapshotRefreshRecord | None
+    )
+    def current_refresh(
+        coordinator: SnapshotRefreshCoordinator = Depends(refreshes),
+    ) -> SnapshotRefreshRecord | None:
+        return coordinator.current()
+
     @app.get("/api/v1/refreshes/{refresh_id}", response_model=SnapshotRefreshRecord)
     def get_refresh(
         refresh_id: str,

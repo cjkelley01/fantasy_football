@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime
 import math
 from typing import Hashable, Iterable, Mapping, TypeVar
@@ -109,7 +111,35 @@ def _json_value(value: object, *, entity: str, identifier: object, field: str) -
     _json_scalar(value, entity=entity, identifier=identifier, field=field)
 
 
+_VALIDATED_SNAPSHOT: ContextVar[LeagueSnapshot | None] = ContextVar(
+    "validated_canonical_snapshot", default=None
+)
+
+
 def validate_snapshot(snapshot: LeagueSnapshot) -> None:
+    """Validate a snapshot, honoring only an identity-scoped validation context."""
+
+    if _VALIDATED_SNAPSHOT.get() is snapshot:
+        return
+    _validate_snapshot(snapshot)
+
+
+@contextmanager
+def validated_snapshot(snapshot: LeagueSnapshot):
+    """Validate once, then safely reuse the same immutable object in one context."""
+
+    if _VALIDATED_SNAPSHOT.get() is snapshot:
+        yield
+        return
+    _validate_snapshot(snapshot)
+    token = _VALIDATED_SNAPSHOT.set(snapshot)
+    try:
+        yield
+    finally:
+        _VALIDATED_SNAPSHOT.reset(token)
+
+
+def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
     """Validate supported canonical structure and cross-entity invariants without mutation."""
 
     if snapshot.schema_version not in SUPPORTED_SCHEMA_VERSIONS:

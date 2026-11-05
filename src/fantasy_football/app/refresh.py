@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -239,8 +240,13 @@ class SnapshotRefreshCoordinator:
                 refresh_id, status="failed", stage="failed", finished_at_utc=_now(),
                 error_code=code, error_message=message,
             )
-        except Exception:
-            LOGGER.exception("Unexpected snapshot refresh implementation failure")
+        except Exception as exc:
+            # Upstream exception text can contain request URLs, cookies, or raw
+            # payload fragments. Ordinary logs retain only a safe code and type.
+            LOGGER.error(
+                "Snapshot refresh failed code=refresh_internal_failure exception_type=%s",
+                type(exc).__name__,
+            )
             self._set(
                 refresh_id, status="failed", stage="failed", finished_at_utc=_now(),
                 error_code="refresh_internal_failure",
@@ -278,6 +284,26 @@ class SnapshotRefreshCoordinator:
                 )
             return job.result
 
+    def current(self) -> SnapshotRefreshRecord | None:
+        """Return the active refresh or most recent process-local refresh."""
+
+        with self._lock:
+            active = tuple(
+                job.record
+                for job in self._jobs.values()
+                if job.record.status in {"queued", "running", "cancel_requested"}
+            )
+            if len(active) > 1:
+                raise RuntimeError("refresh coordinator contains multiple active jobs")
+            if active:
+                return active[0]
+            if not self._jobs:
+                return None
+            return max(
+                (job.record for job in self._jobs.values()),
+                key=lambda record: (record.created_at_utc, record.refresh_id),
+            )
+
     def cancel(self, refresh_id: str) -> SnapshotRefreshRecord:
         with self._lock:
             job = self._jobs.get(refresh_id)
@@ -310,6 +336,37 @@ class SnapshotRefreshCoordinator:
             self._jobs[refresh_id] = replace(job, record=record)
             return record
 
-    def close(self) -> None:
-        self._executor.shutdown(wait=True, cancel_futures=False)
+    def close(self, *, wait_seconds: float = 1.0) -> bool:
+        """Request cooperative stop without indefinitely blocking app shutdown.
+
+        The synchronous upstream library exposes no supported in-flight request
+        cancellation or timeout hook. A retrieval can therefore outlive this
+        bounded wait; the false return and sanitized warning expose that state.
+        Atomic publication remains non-cancellable.
+        """
+
+        if wait_seconds < 0:
+            raise ValueError("wait_seconds must be nonnegative")
+        with self._lock:
+            events = tuple(self._cancel.values())
+            futures = tuple(self._futures.values())
+        for event in events:
+            event.set()
+        deadline = time.monotonic() + wait_seconds
+        finished = True
+        for future in futures:
+            try:
+                future.result(timeout=max(0.0, deadline - time.monotonic()))
+            except FutureTimeoutError:
+                finished = False
+                break
+            except Exception:
+                # Worker failures are already represented by sanitized job state.
+                continue
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        if not finished:
+            LOGGER.warning(
+                "Snapshot refresh shutdown wait expired code=refresh_shutdown_pending"
+            )
+        return finished
 

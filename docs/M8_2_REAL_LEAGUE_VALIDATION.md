@@ -27,6 +27,8 @@ boundary; it does not reinterpret analytical background runs. API 1.0 adds:
   mode. It never returns cookies or secret values.
 - `POST /api/v1/refreshes`: accepts the fixed profile identity and an explicit first
   unstarted simulation week.
+- `GET /api/v1/refreshes/current`: returns the active or most recent process-local
+  refresh so closing and reopening the browser view does not lose observation.
 - `GET /api/v1/refreshes/{id}` and `/result`: lifecycle and verified publication.
 - `POST /api/v1/refreshes/{id}/cancel`: cooperative cancellation before publication.
 
@@ -34,7 +36,10 @@ The frontend adds a compact league-refresh dialog to both empty and populated
 snapshot contexts. It shows coarse stages rather than invented percentages, safe
 validation counts, unresolved capability identifiers, and the newly published
 snapshot. A successful publication becomes the active War Room context without
-removing older snapshots.
+removing older snapshots. Polling is single-flight: each request completes before
+the next timer is scheduled, and abort plus refresh-ID/version guards reject stale
+responses. Closing the view never requests cancellation; reopening rediscovers the
+server-side job. Submission remains disabled while acceptance is ambiguous.
 
 ## Authorization, credentials, and privacy
 
@@ -46,8 +51,10 @@ audited rule configuration is selected only by the server through
 strict DTO.
 
 Errors crossing the refresh boundary use stable safe codes. Adapter and upstream
-exception text is not copied into API records because it may contain private
-request context. Safe identity failures are distinct:
+exception text is neither copied into API records nor emitted by the refresh
+coordinator's ordinary logs because it may contain URLs, cookies, or private raw
+payload context. Unexpected failures log only the stable code and exception class.
+Safe identity failures are distinct:
 `refresh_profile_identity_mismatch`, `retrieved_league_identity_mismatch`, and
 `simulation_horizon_mismatch`.
 
@@ -67,13 +74,22 @@ verification failure has `publication_committed=true` and reports the permanent
 snapshot ID—it is never described as rolled back. Repeated identical refreshes
 receive different append-only snapshot UUIDs.
 
+The supported upstream `espn-api` boundary is a synchronous request and exposes no
+per-request timeout or in-flight cancellation hook. Coordinator shutdown therefore
+sets cooperative cancellation, waits for a bounded interval, then reports
+`refresh_shutdown_pending` rather than blocking the application lifespan forever.
+The upstream call may remain alive until its own network operation returns; no
+claim of immediate cancellation is made.
+
 ## Configuration and start-week boundary
 
 League size, roster structure, scoring, schedule, projections, waiver rules and
 postseason data continue to come from ESPN plus accepted audited manual rule
-configuration. The UI does not default these mechanics. The user supplies the first
-unstarted scoring week; the adapter rejects a week before ESPN's current period or
-beyond the configured season. The completed canonical snapshot must exactly match
+configuration. The UI does not default these mechanics or prefill an arbitrary week.
+The user supplies ESPN's first scoring period that has not started; explanatory text
+makes that boundary explicit. The adapter retrieves authoritative season/current-
+period metadata and backend validation remains authoritative. The completed
+canonical snapshot must exactly match
 the authorized league, season, and requested first week before publication.
 
 ## Deterministic evidence
@@ -102,15 +118,48 @@ name, managers, teams, players, cookies, snapshot UUID, and canonical bytes were
 not added to version control. This is **Verified live** for this bounded retrieval;
 it is not a universal ESPN-format claim.
 
-A one-path background baseline was then submitted through API 1.0. It did not
-reach a terminal result within the 180-second validation window, and the disposable
-validation process was interrupted without altering the published snapshot. No
-probabilities are reported from that incomplete attempt. Representative action
-search and manual-scenario numerical runs were not started after this measured
-baseline blocker because both depend on the same exact season-path evaluation and
-would not supply independent workflow evidence within the bound. Their API/UI
-mapping remains credential-free test evidence. This runtime limitation is an M8.3
-handoff and makes M8.2 conditionally, not unconditionally, ready.
+A one-path background baseline was then submitted through API 1.0. Admission and
+transition to `running` took approximately 6 ms, but the original progress contract
+remained at `preparing`; it did not reach a terminal result within the 180-second
+validation window.
+
+### Follow-up diagnosis — 4 November 2026
+
+`benchmarks/diagnose_live_execution.py` now reuses the retained request and already-
+published snapshot without ESPN access. It emits only aggregate stages/counts and
+never prints league, snapshot, team, manager, player, credential, URL, or payload
+identity. On the development Windows host:
+
+- canonical SQLite load: 1.29 seconds;
+- canonical preflight: 0.003 seconds;
+- standings plus evolving-state initialization: under 0.002 seconds;
+- week-9 exact weekly transactions after correction: 2.98 seconds;
+- week-9 lineup/player scoring: 0.083 seconds;
+- week-9 matchup transition: 0.002 seconds;
+- observed parent RSS: approximately 420–428 MiB during transaction enumeration;
+- week-10 candidate diagnostics included 790 free agents and tens of thousands of
+  exact legal sequences for individual vacancy decisions.
+
+Periodic stack sampling proved legitimate forward execution inside M2.3b state
+validation and M2.3c replacement-adjusted `value_roster()`, not a deadlock, worker
+startup failure, or stuck season-state transition. Two lossless defects were fixed:
+
+1. each Monte Carlo path now validates an immutable canonical snapshot once in an
+   identity-scoped context instead of repeating all 10,550 player-week checks for
+   every hypothetical state transition; and
+2. weekly acquisition enumeration computes the acquisition-independent reactive IR
+   correction graph once per team decision and reuses each legal drop prefix across
+   candidate additions.
+
+The controlled week-9 transaction stage fell from 18.72 to 2.98 seconds (6.3x).
+Exact reference/regression suites remained equivalent. Nevertheless, a subsequent
+week-10 exact V(R) candidate evaluation still exceeded two minutes by itself, so the
+full one-path run was deliberately interrupted rather than weakened with a top-N
+pool, heuristic valuation, or candidate truncation. No probability result exists.
+The tightly bounded live action search and manual scenario were not run because each
+requires the same unresolved full-path baseline computation; retained-result
+reopening therefore remains fixture-verified, not live-verified. This is a measured
+release blocker, not a successful smoke test.
 
 ## Analytical workflow reconciliation
 
@@ -134,17 +183,38 @@ cover baseline, Opportunity Explorer, Trade Lab, and retained-history views.
 - [Published snapshot — desktop dark](images/m8-2/refresh-success-dark-1440x1000.png)
 - [Configured connection — mobile dark](images/m8-2/refresh-connection-mobile-dark-390x844.png)
 
+## Verification evidence
+
+- Complete credential-free Python suite: **888 passed** with one upstream
+  Starlette deprecation warning in 86.46 seconds.
+- Frontend: **86 tests across 5 files passed**, TypeScript typecheck passed, and
+  the production Vite build passed (1,960 modules; 341.19 KiB JavaScript,
+  99.64 KiB gzip).
+- Static checks: Python compilation, Ruff `F`/`E9`, documentation-link tests, and
+  `git diff --check` passed.
+- Exact transaction/season regression coverage included 90 focused weekly,
+  complete-cycle, season, and Monte Carlo tests after the lossless optimizations.
+- The five sanitized refresh screenshots were regenerated from the production
+  frontend using the deterministic capture driver.
+
 ## Known limitations and M8.3 handoff
 
 - Refresh records are process-lifetime operational records; the published snapshot
   is the durable artifact. A process interruption during retrieval requires a new
   refresh. Durable ingestion-job recovery is not claimed.
 - ESPN stages expose coarse state only and cannot be cancelled inside an active
-  library request. Cancellation prevents later publication once control returns.
+  library request. Cancellation prevents later publication once control returns;
+  bounded shutdown reports when that request remains outstanding.
 - V1 has one configured league profile; general credential management is absent.
 - Unsupported ESPN rule semantics still fail closed and can block later analyses.
-- Sustained runtime, resource exhaustion, and recovery certification belong to M8.3.
+- The real 790-player replacement pool exposes an exact V(R) scaling blocker in a
+  week with essential vacancies. Further mathematically lossless optimization must
+  retain the M2.3c exhaustive oracle and transaction equivalence; M8.2 cannot claim
+  complete live baseline/action/manual validation until it terminates.
+- Sustained runtime, resource exhaustion, and recovery certification otherwise
+  belong to M8.3.
 
-Recommendation: **conditionally ready for independent review** once the authorized
-private-league smoke workflow and full regression evidence are recorded. M8.2 is not
-accepted on fixture evidence alone when live access is available.
+Recommendation: **not yet ready for acceptance**. Refresh publication and its
+frontend reliability are verified, and two exact performance defects are corrected,
+but representative live numerical execution remains measured-incomplete. M8.2 stays
+**IMPLEMENTED — REVIEW PENDING**.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 from dataclasses import replace
 from threading import Event
@@ -71,6 +72,9 @@ def test_refresh_profile_never_discloses_credentials_and_http_publishes(refresh_
         response = client.post("/api/v1/refreshes", json=_request())
         assert response.status_code == 202
         refresh_id = response.json()["refresh_id"]
+        current = client.get("/api/v1/refreshes/current")
+        assert current.status_code == 200
+        assert current.json()["refresh_id"] == refresh_id
         assert _wait(coordinator, refresh_id).status == "completed"
         result = client.get(f"/api/v1/refreshes/{refresh_id}/result").json()
         assert result["snapshot"]["snapshot_id"] == result["refresh"]["snapshot_id"]
@@ -222,4 +226,54 @@ def test_adapter_identity_and_horizon_mismatches_are_safe_and_specific(
     horizon_record = _wait(coordinator, submitted.refresh_id)
     assert horizon_record.error_code == "simulation_horizon_mismatch"
     assert horizon_record.publication_committed is False
+
+
+def test_unexpected_refresh_failure_redacts_api_and_operational_logs(
+    refresh_system, caplog,
+) -> None:
+    _store, _service, coordinator = refresh_system
+    secret = "recognizable-private-cookie-secret"
+
+    def unexpected(*_args, **_kwargs):
+        raise RuntimeError(f"request Cookie={secret} payload=private")
+
+    object.__setattr__(coordinator, "dependencies", replace(
+        coordinator.dependencies, adapter=unexpected
+    ))
+    with caplog.at_level(logging.ERROR, logger="fantasy_football.app.refresh"):
+        submitted = coordinator.submit(_request_model())
+        record = _wait(coordinator, submitted.refresh_id)
+    assert record.error_code == "refresh_internal_failure"
+    assert secret not in (record.error_message or "")
+    assert secret not in caplog.text
+    assert "exception_type=RuntimeError" in caplog.text
+
+
+def test_active_retrieval_does_not_block_coordinator_close_indefinitely(
+    refresh_system, caplog,
+) -> None:
+    _store, _service, coordinator = refresh_system
+    entered, release = Event(), Event()
+    original = coordinator.dependencies.adapter
+
+    def stalled(*args, **kwargs):
+        entered.set()
+        release.wait(2)
+        return original(*args, **kwargs)
+
+    object.__setattr__(coordinator, "dependencies", replace(
+        coordinator.dependencies, adapter=stalled
+    ))
+    submitted = coordinator.submit(_request_model())
+    assert entered.wait(1)
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="fantasy_football.app.refresh"):
+        assert coordinator.close(wait_seconds=0.01) is False
+    assert time.monotonic() - started < 0.5
+    assert "code=refresh_shutdown_pending" in caplog.text
+    assert coordinator.get(submitted.refresh_id).status == "cancel_requested" or (
+        coordinator.get(submitted.refresh_id).status == "running"
+    )
+    release.set()
+    assert _wait(coordinator, submitted.refresh_id).status == "cancelled"
 
