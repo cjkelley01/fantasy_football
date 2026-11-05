@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import replace
 import hashlib
 import json
+from dataclasses import replace
 
 import pytest
 
 from fantasy_football.canonical.model import (
+    SCHEMA_VERSION,
     InterpretationStatus,
     RosterEntry,
-    SCHEMA_VERSION,
     SourceReference,
 )
-from fantasy_football.canonical.serialization import snapshot_from_json, snapshot_to_json
+from fantasy_football.canonical.serialization import (
+    snapshot_from_json,
+    snapshot_to_json,
+)
 from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     EvidenceBasis,
@@ -29,6 +32,7 @@ from fantasy_football.evolving_state import (
     apply_failed_waiver_claim,
     apply_successful_waiver_priority,
     drop_player,
+    evolving_state_validation_scope,
     initialize_evolving_state,
     place_on_ir,
     record_ir_eligibility_evidence,
@@ -36,8 +40,8 @@ from fantasy_football.evolving_state import (
     replace_player,
     reset_waiver_priority,
     state_to_json,
-    validate_evolving_state,
     validate_eligibility_evidence_artifact,
+    validate_evolving_state,
 )
 from fantasy_football.lineup_optimizer import optimize_starting_lineup
 from fantasy_football.weekly_engine import (
@@ -61,6 +65,21 @@ def _player(snapshot, player_id, **changes):
             for item in snapshot.players
         ),
     )
+
+
+def test_scoped_state_validation_reuses_only_the_same_accepted_object() -> None:
+    snapshot = canonical_snapshot()
+    state = _state(snapshot)
+    invalid = replace(state, availability=state.availability[:-1])
+
+    @evolving_state_validation_scope
+    def validate_both() -> None:
+        validate_evolving_state(state, snapshot)
+        validate_evolving_state(state, snapshot)
+        validate_evolving_state(invalid, snapshot)
+
+    with pytest.raises(TransactionStateError, match="exactly one record"):
+        validate_both()
 
 
 def _v2_payload() -> str:

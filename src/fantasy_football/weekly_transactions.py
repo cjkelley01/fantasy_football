@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
@@ -20,10 +21,15 @@ from fantasy_football.evolving_state import (
     add_player,
     apply_successful_waiver_priority,
     drop_player,
+    evolving_state_validation_scope,
     place_on_ir,
     validate_evolving_state,
 )
-from fantasy_football.lineup_optimizer import optimize_starting_lineup
+from fantasy_football.lineup_optimizer import (
+    LineupOptimizationWorkspace,
+    optimize_starting_lineup,
+    prepare_lineup_optimization,
+)
 from fantasy_football.roster_value import value_roster
 
 
@@ -386,6 +392,10 @@ def _enumerate_plans(
     *,
     team_id: int,
     phase: TransactionPhase,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
+    valuation_cache: OrderedDict[
+        tuple[int, EvolvingLeagueState], tuple[bool, float]
+    ] | None = None,
 ) -> tuple[
     tuple[_Plan, ...],
     _PlanDiagnostics,
@@ -393,8 +403,11 @@ def _enumerate_plans(
     tuple[EvolvingLeagueState, ...],
     tuple[EvolvingLeagueState, ...],
 ]:
+    workspace = lineup_workspace or prepare_lineup_optimization(snapshot)
+    values = valuation_cache if valuation_cache is not None else OrderedDict()
     baseline = optimize_starting_lineup(
-        snapshot, team_id, state.scoring_week, roster_entries=state.roster_entries
+        snapshot, team_id, state.scoring_week, roster_entries=state.roster_entries,
+        workspace=workspace,
     )
     required_status = (
         AcquisitionAvailability.WAIVERS
@@ -524,6 +537,7 @@ def _enumerate_plans(
                         team_id,
                         state.scoring_week,
                         roster_entries=resulting.roster_entries,
+                        workspace=workspace,
                     )
                     if after.vacancy_count >= baseline.vacancy_count:
                         reasons["no_coverage_improvement"] = (
@@ -532,12 +546,28 @@ def _enumerate_plans(
                         continue
                     essential += 1
                     essential_states.setdefault(_state_effect_key(resulting), resulting)
-                    started = time.perf_counter()
-                    value = value_roster(snapshot, resulting, team_id)
-                    elapsed = time.perf_counter() - started
-                    evaluations += 1
-                    valuation_seconds += elapsed
-                    if not value.is_complete:
+                    state_key = (team_id, _state_effect_key(resulting))
+                    cached_value = values.get(state_key)
+                    if cached_value is None:
+                        started = time.perf_counter()
+                        value = value_roster(
+                            snapshot,
+                            resulting,
+                            team_id,
+                            lineup_workspace=workspace,
+                        )
+                        elapsed = time.perf_counter() - started
+                        evaluations += 1
+                        valuation_seconds += elapsed
+                        cached_value = (value.is_complete, value.total_value)
+                        values[state_key] = cached_value
+                        values.move_to_end(state_key)
+                        while len(values) > 512:
+                            values.popitem(last=False)
+                    else:
+                        values.move_to_end(state_key)
+                    value_complete, total_value = cached_value
+                    if not value_complete:
                         reasons["incomplete_valuation"] = (
                             reasons.get("incomplete_valuation", 0) + 1
                         )
@@ -575,7 +605,7 @@ def _enumerate_plans(
                         player_id,
                         baseline.vacancy_count,
                         after.vacancy_count,
-                        value.total_value,
+                        total_value,
                         tie_key,
                     )
                     key = _state_effect_key(resulting)
@@ -617,12 +647,14 @@ def _choose(plans: tuple[_Plan, ...]) -> _Plan | None:
     return min(plans, key=lambda item: (-item.value, item.tie_key))
 
 
+@evolving_state_validation_scope
 def execute_weekly_essential_transactions(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
     policy: WeeklyTransactionPolicy,
     *,
     eligible_team_ids: tuple[int, ...] | None = None,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> WeeklyTransactionResult:
     """Execute one immutable sequential weekly waiver/free-agent window.
 
@@ -677,6 +709,10 @@ def execute_weekly_essential_transactions(
     total_unique_legal = 0
     total_evaluations = 0
     valuation_seconds = 0.0
+    lineup_workspace = lineup_workspace or prepare_lineup_optimization(snapshot)
+    valuation_cache: OrderedDict[
+        tuple[int, EvolvingLeagueState], tuple[bool, float]
+    ] = OrderedDict()
 
     def run_phase(phase: TransactionPhase, order_factory) -> tuple[int, int]:
         nonlocal current, total_candidates, total_corrections, total_attempted
@@ -695,6 +731,7 @@ def execute_weekly_essential_transactions(
                     team_id,
                     current.scoring_week,
                     roster_entries=current.roster_entries,
+                    workspace=lineup_workspace,
                 )
                 if lineup.vacancy_count == 0:
                     decisions.append(
@@ -723,6 +760,8 @@ def execute_weekly_essential_transactions(
                         current,
                         team_id=team_id,
                         phase=phase,
+                        lineup_workspace=lineup_workspace,
+                        valuation_cache=valuation_cache,
                     )
                 )
                 total_candidates += diagnostic.candidate_players

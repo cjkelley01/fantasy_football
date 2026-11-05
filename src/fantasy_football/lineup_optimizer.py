@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
-from collections import Counter
+import math
+from collections import Counter, OrderedDict
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
-import math
 
-from fantasy_football.canonical.model import LeagueSnapshot, Player, RosterEntry, SlotKind
+from fantasy_football.canonical.model import (
+    LeagueSnapshot,
+    Player,
+    RosterEntry,
+    SlotKind,
+)
 from fantasy_football.canonical.validation import validate_snapshot
 
 
@@ -65,6 +70,89 @@ class CandidateLineup:
     assignments: tuple[LineupAssignment, ...]
     vacant_slots: tuple[StartingSlot, ...]
     total_projected_points: float
+
+
+class LineupOptimizationWorkspace:
+    """Bounded, identity-scoped exact-lineup memoization for one snapshot.
+
+    Eviction changes performance only. Keys contain the complete player universe,
+    limited-player policy, team, week, and roster state used by the exact solver.
+    """
+
+    __slots__ = (
+        "snapshot",
+        "players",
+        "team_ids",
+        "week_records",
+        "slots",
+        "reserve_slot_ids",
+        "candidate_cache",
+        "starting_cache",
+        "maximum_cache_entries",
+        "candidate_hits",
+        "starting_hits",
+    )
+
+    def __init__(self, snapshot: LeagueSnapshot, *, maximum_cache_entries: int = 20_000):
+        if maximum_cache_entries <= 0:
+            raise LineupOptimizationError("maximum_cache_entries must be positive")
+        self.snapshot = snapshot
+        self.players = {player.player_id: player for player in snapshot.players}
+        self.team_ids = frozenset(team.team_id for team in snapshot.teams)
+        self.week_records = {
+            week: {
+                record.player_id: record
+                for record in snapshot.player_weeks
+                if record.season == snapshot.season and record.scoring_week == week
+            }
+            for week in range(snapshot.first_simulation_week, snapshot.final_simulation_week + 1)
+        }
+        self.slots = _starting_slots(snapshot)
+        self.reserve_slot_ids = frozenset(
+            rule.slot_id for rule in snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.RESERVE
+        )
+        self.candidate_cache: OrderedDict[tuple[object, ...], CandidateLineup] = OrderedDict()
+        self.starting_cache: OrderedDict[tuple[object, ...], OptimizedLineup] = OrderedDict()
+        self.maximum_cache_entries = maximum_cache_entries
+        self.candidate_hits = 0
+        self.starting_hits = 0
+
+    def _get(self, cache, key):
+        value = cache.get(key)
+        if value is not None:
+            cache.move_to_end(key)
+        return value
+
+    def _put(self, cache, key, value) -> None:
+        cache[key] = value
+        cache.move_to_end(key)
+        while len(cache) > self.maximum_cache_entries:
+            cache.popitem(last=False)
+
+
+def prepare_lineup_optimization(
+    snapshot: LeagueSnapshot, *, maximum_cache_entries: int = 20_000
+) -> LineupOptimizationWorkspace:
+    """Prepare bounded immutable-snapshot indexes for repeated exact solves."""
+
+    validate_snapshot(snapshot)
+    return LineupOptimizationWorkspace(
+        snapshot, maximum_cache_entries=maximum_cache_entries
+    )
+
+
+def _workspace(
+    snapshot: LeagueSnapshot,
+    workspace: LineupOptimizationWorkspace | None,
+) -> LineupOptimizationWorkspace:
+    if workspace is None:
+        return LineupOptimizationWorkspace(snapshot, maximum_cache_entries=1)
+    if workspace.snapshot is not snapshot:
+        raise LineupOptimizationError(
+            "lineup workspace belongs to a different canonical snapshot object"
+        )
+    return workspace
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,17 +287,29 @@ def optimize_candidate_lineup(
     *,
     limited_player_ids: frozenset[int] = frozenset(),
     maximum_limited_players: int | None = None,
+    workspace: LineupOptimizationWorkspace | None = None,
+    use_exact_limited_dominance: bool = True,
 ) -> CandidateLineup:
     """Apply the M2.1 exact objective to a caller-defined player universe."""
 
-    players = {player.player_id: player for player in snapshot.players}
+    prepared = _workspace(snapshot, workspace)
+    players = prepared.players
     if len(player_ids) != len(set(player_ids)):
         raise LineupOptimizationError("candidate player IDs must be unique")
-    week_records = {
-        record.player_id: record for record in snapshot.player_weeks
-        if record.season == snapshot.season and record.scoring_week == scoring_week
-    }
-    slots = _starting_slots(snapshot)
+    canonical_player_ids = tuple(sorted(player_ids))
+    key = (
+        scoring_week,
+        canonical_player_ids,
+        tuple(sorted(limited_player_ids)),
+        maximum_limited_players,
+        use_exact_limited_dominance,
+    )
+    cached = prepared._get(prepared.candidate_cache, key)
+    if cached is not None:
+        prepared.candidate_hits += 1
+        return cached
+    week_records = prepared.week_records.get(scoring_week, {})
+    slots = prepared.slots
     candidates: list[_Candidate] = []
     for player_id in sorted(player_ids):
         if player_id not in players or player_id not in week_records:
@@ -230,6 +330,33 @@ def optimize_candidate_lineup(
                 Decimal.from_float(record.effective_projection),
                 eligible_indices,
             ))
+
+    if use_exact_limited_dominance and maximum_limited_players is not None:
+        # Players with the same eligible destination set are interchangeable in
+        # the assignment graph. No feasible result can use more than the global
+        # limited-player cap, so every lower-ranked member beyond that cap is
+        # dominated by retained players with the same edges. Exact projection,
+        # then stable player ID, matches the solver's complete objective.
+        retained_limited: set[int] = set()
+        by_eligibility: dict[tuple[int, ...], list[_Candidate]] = {}
+        for candidate in candidates:
+            if candidate.player_id in limited_player_ids:
+                by_eligibility.setdefault(candidate.eligible_slot_indices, []).append(
+                    candidate
+                )
+        for equivalent in by_eligibility.values():
+            equivalent.sort(
+                key=lambda item: (-item.exact_projection, item.player_id)
+            )
+            retained_limited.update(
+                item.player_id for item in equivalent[:maximum_limited_players]
+            )
+        candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.player_id not in limited_player_ids
+            or candidate.player_id in retained_limited
+        ]
 
     empty_assignment: tuple[int | None, ...] = (None,) * len(slots)
     if maximum_limited_players is not None and maximum_limited_players < 0:
@@ -268,7 +395,13 @@ def optimize_candidate_lineup(
     vacancies = tuple(
         slot for slot, player_id in zip(slots, best.assignment, strict=True) if player_id is None
     )
-    return CandidateLineup(assignments, vacancies, math.fsum(item.effective_projection for item in assignments))
+    result = CandidateLineup(
+        assignments,
+        vacancies,
+        math.fsum(item.effective_projection for item in assignments),
+    )
+    prepared._put(prepared.candidate_cache, key, result)
+    return result
 
 
 def optimize_starting_lineup(
@@ -277,6 +410,7 @@ def optimize_starting_lineup(
     scoring_week: int,
     *,
     roster_entries: tuple[RosterEntry, ...] | None = None,
+    workspace: LineupOptimizationWorkspace | None = None,
 ) -> OptimizedLineup:
     """Return the exact projected-points optimum for one team and scoring week.
 
@@ -287,7 +421,8 @@ def optimize_starting_lineup(
     """
 
     validate_snapshot(snapshot)
-    team_ids = {team.team_id for team in snapshot.teams}
+    prepared = _workspace(snapshot, workspace)
+    team_ids = prepared.team_ids
     if isinstance(team_id, bool) or not isinstance(team_id, int) or team_id not in team_ids:
         raise LineupOptimizationError(f"unknown fantasy team ID {team_id!r}")
     if (
@@ -303,23 +438,24 @@ def optimize_starting_lineup(
 
     modeled_roster = snapshot.roster_entries if roster_entries is None else roster_entries
     validate_roster_state(snapshot, modeled_roster)
-    players = {player.player_id: player for player in snapshot.players}
-    week_records = {
-        record.player_id: record
-        for record in snapshot.player_weeks
-        if record.season == snapshot.season and record.scoring_week == scoring_week
-    }
-    slots = _starting_slots(snapshot)
-    reserve_slot_ids = {
-        rule.slot_id for rule in snapshot.rules.lineup_slots if rule.kind is SlotKind.RESERVE
-    }
+    cache_key = (team_id, scoring_week, modeled_roster)
+    cached = prepared._get(prepared.starting_cache, cache_key)
+    if cached is not None:
+        prepared.starting_hits += 1
+        return cached
+    players = prepared.players
+    week_records = prepared.week_records[scoring_week]
+    slots = prepared.slots
+    reserve_slot_ids = prepared.reserve_slot_ids
     team_entries = tuple(sorted((entry for entry in modeled_roster if entry.team_id == team_id), key=lambda item: item.player_id))
     projections = {entry.player_id: week_records[entry.player_id].effective_projection for entry in team_entries}
 
     candidate_ids = tuple(
         entry.player_id for entry in team_entries if entry.lineup_slot_id not in reserve_slot_ids
     )
-    candidate_lineup = optimize_candidate_lineup(snapshot, scoring_week, candidate_ids)
+    candidate_lineup = optimize_candidate_lineup(
+        snapshot, scoring_week, candidate_ids, workspace=prepared
+    )
     assignments = candidate_lineup.assignments
     vacancies = tuple(
         LineupVacancy(
@@ -337,7 +473,7 @@ def optimize_starting_lineup(
     total = candidate_lineup.total_projected_points
     filled = len(assignments)
     required = len(slots)
-    return OptimizedLineup(
+    result = OptimizedLineup(
         team_id=team_id,
         season=snapshot.season,
         scoring_week=scoring_week,
@@ -349,3 +485,5 @@ def optimize_starting_lineup(
         vacancies=vacancies,
         is_complete=filled == required,
     )
+    prepared._put(prepared.starting_cache, cache_key, result)
+    return result

@@ -151,15 +151,35 @@ startup failure, or stuck season-state transition. Two lossless defects were fix
    correction graph once per team decision and reuses each legal drop prefix across
    candidate additions.
 
-The controlled week-9 transaction stage fell from 18.72 to 2.98 seconds (6.3x).
-Exact reference/regression suites remained equivalent. Nevertheless, a subsequent
-week-10 exact V(R) candidate evaluation still exceeded two minutes by itself, so the
-full one-path run was deliberately interrupted rather than weakened with a top-N
-pool, heuristic valuation, or candidate truncation. No probability result exists.
-The tightly bounded live action search and manual scenario were not run because each
-requires the same unresolved full-path baseline computation; retained-result
-reopening therefore remains fixture-verified, not live-verified. This is a measured
-release blocker, not a successful smoke test.
+The controlled week-9 transaction stage initially fell from 18.72 to 2.98 seconds.
+The final scalability pass then found two additional cold-path costs: every exact
+lineup solve rebuilt the full canonical player-week index, and every hypothetical
+transaction revalidated the same immutable evolving states. It added bounded,
+identity-complete lineup/state workspaces, exact completed-effect valuation reuse,
+and the formally documented equivalence-class dominance rules in
+`ROSTER_VALUATION.md`. No candidate, legal plan, availability state, or V(R)
+objective changed.
+
+Under identical retained live inputs, the formerly blocked complete engine path now
+reaches postseason initialization in **71.55 seconds**. Week 10 retained all 790
+free-agent candidates and the decisive decision still attempted 62,806 sequences
+and performed seven distinct exact V(R) calls. Its cold nine-week valuation fell
+from 38.11 to 10.00 seconds; subsequent complete values using the same bounded
+workspace took 0.38–0.81 seconds. Week-10 transaction processing fell from 73.52 to
+44.51 seconds. Peak observed parent RSS fell from approximately 448.6 to 438.6 MiB.
+The earlier run could not finish within its validation bound; the corrected run is
+therefore at least 1.8x faster over the directly comparable 126-second partial
+trace, while reaching the next capability boundary rather than stalling in V(R).
+
+API 1.0 then accepted the retained one-path request and reached a terminal `failed`
+state in **67.58 seconds** with the stable application error
+`background_execution_failed`. The underlying supported diagnostic is exact:
+**the live canonical rules do not contain a configured consolation first-round
+matchup period**. Postseason initialization therefore fails closed. Suppressing the
+complete-path requirement cannot bypass this structural configuration error, so no
+probability result or exploratory multi-path estimate is reported. A bounded action
+search and manual scenario were not attempted because both require the same valid
+baseline season path. No manual postseason schedule was invented.
 
 ## Analytical workflow reconciliation
 
@@ -185,15 +205,17 @@ cover baseline, Opportunity Explorer, Trade Lab, and retained-history views.
 
 ## Verification evidence
 
-- Complete credential-free Python suite: **888 passed** with one upstream
-  Starlette deprecation warning in 86.46 seconds.
+- Complete credential-free Python suite after the scalability correction:
+  **891 passed** with one upstream Starlette deprecation warning in 96.21 seconds.
 - Frontend: **86 tests across 5 files passed**, TypeScript typecheck passed, and
   the production Vite build passed (1,960 modules; 341.19 KiB JavaScript,
   99.64 KiB gzip).
 - Static checks: Python compilation, Ruff `F`/`E9`, documentation-link tests, and
   `git diff --check` passed.
-- Exact transaction/season regression coverage included 90 focused weekly,
-  complete-cycle, season, and Monte Carlo tests after the lossless optimizations.
+- The final focused exactness runs include 41 lineup/roster-value tests, 65
+  state/lineup/valuation tests, and 131 lineup, allocation-oracle, weekly-cycle,
+  full-season, and Monte Carlo tests. The eight-team and fourteen-team exact
+  fixtures completed in 0.06 and 0.14 seconds respectively.
 - The five sanitized refresh screenshots were regenerated from the production
   frontend using the deterministic capture driver.
 
@@ -207,14 +229,18 @@ cover baseline, Opportunity Explorer, Trade Lab, and retained-history views.
   bounded shutdown reports when that request remains outstanding.
 - V1 has one configured league profile; general credential management is absent.
 - Unsupported ESPN rule semantics still fail closed and can block later analyses.
-- The real 790-player replacement pool exposes an exact V(R) scaling blocker in a
-  week with essential vacancies. Further mathematically lossless optimization must
-  retain the M2.3c exhaustive oracle and transaction equivalence; M8.2 cannot claim
-  complete live baseline/action/manual validation until it terminates.
+- The real 790-player replacement pool previously exposed an exact V(R) scaling
+  blocker in a week with essential vacancies. The blocker is now resolved without
+  changing coverage or numerical results; exact execution reaches the postseason
+  boundary.
+- Live baseline/action/manual completion is now blocked by absent canonical
+  consolation first-round period configuration, not V(R) runtime. That capability
+  must come from verified ESPN evidence or an independently approved validated
+  configuration.
 - Sustained runtime, resource exhaustion, and recovery certification otherwise
   belong to M8.3.
 
-Recommendation: **not yet ready for acceptance**. Refresh publication and its
-frontend reliability are verified, and two exact performance defects are corrected,
-but representative live numerical execution remains measured-incomplete. M8.2 stays
-**IMPLEMENTED — REVIEW PENDING**.
+Recommendation: **not yet ready for acceptance**. Refresh publication, frontend
+reliability, and exact V(R) scalability are verified, but the representative live
+season cannot produce probabilities until its consolation schedule capability is
+resolved. M8.2 stays **IMPLEMENTED — REVIEW PENDING**.

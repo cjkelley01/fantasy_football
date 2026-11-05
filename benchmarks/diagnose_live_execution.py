@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import faulthandler
 import json
+import logging
 import sqlite3
 import time
 import tracemalloc
@@ -21,7 +22,6 @@ import fantasy_football.weekly_transactions as weekly
 from fantasy_football.app.contracts import BaselineAnalysisRequest
 from fantasy_football.app.service import ApplicationDependencies, ApplicationService
 from fantasy_football.snapshot_store import SnapshotStore
-
 
 TRACE_MEMORY = False
 try:
@@ -108,12 +108,106 @@ def instrument(overall: float) -> None:
             candidate_players=diagnostic.candidate_players,
             correction_states=diagnostic.correction_states,
             sequences_attempted=diagnostic.sequences_attempted,
+            unique_legal_states=result[2],
+            essential_plans=diagnostic.essential_plans,
+            complete_plans=diagnostic.complete_plans,
             valuation_evaluations=diagnostic.evaluations,
             valuation_seconds=round(diagnostic.valuation_seconds, 6),
         )
         return result
 
     weekly._enumerate_plans = measured_plans
+
+    original_value = weekly.value_roster
+
+    def measured_value(*args, **kwargs):
+        started = time.perf_counter()
+        result = original_value(*args, **kwargs)
+        emit(
+            "roster_valuation",
+            "finished",
+            overall,
+            stage_seconds=round(time.perf_counter() - started, 6),
+            valuation_weeks=len(result.weeks),
+            replacement_candidates=sum(
+                week.replacement_candidate_count for week in result.weeks
+            ),
+            allocation_states=sum(
+                week.allocation_states_explored for week in result.weeks
+            ),
+        )
+        return result
+
+    weekly.value_roster = measured_value
+
+
+def run_api_terminal(args, overall: float) -> int:
+    """Submit the retained request through API 1.0 without exposing identity."""
+
+    from fastapi.testclient import TestClient
+
+    from fantasy_football.app.http import create_app
+
+    request = latest_baseline_request(args.run_database)
+    if args.allow_incomplete:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(
+                update={"require_complete": False}
+            )
+        })
+    app = create_app(database_path=args.database)
+    background_logger = logging.getLogger("fantasy_football.app.background")
+    prior_level = background_logger.level
+    background_logger.setLevel(logging.CRITICAL)
+    try:
+        client_context = TestClient(app)
+        client = client_context.__enter__()
+    except Exception:
+        background_logger.setLevel(prior_level)
+        raise
+    try:
+        submitted = client.post(
+            "/api/v1/runs/baseline",
+            json=request.model_dump(mode="json"),
+        )
+        if submitted.status_code != 202:
+            emit(
+                "api_terminal",
+                "submission_rejected",
+                overall,
+                http_status=submitted.status_code,
+            )
+            return 1
+        run_id = submitted.json()["run_id"]
+        while True:
+            record = client.get(f"/api/v1/runs/{run_id}")
+            record.raise_for_status()
+            body = record.json()
+            if body["status"] in {
+                "completed", "cancelled", "failed", "interrupted"
+            }:
+                counts: dict[str, int | float | str] = {
+                    "terminal_status": body["status"],
+                }
+                if body["status"] == "completed":
+                    result = client.get(f"/api/v1/runs/{run_id}/result")
+                    result.raise_for_status()
+                    summary = result.json()["result"]
+                    counts.update(
+                        completed_paths=summary["completed_paths"],
+                        incomplete_paths=summary["incomplete_paths"],
+                        incomplete_capability_count=len(
+                            summary["incomplete_capabilities"]
+                        ),
+                    )
+                elif body.get("error_code"):
+                    counts["error_code"] = body["error_code"]
+                emit("api_terminal", "finished", overall, **counts)
+                return 0
+            time.sleep(0.1)
+    finally:
+        client_context.__exit__(None, None, None)
+        background_logger.setLevel(prior_level)
 
 
 def main() -> int:
@@ -122,6 +216,8 @@ def main() -> int:
     parser.add_argument("--run-database", type=Path, default=Path("outputs/fantasy_football.runs.sqlite3"))
     parser.add_argument("--trace-memory", action="store_true")
     parser.add_argument("--stack-interval-seconds", type=int, default=0)
+    parser.add_argument("--api-terminal", action="store_true")
+    parser.add_argument("--allow-incomplete", action="store_true")
     args = parser.parse_args()
     global TRACE_MEMORY
     TRACE_MEMORY = args.trace_memory
@@ -131,6 +227,8 @@ def main() -> int:
         faulthandler.dump_traceback_later(args.stack_interval_seconds, repeat=True)
     overall = time.perf_counter()
     emit("diagnostic", "started", overall)
+    if args.api_terminal:
+        return run_api_terminal(args, overall)
     try:
         request = latest_baseline_request(args.run_database)
         store = SnapshotStore(args.database)
