@@ -471,10 +471,17 @@ class BackgroundRunStore:
                     )
 
     def storage_bytes(self) -> int:
-        return sum(
-            Path(f"{self.path}{suffix}").stat().st_size
-            for suffix in ("", "-wal", "-shm") if Path(f"{self.path}{suffix}").exists()
-        )
+        total = 0
+        for suffix in ("", "-wal", "-shm"):
+            candidate = Path(f"{self.path}{suffix}")
+            try:
+                total += candidate.stat().st_size
+            except FileNotFoundError:
+                # SQLite may delete a transient WAL/SHM file between directory
+                # observation and stat, especially on Windows when the final
+                # connection closes. A missing sidecar contributes zero bytes.
+                continue
+        return total
 
     def query_candidates(self, run_id: str, *, offset: int, limit: int,
                          sort_key: str, direction: str, ordering: str | None = None,

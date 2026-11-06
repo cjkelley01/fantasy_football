@@ -95,8 +95,10 @@ def test_current_m7_parent_and_m8_status_are_aligned() -> None:
         assert "M7.1–M7.5" in document
         assert "M8.1" in document
         assert "M8.2" in document
-        assert "M8.3–M8.4 are not started" in document
-        assert "M8.2" in document and "REVIEW PENDING" in document
+        assert "M8.1–M8.2 are **COMPLETE AND ACCEPTED**" in document
+        assert "M8.3" in document and "REVIEW PENDING" in document
+        assert "M8.4 is not started" in document
+    assert "docs/M8_3_RUNTIME_AND_RECOVERY.md" in documents["README.md"]
 
 
 def test_current_m5_parent_status_and_ui_vision_are_aligned() -> None:
