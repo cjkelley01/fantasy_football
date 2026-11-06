@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from datetime import timedelta
+from pathlib import Path
 from threading import Event
 
 import pytest
@@ -36,6 +37,24 @@ from tests.test_app_service import (
     _simulation,
 )
 from tests.test_scenario_evaluator import _scenario_snapshot
+
+
+def test_storage_accounting_tolerates_disappearing_sqlite_sidecar(
+    tmp_path, monkeypatch
+) -> None:
+    store = BackgroundRunStore(tmp_path / "runs.sqlite3")
+    original = Path.stat
+
+    def disappearing_sidecar(path: Path, *args, **kwargs):
+        if str(path).endswith("-shm"):
+            raise FileNotFoundError(path)
+        return original(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", disappearing_sidecar)
+    try:
+        assert store.storage_bytes() >= 0
+    finally:
+        store.release_lease()
 
 
 def _wait(store, run_id, statuses=("completed", "cancelled", "failed"), timeout=10):

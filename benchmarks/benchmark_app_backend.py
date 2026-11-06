@@ -48,6 +48,7 @@ from tests.test_season_simulator import _fourteen_team_postseason_snapshot  # no
 from tests.test_roster_value import _large_valuation_snapshot  # noqa: E402
 from fantasy_football.canonical.model import RosterEntry  # noqa: E402
 from fantasy_football.canonical.validation import validate_snapshot  # noqa: E402
+from fantasy_football.canonical.serialization import snapshot_to_json  # noqa: E402
 
 
 @contextmanager
@@ -122,6 +123,9 @@ class _ProcessMonitor:
         self.parent_peak = 0
         self.child_peak = 0
         self.child_count_peak = 0
+        self.thread_count_peak = 0
+        self.parent_cpu_percent_peak = 0.0
+        self.aggregate_child_cpu_percent_peak = 0.0
         self.samples = 0
         self._thread = Thread(target=self._run, daemon=True)
 
@@ -131,15 +135,29 @@ class _ProcessMonitor:
         except ImportError:
             return
         process = psutil.Process()
+        process.cpu_percent(None)
+        sampled_children = {}
         while not self.stop.wait(0.01):
             try:
                 children = process.children(recursive=True)
+                child_cpu = 0.0
+                for child in children:
+                    if child.is_running():
+                        sampled = sampled_children.setdefault(child.pid, child)
+                        child_cpu += sampled.cpu_percent(None)
                 self.parent_peak = max(self.parent_peak, process.memory_info().rss)
                 self.child_peak = max(
                     self.child_peak,
                     sum(child.memory_info().rss for child in children if child.is_running()),
                 )
                 self.child_count_peak = max(self.child_count_peak, len(children))
+                self.thread_count_peak = max(self.thread_count_peak, process.num_threads())
+                self.parent_cpu_percent_peak = max(
+                    self.parent_cpu_percent_peak, process.cpu_percent(None)
+                )
+                self.aggregate_child_cpu_percent_peak = max(
+                    self.aggregate_child_cpu_percent_peak, child_cpu
+                )
                 self.samples += 1
             except (psutil.Error, OSError):
                 pass
@@ -170,6 +188,37 @@ def _percentile(values: list[float], percentile: float) -> float | None:
     if not values:
         return None
     return sorted(values)[max(0, math.ceil(percentile * len(values)) - 1)]
+
+
+def _path_scaling(service: ApplicationService, snapshot, path_counts: tuple[int, ...]):
+    """Measure identical baseline inputs at increasing deterministic path budgets."""
+
+    rows = []
+    for path_count in path_counts:
+        request = BaselineAnalysisRequest(
+            snapshot=_selector(snapshot), simulation=_simulation(path_count),
+            precision=_precision(path_count).model_copy(update={
+                "minimum_paths": path_count,
+                "evaluation_interval_paths": path_count,
+            }),
+            outcome_model=_model(),
+        )
+        wall_started = time.perf_counter()
+        cpu_started = time.process_time()
+        result = service.run_baseline(request)
+        elapsed = time.perf_counter() - wall_started
+        rows.append({
+            "requested_paths": path_count,
+            "completed_paths": result.completed_paths,
+            "elapsed_seconds": elapsed,
+            "process_cpu_seconds": time.process_time() - cpu_started,
+            "paths_per_minute": (
+                None if elapsed <= 0 else result.completed_paths * 60.0 / elapsed
+            ),
+            "stopping_reason": result.stopping_reason,
+            "engine_run_identity_sha256": result.provenance.engine_run_identity_sha256,
+        })
+    return rows
 
 
 def _combined_action_request(snapshot, *, scale: str = "small", workers: int = 1):
@@ -229,7 +278,10 @@ def _combined_action_request(snapshot, *, scale: str = "small", workers: int = 1
     })
 
 
-def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers: int) -> dict[str, object]:
+def _measure_tier(
+    name: str, snapshot, repetitions: int, *, scale: str, workers: int,
+    path_counts: tuple[int, ...] = (1, 2),
+) -> dict[str, object]:
     with _benchmark_directory() as directory:
         database_path = Path(directory) / f"{name}-runs.sqlite3"
         for suffix in ("", "-wal", "-shm"):
@@ -261,6 +313,7 @@ def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers:
             scenario={"scenario_id": f"{name}-identity", "changes": (), "protected_players": ()},
         )
         rss_before = _rss_bytes()
+        path_scaling = _path_scaling(service, snapshot, path_counts)
         cpu_before = time.process_time()
         monitor = _ProcessMonitor()
         monitor.__enter__()
@@ -360,6 +413,9 @@ def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers:
         rss_after = _rss_bytes()
         cpu_seconds = time.process_time() - cpu_before
         database_bytes = store.storage_bytes()
+        logical_database_bytes = store.logical_storage_bytes()
+        wal_path = Path(f"{database_path}-wal")
+        wal_bytes = wal_path.stat().st_size if wal_path.exists() else 0
         progress_elapsed = {
             item.stage.value: item.elapsed_seconds for item in engine_progress
         }
@@ -376,6 +432,13 @@ def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers:
             "tier": name,
             "teams": len(snapshot.teams),
             "players": len(snapshot.players),
+            "roster_entries": len(snapshot.roster_entries),
+            "player_weeks": len(snapshot.player_weeks),
+            "free_agents": sum(
+                item.acquisition_status == "FREEAGENT" for item in snapshot.players
+            ),
+            "canonical_snapshot_bytes": len(snapshot_to_json(snapshot).encode("utf-8")),
+            "path_scaling": path_scaling,
             "paths": baseline_result.completed_paths,
             "baseline_seconds": baseline_seconds,
             "manual_seconds": manual_seconds,
@@ -401,6 +464,8 @@ def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers:
             "candidate_detail_p50_seconds": _percentile(detail_latencies, 0.50),
             "candidate_detail_p95_seconds": _percentile(detail_latencies, 0.95),
             "sqlite_bytes": database_bytes,
+            "sqlite_logical_payload_bytes": logical_database_bytes,
+            "sqlite_wal_bytes": wal_bytes,
             "traced_python_peak_bytes": traced_peak,
             "rss_before_bytes": rss_before,
             "rss_after_bytes": rss_after,
@@ -408,6 +473,11 @@ def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers:
             "peak_parent_rss_bytes": monitor.parent_peak or None,
             "peak_aggregate_child_rss_bytes": monitor.child_peak or None,
             "peak_child_processes": monitor.child_count_peak,
+            "peak_parent_threads": monitor.thread_count_peak or None,
+            "peak_parent_cpu_percent_sample": monitor.parent_cpu_percent_peak or None,
+            "peak_aggregate_child_cpu_percent_sample": (
+                monitor.aggregate_child_cpu_percent_peak or None
+            ),
             "resource_samples": monitor.samples,
             "transient_coordinator_references": coordinator.transient_reference_count(),
             "repetitions": repetitions,
@@ -417,7 +487,17 @@ def _measure_tier(name: str, snapshot, repetitions: int, *, scale: str, workers:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tier", choices=("small", "representative", "stress", "all"), default="all")
+    parser.add_argument(
+        "--path-ladder", default="1,2",
+        help="Comma-separated positive deterministic baseline path counts (default: 1,2).",
+    )
     args = parser.parse_args()
+    try:
+        path_counts = tuple(int(value) for value in args.path_ladder.split(","))
+    except ValueError as exc:
+        parser.error(f"--path-ladder must contain integers: {exc}")
+    if not path_counts or any(value < 1 for value in path_counts):
+        parser.error("--path-ladder must contain positive integers")
     source = _scenario_snapshot_with_bench()
     small = replace(
         source,
@@ -425,10 +505,11 @@ def main() -> None:
             matchup for matchup in source.fantasy_matchups if matchup.bracket_type is None
         ),
     )
-    representative = representative_snapshot(free_agent_count=20)
+    medium = representative_snapshot(free_agent_count=20)
+    representative = representative_snapshot(free_agent_count=80)
     tiers = {
         "small": (small, 5, "small", 1),
-        "representative": (representative, 2, "small", 2),
+        "representative": (medium, 2, "small", 2),
         "stress": (representative, 3, "large", 2),
     }
     selected = tiers if args.tier == "all" else {args.tier: tiers[args.tier]}
@@ -438,7 +519,10 @@ def main() -> None:
             "logical_cores": os.cpu_count(), "processor": platform.processor() or "unavailable",
             "physical_ram_bytes": None,
             "dependency_versions": {
-                name: version(name) for name in ("fastapi", "starlette", "uvicorn", "pydantic")
+                name: version(name) for name in (
+                    "fantasy-football-decision-engine", "fastapi", "starlette",
+                    "uvicorn", "pydantic",
+                )
             },
             "model": "provisional_normal", "master_seed": 8128,
             "execution_policy": {
@@ -448,7 +532,10 @@ def main() -> None:
             "note": "synthetic sanitized fixtures; not a live ESPN benchmark",
         },
         "tiers": [
-            _measure_tier(name, snapshot, count, scale=scale, workers=workers)
+            _measure_tier(
+                name, snapshot, count, scale=scale, workers=workers,
+                path_counts=path_counts,
+            )
             for name, (snapshot, count, scale, workers) in selected.items()
         ],
     }

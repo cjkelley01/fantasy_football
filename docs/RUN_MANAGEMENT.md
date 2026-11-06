@@ -127,6 +127,30 @@ Windows spawn behavior, and policy sizing. This is a local metadata store, not
 a distributed queue; restart classifies rather than resumes abandoned work.
 See `M6_3_BACKEND_VALIDATION.md` and `BACKEND_READINESS.md`.
 
+## M8.3 operational validation
+
+`M8_3_RUNTIME_AND_RECOVERY.md` records the current small, medium, representative
+14-team, and authorized-live evidence. The important operational boundaries are:
+
+- admission limits bound accepted work, while wall-clock cancellation is
+  cooperative and an active exact batch may complete after the nominal limit;
+- queued work cancels immediately, action search checks safe generation and
+  evaluation boundaries, and baseline/manual cancellation remains coarse;
+- restart classifies abandoned HTTP background work as `interrupted`; it does
+  not invent automatic resume from the separate engine checkpoint contract;
+- parent/child RSS and CPU are sampled measurements, not enforced ceilings;
+- the refresh coordinator cannot safely force-stop a thread blocked inside a
+  synchronous ESPN library request and reports bounded-shutdown expiry;
+- completed records, candidate/state results, and store leases remain durable
+  and transactional across restart.
+
+M8.3 corrected one measured Windows-only accounting race: a transient SQLite
+`-shm` sidecar may disappear before filesystem size accounting reaches it. A
+missing sidecar now contributes zero bytes; other filesystem failures are not
+suppressed. Simulation Center path presets are conservative presentation
+policies (5/25/100 path ceilings) and do not change these engine or admission
+contracts.
+
 ## Verification evidence
 
 - Sixteen focused background tests cover baseline/manual/action-search engine
