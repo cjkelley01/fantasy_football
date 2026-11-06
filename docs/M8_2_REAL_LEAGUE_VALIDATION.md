@@ -171,22 +171,60 @@ The earlier run could not finish within its validation bound; the corrected run 
 therefore at least 1.8x faster over the directly comparable 126-second partial
 trace, while reaching the next capability boundary rather than stalling in V(R).
 
-API 1.0 then accepted the retained one-path request and reached a terminal `failed`
-state in **67.58 seconds** with the stable application error
-`background_execution_failed`. The underlying supported diagnostic is exact:
-**the live canonical rules do not contain a configured consolation first-round
-matchup period**. Postseason initialization therefore fails closed. Suppressing the
-complete-path requirement cannot bypass this structural configuration error, so no
-probability result or exploratory multi-path estimate is reported. A bounded action
-search and manual scenario were not attempted because both require the same valid
-baseline season path. No manual postseason schedule was invented.
+The next blocker was traced to an adapter evidence boundary, not the graph engine.
+The retained raw ESPN settings contain three common postseason matchup periods:
+period 15 covers scoring week 15, period 16 covers week 16, and period 17 covers
+weeks 17-18. `playoffMatchupPeriodLengthByRound` establishes the corresponding
+championship durations. The retained future schedule contains no postseason rows,
+however, and ESPN exposes no separate bracket-specific consolation-period field in
+this response. The adapter correctly created championship rounds but previously
+always emitted `ConsolationRules.rounds=()`. `initialize_postseason()` then failed
+at its exact first-round-period invariant. Copying championship rounds would have
+invented authority that the payload does not establish.
+
+The correction extends the existing audited `consolation_structure` manual-rule
+contract with a structured `round_matchup_period_ids` value. It accepts only the
+approved `bounded_winner_up_loser_down_v1` structure, requires nonempty unique
+integer IDs, proves every ID is a canonical postseason period, and proves strictly
+ordered scoring weeks. Raw ESPN interpretation, manual approval, configuration
+digest, and evidence URL remain distinct canonical sources. Missing configuration
+still raises `consolation_first_round_period_unconfigured`; contradictory regular,
+unknown, duplicate, or out-of-order period mappings fail during translation.
+
+No ESPN refresh was needed. A temporary league/season-bound validated
+configuration bound the three retained periods, and the adapter retranslated the
+58 immutable retained raw responses. `publish_and_verify()` appended a third
+snapshot and reload verified canonical identity plus rounds `(1,15)`, `(2,16)`,
+and `(3,17)`. The two prior snapshots were not modified.
+
+API 1.0 then completed the live workflows:
+
+- one-path full-season baseline: **66.66 seconds**, 1/1 complete paths, zero
+  incomplete capabilities;
+- two-path exploratory baseline: **130.82 seconds**, 2/2 complete paths and all
+  14 team result records. Its inherited 0.9 half-width target is deliberately
+  permissive and reported precision reached; two paths are smoke evidence only,
+  not decision-grade statistical evidence;
+- bounded trade search: **146.33 seconds**, one generated/retained candidate and
+  one unique state, complete candidate/evaluation coverage, but statistical
+  precision and ranking unresolved with stop reason `statistical_limit`; and
+- representative two-team manual exchange: **151.83 seconds**, one matched path,
+  all 14 team results, two affected teams, and all 14 lineup explanations.
+
+The loopback War Room was then stopped and restarted against the same databases.
+Baseline, action-search, and manual-scenario results all returned HTTP 200 before
+and after restart without re-executing Monte Carlo. No private response, identity,
+player name, credential, or numerical team outcome is recorded here.
 
 ## Analytical workflow reconciliation
 
 The refresh change does not alter baseline, action-search, or manual-scenario
 contracts. Those browser paths continue to validate snapshot UUID plus canonical
-SHA-256, and retained results remain scoped to the selected snapshot. M8.2 does not
-invent a transaction, loosen a capability gate, or call a bounded search exhaustive.
+SHA-256, and retained results remain scoped to the selected snapshot. The backend
+now preserves the stable, sanitized postseason capability code and message in a
+failed background record; Simulation Center already presents that message and
+never offers failed work as a result. M8.2 does not invent a transaction, loosen a
+capability gate, or call a bounded search exhaustive.
 
 ## Visual and accessibility evidence
 
@@ -205,9 +243,9 @@ cover baseline, Opportunity Explorer, Trade Lab, and retained-history views.
 
 ## Verification evidence
 
-- Complete credential-free Python suite after the scalability correction:
-  **891 passed** with one upstream Starlette deprecation warning in 96.21 seconds.
-- Frontend: **86 tests across 5 files passed**, TypeScript typecheck passed, and
+- Complete credential-free Python suite after the consolation-period correction:
+  **899 passed** with one upstream Starlette deprecation warning in 83.48 seconds.
+- Frontend: **87 tests across 5 files passed**, TypeScript typecheck passed, and
   the production Vite build passed (1,960 modules; 341.19 KiB JavaScript,
   99.64 KiB gzip).
 - Static checks: Python compilation, Ruff `F`/`E9`, documentation-link tests, and
@@ -233,14 +271,16 @@ cover baseline, Opportunity Explorer, Trade Lab, and retained-history views.
   blocker in a week with essential vacancies. The blocker is now resolved without
   changing coverage or numerical results; exact execution reaches the postseason
   boundary.
-- Live baseline/action/manual completion is now blocked by absent canonical
-  consolation first-round period configuration, not V(R) runtime. That capability
-  must come from verified ESPN evidence or an independently approved validated
-  configuration.
+- The retained ESPN response does not independently establish bracket-specific
+  consolation periods. This league therefore requires the approved manual mapping;
+  another league with missing or conflicting evidence continues to fail closed.
+- The two-path baseline and one-path paired evaluations validate workflow and exact
+  reconciliation only. They do not reduce provisional outcome-model uncertainty or
+  provide useful Monte Carlo precision for decisions.
 - Sustained runtime, resource exhaustion, and recovery certification otherwise
   belong to M8.3.
 
-Recommendation: **not yet ready for acceptance**. Refresh publication, frontend
-reliability, and exact V(R) scalability are verified, but the representative live
-season cannot produce probabilities until its consolation schedule capability is
-resolved. M8.2 stays **IMPLEMENTED — REVIEW PENDING**.
+Recommendation: **ready for independent M8.2 acceptance review**. The representative
+live season now completes across baseline, bounded search, manual evaluation, API
+delivery, and restart retention without fabricated ESPN evidence. M8.2 stays
+**IMPLEMENTED — REVIEW PENDING** until that review; M8.3 has not started.

@@ -68,6 +68,39 @@ def latest_baseline_request(path: Path) -> BaselineAnalysisRequest:
     return BaselineAnalysisRequest.model_validate_json(row[0])
 
 
+def configured_request(args) -> BaselineAnalysisRequest:
+    """Apply explicit diagnostic-only identity and path-budget selections."""
+
+    request = latest_baseline_request(args.run_database)
+    if args.latest_snapshot:
+        store = SnapshotStore(args.database)
+        latest = store.list_snapshots(
+            league_id=request.snapshot.league_id,
+            season=request.snapshot.season,
+        )[0]
+        request = request.model_copy(update={
+            "snapshot": request.snapshot.model_copy(
+                update={"snapshot_id": latest.metadata.snapshot_id}
+            )
+        })
+    if args.one_path:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(update={"path_count": 1}),
+            "precision": request.precision.model_copy(update={
+                "minimum_paths": 1,
+                "maximum_paths": 1,
+                "evaluation_interval_paths": 1,
+            }),
+        })
+    if args.allow_incomplete:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(
+                update={"require_complete": False}
+            )
+        })
+    return request
+
+
 def instrument(overall: float) -> None:
     def wrap(name: str, stage: str):
         original = getattr(season, name)
@@ -148,13 +181,7 @@ def run_api_terminal(args, overall: float) -> int:
 
     from fantasy_football.app.http import create_app
 
-    request = latest_baseline_request(args.run_database)
-    if args.allow_incomplete:
-        request = request.model_copy(update={
-            "simulation": request.simulation.model_copy(
-                update={"require_complete": False}
-            )
-        })
+    request = configured_request(args)
     app = create_app(database_path=args.database)
     background_logger = logging.getLogger("fantasy_football.app.background")
     prior_level = background_logger.level
@@ -218,6 +245,8 @@ def main() -> int:
     parser.add_argument("--stack-interval-seconds", type=int, default=0)
     parser.add_argument("--api-terminal", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")
+    parser.add_argument("--latest-snapshot", action="store_true")
+    parser.add_argument("--one-path", action="store_true")
     args = parser.parse_args()
     global TRACE_MEMORY
     TRACE_MEMORY = args.trace_memory
@@ -230,7 +259,7 @@ def main() -> int:
     if args.api_terminal:
         return run_api_terminal(args, overall)
     try:
-        request = latest_baseline_request(args.run_database)
+        request = configured_request(args)
         store = SnapshotStore(args.database)
         service = ApplicationService(ApplicationDependencies(store))
         with timed("canonical_load", overall):

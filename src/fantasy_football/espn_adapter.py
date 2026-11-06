@@ -3,25 +3,30 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass, replace
-from datetime import datetime, timezone
 import hashlib
 import json
 import logging
 import math
-from numbers import Real
-from pathlib import Path
 import re
 import time
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
+from numbers import Real
+from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, TypeVar
 
+import yaml
 from espn_api.football import League
-from espn_api.requests.espn_requests import ESPNAccessDenied, ESPNInvalidLeague, ESPNUnknownError
+from espn_api.requests.espn_requests import (
+    ESPNAccessDenied,
+    ESPNInvalidLeague,
+    ESPNUnknownError,
+)
 from requests import ConnectionError as RequestsConnectionError
 from requests import RequestException, Timeout
-import yaml
 
 from fantasy_football.canonical.model import (
+    SCHEMA_VERSION,
     AcquisitionRules,
     ChampionshipRules,
     ConsolationRules,
@@ -50,7 +55,6 @@ from fantasy_football.canonical.model import (
     RosterEntry,
     RuleGap,
     RuleInterpretation,
-    SCHEMA_VERSION,
     ScoringRule,
     SlotKind,
     SourceReference,
@@ -59,10 +63,12 @@ from fantasy_football.canonical.model import (
     ValidationMetadata,
 )
 from fantasy_football.canonical.serialization import snapshot_to_json
-from fantasy_football.canonical.validation import CanonicalValidationError, validate_snapshot
+from fantasy_football.canonical.validation import (
+    CanonicalValidationError,
+    validate_snapshot,
+)
 from fantasy_football.config import Settings, SettingsError, load_settings
 from fantasy_football.logging_config import configure_logging
-
 
 LOGGER = logging.getLogger(__name__)
 LEAGUE_VIEWS = ("mTeam", "mRoster", "mMatchup", "mSettings", "mStandings")
@@ -691,6 +697,7 @@ def _apply_manual_overrides(
     overrides: Sequence[ManualRuleOverride],
     *,
     retrieved_at_utc: datetime,
+    periods: Sequence[MatchupPeriod],
 ) -> tuple[LeagueRules, tuple[SourceReference, ...]]:
     if not overrides:
         return rules, ()
@@ -742,7 +749,70 @@ def _apply_manual_overrides(
                 payload_sha256=None,
             )
         )
-    return replace(rules, interpretations=tuple(interpretations)), tuple(sources)
+    updated = replace(rules, interpretations=tuple(interpretations))
+    consolation = next(
+        (item for item in overrides if item.rule_id == "consolation_structure"),
+        None,
+    )
+    if consolation is not None and isinstance(consolation.approved_value, JsonObject):
+        approved = dict(consolation.approved_value.items)
+        period_ids_value = approved.get("round_matchup_period_ids")
+        if period_ids_value is None:
+            return updated, tuple(sources)
+        if set(approved) != {"round_matchup_period_ids", "structure"}:
+            raise EspnAdapterError(
+                "manual rule configuration rule=consolation_structure: "
+                "period mapping supports exactly structure and "
+                "round_matchup_period_ids"
+            )
+        structure = approved.get("structure")
+        if structure != "bounded_winner_up_loser_down_v1":
+            raise EspnAdapterError(
+                "manual rule configuration rule=consolation_structure: structured "
+                "configuration requires structure='bounded_winner_up_loser_down_v1'"
+            )
+        if not isinstance(period_ids_value, JsonArray) or not period_ids_value.values:
+            raise EspnAdapterError(
+                "manual rule configuration rule=consolation_structure: "
+                "round_matchup_period_ids must be a nonempty array"
+            )
+        if any(isinstance(value, bool) or not isinstance(value, int) for value in period_ids_value.values):
+            raise EspnAdapterError(
+                "manual rule configuration rule=consolation_structure: "
+                "round_matchup_period_ids must contain only integers"
+            )
+        period_ids = tuple(period_ids_value.values)
+        if len(set(period_ids)) != len(period_ids):
+            raise EspnAdapterError(
+                "manual rule configuration rule=consolation_structure: "
+                "round_matchup_period_ids must be unique"
+            )
+        period_by_id = {period.matchup_period_id: period for period in periods}
+        previous_week = 0
+        for period_id in period_ids:
+            period = period_by_id.get(period_id)
+            if period is None or period.phase is not MatchupPhase.POSTSEASON:
+                raise EspnAdapterError(
+                    "manual rule configuration rule=consolation_structure: "
+                    f"matchup period {period_id} is not a canonical postseason period"
+                )
+            if min(period.scoring_weeks) <= previous_week:
+                raise EspnAdapterError(
+                    "manual rule configuration rule=consolation_structure: "
+                    "round matchup periods must have strictly increasing scoring weeks"
+                )
+            previous_week = max(period.scoring_weeks)
+        updated = replace(
+            updated,
+            consolation=replace(
+                updated.consolation,
+                rounds=tuple(
+                    PostseasonRound(round_number, period_id)
+                    for round_number, period_id in enumerate(period_ids, start=1)
+                ),
+            ),
+        )
+    return updated, tuple(sources)
 
 
 def _translate_teams(raw: Mapping[str, Any], *, expected_count: int) -> tuple[FantasyTeam, ...]:
@@ -1123,7 +1193,11 @@ def translate_bundle(
         regular_end=regular_end,
     )
     rules, manual_sources = _apply_manual_overrides(
-        rules, gaps, manual_overrides, retrieved_at_utc=bundle.retrieval_finished_at_utc
+        rules,
+        gaps,
+        manual_overrides,
+        retrieved_at_utc=bundle.retrieval_finished_at_utc,
+        periods=periods,
     )
     teams = _translate_teams(initial, expected_count=rules.team_count)
     rosters = _translate_rosters(initial)

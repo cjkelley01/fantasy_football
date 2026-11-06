@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 from dataclasses import replace
-import math
 
 import pytest
 from requests import Timeout
 
-from fantasy_football.canonical.model import InterpretationStatus, ProjectionClass
+from fantasy_football.canonical.model import (
+    InterpretationStatus,
+    JsonArray,
+    JsonObject,
+    ProjectionClass,
+)
 from fantasy_football.espn_adapter import (
     EspnAdapterError,
     ManualRuleOverride,
@@ -214,6 +219,80 @@ rules:
 
     with pytest.raises(EspnAdapterError, match="identity mismatch"):
         load_manual_rule_config(path, league_id=88, season=2026)
+
+
+def _consolation_period_override(approved_value) -> ManualRuleOverride:
+    return ManualRuleOverride(
+        rule_id="consolation_structure",
+        gap_id="consolation_ladder",
+        config_key="postseason.consolation_ladder",
+        approved_value=approved_value,
+        expected_raw_value=False,
+        approval="m8.2-reviewed-configuration",
+        evidence_url="https://example.invalid/evidence/consolation",
+        source_sha256="d" * 64,
+    )
+
+
+def test_approved_consolation_configuration_binds_round_to_canonical_period() -> None:
+    snapshot = translate_bundle(
+        source_bundle(),
+        manual_overrides=(
+            _consolation_period_override(
+                JsonObject(
+                    (
+                        ("round_matchup_period_ids", JsonArray((3,))),
+                        ("structure", "bounded_winner_up_loser_down_v1"),
+                    )
+                )
+            ),
+        ),
+    ).snapshot
+
+    assert tuple(
+        (item.round_number, item.matchup_period_id)
+        for item in snapshot.rules.consolation.rounds
+    ) == ((1, 3),)
+    assert snapshot.rules.championship.rounds == snapshot.rules.consolation.rounds
+
+
+@pytest.mark.parametrize(
+    ("period_ids", "message"),
+    [
+        ([2], "not a canonical postseason period"),
+        ([3, 4], "matchup period 4 is not a canonical postseason period"),
+        ([3, 3], "must be unique"),
+    ],
+)
+def test_consolation_period_configuration_rejects_contradictory_mapping(
+    period_ids, message
+) -> None:
+    approved = JsonObject(
+        (
+            ("round_matchup_period_ids", JsonArray(tuple(period_ids))),
+            ("structure", "bounded_winner_up_loser_down_v1"),
+        )
+    )
+    with pytest.raises(EspnAdapterError, match=message):
+        translate_bundle(
+            source_bundle(),
+            manual_overrides=(_consolation_period_override(approved),),
+        )
+
+
+def test_consolation_period_configuration_rejects_unknown_fields() -> None:
+    approved = JsonObject(
+        (
+            ("invented_default", True),
+            ("round_matchup_period_ids", JsonArray((3,))),
+            ("structure", "bounded_winner_up_loser_down_v1"),
+        )
+    )
+    with pytest.raises(EspnAdapterError, match="supports exactly"):
+        translate_bundle(
+            source_bundle(),
+            manual_overrides=(_consolation_period_override(approved),),
+        )
 
 
 def test_retry_policy_retries_transient_failures_only() -> None:
