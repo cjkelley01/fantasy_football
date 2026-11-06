@@ -19,6 +19,7 @@ from fantasy_football.postseason import (
     ConsolationLadderConfiguration,
     LadderTransition,
     MatchupStatus,
+    PostseasonCapabilityError,
     PostseasonError,
     WeeklyTeamScore,
     apply_postseason_team_scores,
@@ -346,6 +347,20 @@ def test_explicit_configuration_cannot_override_consolation_enablement(
             _standings(snapshot),
             consolation_configuration=config,
         )
+
+
+def test_enabled_consolation_without_round_periods_has_stable_capability_error() -> None:
+    snapshot = _snapshot()
+    rules = replace(
+        snapshot.rules,
+        consolation=replace(snapshot.rules.consolation, rounds=()),
+    )
+
+    with pytest.raises(PostseasonCapabilityError) as failure:
+        initialize_postseason(replace(snapshot, rules=rules), _standings(snapshot))
+
+    assert failure.value.code == "consolation_first_round_period_unconfigured"
+    assert "approved first-round matchup period" in failure.value.safe_message
 
 
 @pytest.mark.parametrize("participant_count", (4, 6, 8))

@@ -28,6 +28,26 @@ league rules. Multiweek games accumulate finite supplied weekly totals with
 higher original postseason seed only when the canonical interpretation is
 understood as `higher_seed`.
 
+ESPN's `scheduleSettings.matchupPeriods` and
+`playoffMatchupPeriodLengthByRound` establish the available postseason periods
+and championship round durations, but do not by themselves prove which periods
+the consolation ladder uses. When future schedule rows do not identify bracket
+membership, an audited manual `consolation_structure` configuration may bind
+the ladder rounds explicitly:
+
+```yaml
+approved_value:
+  structure: bounded_winner_up_loser_down_v1
+  round_matchup_period_ids: [15, 16, 17]
+```
+
+The adapter accepts this only through the existing league/season-bound manual
+rule configuration. Each ID must name a distinct canonical postseason period,
+and its scoring weeks must be strictly later than the preceding round. Raw ESPN
+evidence and the manual source digest/approval remain separate in the snapshot.
+Absent or contradictory mappings fail closed; championship periods are never
+silently copied into consolation rules.
+
 ## ESPN consolation ladder
 
 ESPN's official rules establish that every non-championship qualifier enters a

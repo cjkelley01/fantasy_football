@@ -28,6 +28,15 @@ class PostseasonError(ValueError):
     """Raised when postseason inputs are invalid or required rules are unresolved."""
 
 
+class PostseasonCapabilityError(PostseasonError):
+    """Stable, non-sensitive failure for a known unsupported postseason capability."""
+
+    def __init__(self, code: str, message: str):
+        self.code = code
+        self.safe_message = message
+        super().__init__(message)
+
+
 class BracketType(StrEnum):
     CHAMPIONSHIP = "championship"
     CONSOLATION = "consolation"
@@ -581,8 +590,9 @@ def initialize_postseason(
             )
         consolation_periods = _periods(snapshot, consolation_rules.rounds)
         if 1 not in consolation_periods:
-            raise PostseasonError(
-                "consolation ladder requires a configured first-round period"
+            raise PostseasonCapabilityError(
+                "consolation_first_round_period_unconfigured",
+                "Consolation simulation requires an approved first-round matchup period mapping.",
             )
         consolation_graph = generate_consolation_graph(
             tuple(item.original_seed for item in consolation_seeds),

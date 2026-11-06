@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from datetime import timedelta
 import sqlite3
 import subprocess
 import sys
-from threading import Event
 import time
+from datetime import timedelta
+from threading import Event
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,9 +16,17 @@ from fantasy_football.app.background import (
     BackgroundRunStore,
     _now,
 )
-from fantasy_football.app.contracts import BaselineAnalysisRequest, ManualScenarioRequest
-from fantasy_football.app.service import ApplicationDependencies, ApplicationService, ApplicationServiceError
+from fantasy_football.app.contracts import (
+    BaselineAnalysisRequest,
+    ManualScenarioRequest,
+)
 from fantasy_football.app.http import create_app
+from fantasy_football.app.service import (
+    ApplicationDependencies,
+    ApplicationService,
+    ApplicationServiceError,
+)
+from fantasy_football.postseason import PostseasonCapabilityError
 from tests.test_app_service import (
     FixtureStore,
     _action_request,
@@ -363,6 +371,35 @@ def test_unexpected_worker_failure_becomes_safe_terminal_record(background, monk
     assert terminal.status == "failed"
     assert terminal.error_code == "background_execution_failed"
     assert "secret" not in terminal.error_message
+    _wait_released(coordinator)
+
+
+def test_known_postseason_capability_failure_preserves_safe_semantic_code(
+    background, monkeypatch
+) -> None:
+    snapshot, service, store, coordinator = background
+    monkeypatch.setattr(
+        service,
+        "run_baseline",
+        lambda _request: (_ for _ in ()).throw(
+            PostseasonCapabilityError(
+                "consolation_first_round_period_unconfigured",
+                "Consolation simulation requires an approved first-round matchup period mapping.",
+            )
+        ),
+    )
+    request = BaselineAnalysisRequest(
+        snapshot=_selector(snapshot), simulation=_simulation(), precision=_precision(),
+        outcome_model=_model(),
+    )
+
+    terminal = _wait(store, coordinator.submit("baseline", request).run_id)
+
+    assert terminal.status == "failed"
+    assert terminal.error_code == "consolation_first_round_period_unconfigured"
+    assert terminal.error_message == (
+        "Consolation simulation requires an approved first-round matchup period mapping."
+    )
     _wait_released(coordinator)
 
 

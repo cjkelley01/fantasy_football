@@ -1,17 +1,21 @@
 from __future__ import annotations
 
-from dataclasses import replace
-from datetime import datetime, timedelta, timezone
 import hashlib
 import sqlite3
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import pytest
 
 import fantasy_football.snapshot_store as snapshot_store_module
-from fantasy_football.canonical.model import SCHEMA_VERSION
+from fantasy_football.canonical.model import SCHEMA_VERSION, JsonArray, JsonObject
 from fantasy_football.canonical.serialization import snapshot_to_json
-from fantasy_football.espn_adapter import AdapterResult, translate_bundle
+from fantasy_football.espn_adapter import (
+    AdapterResult,
+    ManualRuleOverride,
+    translate_bundle,
+)
 from fantasy_football.snapshot_store import (
     DATABASE_SCHEMA_VERSION,
     PostCommitVerificationError,
@@ -22,7 +26,6 @@ from fantasy_football.snapshot_store import (
     publish_and_verify,
 )
 from tests.adapter_fixtures import source_bundle
-
 
 UTC = timezone.utc
 PUBLISHED = datetime(2026, 10, 17, 13, 0, tzinfo=UTC)
@@ -58,6 +61,41 @@ def test_publish_load_and_reopen_preserves_complete_canonical_and_sources(store,
     raw_values = {item.raw_projection for item in loaded.snapshot.player_weeks}
     assert None in raw_values and 0.0 in raw_values and -1.0 in raw_values
     assert loaded.canonical_json.decode("utf-8").endswith("\n")
+
+
+def test_publish_reload_preserves_approved_consolation_round_mapping(store) -> None:
+    approved = JsonObject(
+        (
+            ("round_matchup_period_ids", JsonArray((3,))),
+            ("structure", "bounded_winner_up_loser_down_v1"),
+        )
+    )
+    override = ManualRuleOverride(
+        "consolation_structure",
+        "consolation_ladder",
+        "postseason.consolation_ladder",
+        approved,
+        False,
+        "m8.2-reviewed-configuration",
+        "https://example.invalid/evidence/consolation",
+        "e" * 64,
+    )
+    configured = translate_bundle(source_bundle(), manual_overrides=(override,))
+
+    store.publish(configured, snapshot_id=ID_1, published_at_utc=PUBLISHED)
+    loaded = SnapshotStore(store.path).load(ID_1)
+
+    assert tuple(
+        (item.round_number, item.matchup_period_id)
+        for item in loaded.snapshot.rules.consolation.rounds
+    ) == ((1, 3),)
+    interpretation = next(
+        item
+        for item in loaded.snapshot.rules.interpretations
+        if item.rule_id == "consolation_structure"
+    )
+    assert interpretation.manual_config_approval == "m8.2-reviewed-configuration"
+    assert interpretation.normalized_value == approved
 
 
 def test_existing_schema_v2_document_loads_byte_for_byte_without_migration(store, result) -> None:

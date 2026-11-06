@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-from concurrent.futures import Future, ThreadPoolExecutor
-from contextlib import contextmanager
-from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import logging
 import os
-from pathlib import Path
 import sqlite3
+from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from threading import Event, Lock
 from typing import Literal
 from uuid import uuid4
@@ -30,7 +30,7 @@ from fantasy_football.app.contracts import (
     TeamScenarioResult,
 )
 from fantasy_football.app.service import ApplicationService, ApplicationServiceError
-
+from fantasy_football.postseason import PostseasonCapabilityError
 
 _ACTIVE = ("queued", "running", "cancel_requested")
 _TERMINAL = ("completed", "cancelled", "failed", "interrupted")
@@ -755,10 +755,15 @@ class BackgroundRunCoordinator:
                 )
             else:
                 self.store.discard_candidates(run_id)
+                error_code = "background_execution_failed"
+                error_message = "The analytical worker failed. Inspect local application logs."
+                if isinstance(exc, PostseasonCapabilityError):
+                    error_code = exc.code
+                    error_message = exc.safe_message
                 committed = self.store.finish(
                     run_id, "failed", stop_reason="engine_error",
-                    error_code="background_execution_failed",
-                    error_message="The analytical worker failed. Inspect local application logs.",
+                    error_code=error_code,
+                    error_message=error_message,
                     maximum_storage_bytes=self.policy.maximum_result_store_bytes,
                 )
                 if not committed and self.store.get(run_id).status == "cancel_requested":
