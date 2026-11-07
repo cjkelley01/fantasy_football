@@ -7,7 +7,9 @@ import json
 import logging
 import os
 import sqlite3
-from concurrent.futures import Future, ThreadPoolExecutor
+import time
+from concurrent.futures import CancelledError, Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -639,6 +641,8 @@ class BackgroundRunCoordinator:
         self._lock = Lock()
         self._events: dict[str, Event] = {}
         self._futures: dict[str, Future] = {}
+        self._closing = False
+        self._lease_released = False
 
     def _validate(self, run_type: str, request) -> None:
         self.service._load(request.snapshot)
@@ -676,6 +680,11 @@ class BackgroundRunCoordinator:
     def submit(self, run_type: Literal["baseline", "manual_scenario", "action_search"], request) -> BackgroundRunSubmission:
         self._validate(run_type, request)
         with self._lock:
+            if self._closing:
+                raise ApplicationServiceError(
+                    "background_coordinator_closing", "resource_exhausted",
+                    "The application is shutting down and cannot accept new analyses.",
+                )
             if self.store.active_count() >= self.policy.maximum_active_runs + self.policy.maximum_pending_runs:
                 raise ApplicationServiceError("background_queue_full", "resource_exhausted", "The bounded background run queue is full.")
             run_id, event = str(uuid4()), Event()
@@ -793,10 +802,17 @@ class BackgroundRunCoordinator:
         return self.store.get(run_id)
 
     def _release(self, run_id: str, future: Future) -> None:
+        release_lease = False
         with self._lock:
             if self._futures.get(run_id) is future:
                 self._futures.pop(run_id, None)
                 self._events.pop(run_id, None)
+            if self._closing and not self._futures and not self._lease_released:
+                self._lease_released = True
+                release_lease = True
+        if release_lease:
+            self.store.release_lease()
+            LOGGER.info("Background shutdown stage=lease_released reason=all_runs_terminal")
 
     def transient_reference_count(self) -> int:
         with self._lock:
@@ -848,9 +864,58 @@ class BackgroundRunCoordinator:
             if retained_state_ids is not None:
                 retained_state_ids.add(item.completed_state_sha256)
 
-    def close(self, *, wait: bool = True) -> None:
-        for run_id in self.store.active_ids():
+    def close(self, *, wait_seconds: float = 2.0) -> bool:
+        """Request cancellation and wait only a bounded time for safe quiescence.
+
+        A timed-out analytical thread retains the process and store lease until
+        it actually terminates. The launcher may then recover the authenticated
+        process as an interruption; this method never releases a lease while a
+        worker can still write to the run database.
+        """
+
+        if wait_seconds < 0:
+            raise ValueError("wait_seconds must be nonnegative")
+        with self._lock:
+            self._closing = True
+        active_ids = self.store.active_ids()
+        LOGGER.info(
+            "Background shutdown stage=cancellation_requested active_runs=%d",
+            len(active_ids),
+        )
+        for run_id in active_ids:
             self.cancel(run_id)
-        self._executor.shutdown(wait=wait, cancel_futures=True)
-        self.store.release_lease()
+        self._executor.shutdown(wait=False, cancel_futures=True)
+        with self._lock:
+            futures = tuple(self._futures.values())
+        deadline = time.monotonic() + wait_seconds
+        finished = True
+        for future in futures:
+            try:
+                future.result(timeout=max(0.0, deadline - time.monotonic()))
+            except FutureTimeoutError:
+                finished = False
+                break
+            except CancelledError:
+                # Queued work cancelled by executor shutdown is durably cancelled.
+                continue
+
+        release_lease = False
+        with self._lock:
+            pending = sum(not future.done() for future in self._futures.values())
+            if pending:
+                finished = False
+            elif not self._lease_released:
+                self._lease_released = True
+                release_lease = True
+        if release_lease:
+            self.store.release_lease()
+        if finished:
+            LOGGER.info("Background shutdown stage=complete pending_runs=0")
+        else:
+            LOGGER.warning(
+                "Background shutdown stage=pending pending_runs=%d "
+                "code=background_shutdown_pending",
+                pending,
+            )
+        return finished
 

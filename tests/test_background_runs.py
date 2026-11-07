@@ -213,6 +213,49 @@ def test_running_cancellation_cannot_be_overwritten_by_completion(background, mo
     _wait_released(coordinator)
 
 
+def test_close_is_bounded_and_retains_lease_until_blocked_worker_finishes(
+    background, monkeypatch
+) -> None:
+    snapshot, service, store, coordinator = background
+    entered, release = Event(), Event()
+    original = service.run_baseline
+
+    def blocked(request):
+        entered.set()
+        release.wait(5)
+        return original(request)
+
+    monkeypatch.setattr(service, "run_baseline", blocked)
+    request = BaselineAnalysisRequest(
+        snapshot=_selector(snapshot), simulation=_simulation(), precision=_precision(),
+        outcome_model=_model(),
+    )
+    run = coordinator.submit("baseline", request)
+    assert entered.wait(2)
+
+    started = time.monotonic()
+    assert coordinator.close(wait_seconds=0.01) is False
+    assert time.monotonic() - started < 0.5
+    assert store.get(run.run_id).status == "cancel_requested"
+    with sqlite3.connect(store.path) as connection:
+        assert connection.execute("SELECT count(*) FROM application_lease").fetchone() == (1,)
+    with pytest.raises(ApplicationServiceError, match="shutting down") as rejected:
+        coordinator.submit("baseline", request)
+    assert rejected.value.code == "background_coordinator_closing"
+
+    release.set()
+    assert _wait(store, run.run_id).status == "cancelled"
+    _wait_released(coordinator)
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        with sqlite3.connect(store.path) as connection:
+            if connection.execute("SELECT count(*) FROM application_lease").fetchone() == (0,):
+                break
+        time.sleep(0.01)
+    else:
+        raise AssertionError("store lease was not released after the final worker terminated")
+
+
 def test_cancellation_wins_at_atomic_completion_boundary(background, monkeypatch) -> None:
     snapshot, _service, store, coordinator = background
     completion_entered, allow_commit = Event(), Event()
@@ -391,6 +434,7 @@ def test_unexpected_worker_failure_becomes_safe_terminal_record(background, monk
     assert terminal.error_code == "background_execution_failed"
     assert "secret" not in terminal.error_message
     _wait_released(coordinator)
+    assert coordinator.close(wait_seconds=0.1) is True
 
 
 def test_known_postseason_capability_failure_preserves_safe_semantic_code(

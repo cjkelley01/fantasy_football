@@ -46,6 +46,10 @@ if (Test-Path $metadataPath) {
         if ([string]$existing.database -ne $databasePath -or [string]$existing.frontend -ne $frontendPath) {
             throw "War Room is already running with different database or frontend paths. Stop it before changing configuration."
         }
+        $null = Assert-WarRoomProcessCommandIdentity $existing $process
+        if (-not (Test-WarRoomPortOwner -Port $Port -ProcessId $process.Id)) {
+            throw "The launcher-owned War Room process is alive without its listener. Run .\scripts\stop-local.ps1 to perform authenticated recovery, then start again."
+        }
         Assert-WarRoomPortOwner -Port $Port -ProcessId $process.Id
         $null = Assert-WarRoomHealthIdentity -Port $Port -ExpectedRunId ([string]$existing.run_id) -ExpectedProcessId $process.Id
         Write-Host "War Room is already running at $appUrl"
@@ -71,7 +75,17 @@ $arguments = @(
     "--stderr-log", ('"' + $stderr + '"')
 )
 $process = Start-Process -FilePath $python -ArgumentList $arguments -WorkingDirectory $repo -WindowStyle Hidden -PassThru
-$metadata = [ordered]@{ schema_version = 1; run_id = $runId; pid = $process.Id; process_started_at_utc = $process.StartTime.ToUniversalTime().ToString("o"); port = $Port; database = $databasePath; frontend = $frontendPath; shutdown_file = $shutdownPath; stdout_log = $stdout; stderr_log = $stderr }
+try {
+    $processRecord = Get-CimInstance Win32_Process -Filter "ProcessId = $($process.Id)" -ErrorAction Stop
+    if ($null -eq $processRecord -or [string]::IsNullOrWhiteSpace([string]$processRecord.CommandLine)) {
+        throw "missing command line"
+    }
+} catch {
+    $launched = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+    if ($launched) { Stop-Process -Id $launched.Id -Force -ErrorAction SilentlyContinue }
+    throw "The launched War Room process command identity could not be recorded safely."
+}
+$metadata = [ordered]@{ schema_version = 2; run_id = $runId; pid = $process.Id; process_started_at_utc = $process.StartTime.ToUniversalTime().ToString("o"); port = $Port; database = $databasePath; frontend = $frontendPath; shutdown_file = $shutdownPath; stdout_log = $stdout; stderr_log = $stderr; python_executable = [IO.Path]::GetFullPath([string]$process.Path); python_launcher = $python; command_line_sha256 = Get-WarRoomTextSha256 -Value ([string]$processRecord.CommandLine) }
 $temporaryMetadata = "$metadataPath.tmp"
 $metadata | ConvertTo-Json | Set-Content -LiteralPath $temporaryMetadata -Encoding UTF8
 Move-Item -LiteralPath $temporaryMetadata -Destination $metadataPath -Force
@@ -85,6 +99,12 @@ while ([DateTime]::UtcNow -lt $deadline) {
         Assert-WarRoomPortOwner -Port $Port -ProcessId $serverProcess.Id
         $metadata.pid = $serverProcess.Id
         $metadata.process_started_at_utc = $serverProcess.StartTime.ToUniversalTime().ToString("o")
+        $metadata.python_executable = [IO.Path]::GetFullPath([string]$serverProcess.Path)
+        $serverRecord = Get-CimInstance Win32_Process -Filter "ProcessId = $($serverProcess.Id)" -ErrorAction Stop
+        if ($null -eq $serverRecord -or [string]::IsNullOrWhiteSpace([string]$serverRecord.CommandLine)) {
+            throw "The healthy War Room process command identity could not be recorded safely."
+        }
+        $metadata.command_line_sha256 = Get-WarRoomTextSha256 -Value ([string]$serverRecord.CommandLine)
         $metadata | ConvertTo-Json | Set-Content -LiteralPath $temporaryMetadata -Encoding UTF8
         Move-Item -LiteralPath $temporaryMetadata -Destination $metadataPath -Force
         $process = $serverProcess

@@ -35,23 +35,35 @@ loopback process, waits for `/api/v1/health`, then opens
 failure leaves the healthy service available at the printed URL.
 
 Stop validates the launcher-owned PID, process creation time, exact loopback
-listener ownership, random launcher run identity, and API 1.0 health identity,
-then writes a run-specific cooperative shutdown request. Uvicorn completes its
-lifespan so the background coordinator releases its SQLite lease. Active
-analyses do not
-continue after process shutdown; durable metadata classifies interruption on
-the next start. A timeout leaves the process untouched for diagnosis. No
-unrelated port owner is terminated.
+listener ownership, random launcher run identity, API 1.0 health identity,
+observed interpreter, and an SHA-256 identity of the exact Windows command
+line, then writes a run-specific cooperative shutdown request. Uvicorn closes
+the listener and runs its lifespan. Refresh and analysis coordinators request
+cancellation and wait only bounded intervals. A quiescent background
+coordinator releases its SQLite lease; a still-running worker retains the lease
+and process until recovery so it cannot mutate the run database after another
+server acquires it.
+
+If graceful shutdown exceeds `-TimeoutSeconds`, the default launcher behavior
+is authenticated process-tree recovery. It revalidates PID, creation time,
+executable, exact command identity, and descendant lineage before terminating
+only that launcher-owned tree. Databases and completed results are preserved;
+unfinished durable runs become `interrupted` on restart unless they had already
+committed another valid terminal state. `-PreserveOnTimeout` is the explicit
+diagnostic option that leaves an authenticated process alive. No unrelated port
+owner or unverifiable process is terminated.
 
 Launcher metadata lives at `outputs/runtime/war-room-server.json`; it contains
 no credentials. Startup initially records the spawned process, then replaces it
-with the actual health-reported server PID and independently observed process
-creation time after that PID is proven to own the configured `127.0.0.1`
-listener. A reused PID, foreign listener, mismatched run identity, unexpected
-health payload, or ambiguous process fails closed. Dead-PID metadata is removed
-as stale. A second start returns the existing URL only when the PID, timestamp,
-port, database, frontend, listener owner, run identity, and health identity all
-match.
+with the actual health-reported server PID, independently observed process
+creation time, observed executable, and exact command-line digest after that
+PID is proven to own the configured `127.0.0.1` listener. A reused PID, foreign
+listener, changed command line, mismatched run identity, unexpected health
+payload, or ambiguous process fails closed. Dead-PID metadata is removed as
+stale. A second start returns the existing URL only when all recorded identity,
+path, listener, and health evidence matches. If the authenticated process is
+alive after its listener has closed, startup directs the user to `stop-local`
+recovery rather than treating the port as evidence of ownership.
 
 ## Configuration and persistence
 
@@ -94,6 +106,11 @@ logs never dump environment values or ESPN payloads.
   intentionally fails if such a process locks a native dependency; close it
   and rerun rather than bypassing the lockfile workflow.
 - Per-run stdout/stderr logs are under `outputs/logs`.
+- Shutdown logs report coarse stages and pending-run counts without private
+  league or player data.
+- To preserve a timed-out process for diagnosis, run
+  `.\scripts\stop-local.ps1 -PreserveOnTimeout`; rerun ordinary
+  `.\scripts\stop-local.ps1` to perform authenticated recovery.
 - Re-run setup after dependency or frontend changes; persisted data remains.
 - Development may still run Vite with its accepted proxy. Ordinary use does
   not require Vite.
