@@ -33,7 +33,6 @@ from tests.test_local_installation import (
     _start_arguments,
 )
 
-
 TERMINAL = {"completed", "cancelled", "failed", "interrupted"}
 pytestmark = pytest.mark.windows_process
 
@@ -49,7 +48,10 @@ def _run_stalled_refresh_server(
     import uvicorn
 
     from fantasy_football.app.http import create_app
-    from fantasy_football.app.refresh import RefreshDependencies, SnapshotRefreshCoordinator
+    from fantasy_football.app.refresh import (
+        RefreshDependencies,
+        SnapshotRefreshCoordinator,
+    )
     from fantasy_football.app.service import ApplicationDependencies, ApplicationService
     from fantasy_football.config import Settings
 
@@ -211,6 +213,17 @@ def _wait_health(base_url: str, timeout: float = 15) -> dict:
     raise AssertionError("server did not become healthy")
 
 
+def _wait_health_unavailable(base_url: str, timeout: float = 10) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            _request_json(f"{base_url}/api/v1/health")
+        except OSError:
+            return
+        time.sleep(0.05)
+    raise AssertionError("server listener remained available")
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows process recovery evidence")
 def test_unexpected_process_exit_recovers_durable_runs_and_sqlite(tmp_path: Path) -> None:
     database, runtime, port, snapshot, arguments = _launcher_fixture(tmp_path)
@@ -315,8 +328,69 @@ def test_launcher_graceful_shutdown_releases_children_and_lease(tmp_path: Path) 
         assert stopped.returncode == 0, stopped.stdout + stopped.stderr
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows listener-loss recovery evidence")
+def test_launcher_recovers_authenticated_process_after_listener_closes(tmp_path: Path) -> None:
+    database, runtime, port, snapshot, arguments = _launcher_fixture(tmp_path)
+    base_url = f"http://127.0.0.1:{port}"
+    active_id = ""
+    completed_id = ""
+    parent: psutil.Process | None = None
+    children: tuple[psutil.Process, ...] = ()
+    try:
+        _start(arguments)
+        completed_id = _request_json(
+            f"{base_url}/api/v1/runs/baseline", _baseline(snapshot)
+        )["run_id"]
+        assert _wait_status(base_url, completed_id, {"completed"})["result_available"]
+        active_id = _request_json(
+            f"{base_url}/api/v1/runs/baseline", _baseline(snapshot, 10_000)
+        )["run_id"]
+        _wait_status(base_url, active_id, {"running"})
+        parent = _owned_process(runtime)
+        children = tuple(parent.children(recursive=True))
+
+        preserved = _powershell(
+            ROOT / "scripts" / "stop-local.ps1",
+            "-RuntimeDirectory", str(runtime), "-TimeoutSeconds", "1",
+            "-PreserveOnTimeout", timeout=15,
+        )
+        assert preserved.returncode != 0
+        assert "preserved by request" in preserved.stderr
+        _wait_health_unavailable(base_url)
+        assert parent.is_running()
+
+        blocked_restart = _powershell(
+            ROOT / "scripts" / "start-local.ps1", *arguments, timeout=15
+        )
+        assert blocked_restart.returncode != 0
+        assert "alive without its listener" in blocked_restart.stderr
+
+        recovered = _stop(runtime, timeout=10)
+        assert recovered.returncode == 0, recovered.stdout + recovered.stderr
+        assert "Force-terminated authenticated War Room" in (
+            recovered.stdout + recovered.stderr
+        )
+        parent.wait(timeout=10)
+        _wait_processes_exit(children)
+        assert not _metadata(runtime).exists()
+
+        _start(arguments)
+        interrupted = _wait_status(base_url, active_id, {"interrupted", "cancelled"})
+        assert interrupted["result_available"] is False
+        assert _wait_status(base_url, completed_id, {"completed"})["result_available"]
+        with sqlite3.connect(database.with_suffix(".runs.sqlite3")) as connection:
+            assert connection.execute("PRAGMA quick_check").fetchone() == ("ok",)
+        replacement_id = _request_json(
+            f"{base_url}/api/v1/runs/baseline", _baseline(snapshot)
+        )["run_id"]
+        assert _wait_status(base_url, replacement_id, {"completed"})["result_available"]
+    finally:
+        stopped = _stop(runtime)
+        assert stopped.returncode == 0, stopped.stdout + stopped.stderr
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows stalled-refresh evidence")
-def test_stalled_refresh_exposes_launcher_timeout_then_recovers_safely(tmp_path: Path) -> None:
+def test_stalled_refresh_closes_listener_but_retains_process_until_upstream_returns(tmp_path: Path) -> None:
     database = tmp_path / "persistent" / "league.sqlite3"
     snapshot = _publish_snapshot(database)
     canonical_sha = SnapshotStore(database).load(snapshot.snapshot_id).metadata.canonical_sha256
@@ -339,16 +413,6 @@ def test_stalled_refresh_exposes_launcher_timeout_then_recovers_safely(tmp_path:
     try:
         health = _wait_health(base_url)
         assert health["process_id"] == process.pid
-        metadata = {
-            "schema_version": 1, "run_id": run_id, "pid": process.pid,
-            "process_started_at_utc": _process_started_at_for_evidence(process.pid),
-            "port": port, "database": str(database.resolve()),
-            "frontend": str(frontend.resolve()), "shutdown_file": str(shutdown.resolve()),
-            "stdout_log": str((logs / "stdout.log").resolve()),
-            "stderr_log": str((logs / "stderr.log").resolve()),
-        }
-        _metadata(runtime).write_text(json.dumps(metadata), encoding="utf-8")
-
         submitted = _request_json(f"{base_url}/api/v1/refreshes", {
             "api_schema_version": "1.0", "profile_id": "configured_local_league",
             "league_id": 77, "season": 2026, "first_simulation_week": 2,
@@ -367,9 +431,9 @@ def test_stalled_refresh_exposes_launcher_timeout_then_recovers_safely(tmp_path:
         )
         assert cancelled["status"] == "cancel_requested"
 
-        timed_out = _stop(runtime, timeout=1)
-        assert timed_out.returncode != 0
-        assert "left running" in timed_out.stderr
+        shutdown.write_text(run_id, encoding="ascii")
+        _wait_health_unavailable(base_url)
+        time.sleep(1.2)
         assert process.is_alive()
 
         release.write_text("release", encoding="ascii")
@@ -385,7 +449,7 @@ def test_stalled_refresh_exposes_launcher_timeout_then_recovers_safely(tmp_path:
         assert len(_request_json(f"{base_url}/api/v1/snapshots")) == 1
         print(json.dumps({
             "refresh_cancel_status": "cancel_requested",
-            "launcher_timeout_seconds": 1,
+            "bounded_refresh_close_seconds": 1,
             "process_remained_alive_until_upstream_release": True,
             "published_snapshot_count_after_restart": 1,
         }, sort_keys=True))
@@ -397,16 +461,6 @@ def test_stalled_refresh_exposes_launcher_timeout_then_recovers_safely(tmp_path:
             process.join(timeout=5)
         stopped = _stop(runtime)
         assert stopped.returncode == 0, stopped.stdout + stopped.stderr
-
-
-def _process_started_at_for_evidence(process_id: int) -> str:
-    return subprocess.check_output(
-        [
-            "powershell.exe", "-NoProfile", "-Command",
-            f"(Get-Process -Id {process_id}).StartTime.ToUniversalTime().ToString('o')",
-        ],
-        text=True,
-    ).strip()
 
 
 @pytest.mark.skipif(

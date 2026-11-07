@@ -293,7 +293,10 @@ def test_failed_readiness_cleans_terminal_process_metadata(tmp_path: Path) -> No
             ),
         )
         assert result.returncode != 0
-        assert "did not become healthy" in result.stderr
+        assert (
+            "did not become healthy" in result.stderr
+            or "command identity could not be recorded safely" in result.stderr
+        )
         assert not metadata.exists()
     finally:
         metadata.unlink(missing_ok=True)
@@ -339,7 +342,7 @@ def test_existing_pid_with_foreign_health_is_not_trusted(tmp_path: Path) -> None
 
 @pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
-def test_stop_timeout_preserves_live_owned_process(tmp_path: Path) -> None:
+def test_stop_rejects_tampered_command_identity_and_preserves_process(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
     metadata = _metadata(runtime)
     start, stop = ROOT / "scripts" / "start-local.ps1", ROOT / "scripts" / "stop-local.ps1"
@@ -355,11 +358,10 @@ def test_stop_timeout_preserves_live_owned_process(tmp_path: Path) -> None:
     altered["shutdown_file"] = str(tmp_path / "ignored-shutdown.txt")
     metadata.write_text(json.dumps(altered), encoding="utf-8")
     try:
-        timed_out = _powershell(
-            stop, "-TimeoutSeconds", "1", "-RuntimeDirectory", str(runtime)
-        )
-        assert timed_out.returncode != 0
-        assert "left running" in timed_out.stderr
+        rejected = _powershell(stop, "-RuntimeDirectory", str(runtime))
+        assert rejected.returncode != 0
+        assert "command identity does not match launcher metadata" in rejected.stderr
+        assert "no process was trusted or stopped" in rejected.stderr
         with urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=5) as response:
             assert json.load(response)["service"] == "fantasy-football-application"
     finally:

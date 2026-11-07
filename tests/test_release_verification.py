@@ -42,14 +42,14 @@ def test_release_script_default_and_process_tiers_are_disjoint_and_complete() ->
         "test_stale_metadata_is_removed_before_port_conflict_check",
         "test_failed_readiness_cleans_terminal_process_metadata",
         "test_existing_pid_with_foreign_health_is_not_trusted",
-        "test_stop_timeout_preserves_live_owned_process",
+        "test_stop_rejects_tampered_command_identity_and_preserves_process",
         "test_start_rejects_missing_production_assets_before_process_creation",
     }
     assert MARKER in _marker_names(process_recovery)
     assert sum(
         name.startswith("test_")
         for name, function in inspect.getmembers(process_recovery, inspect.isfunction)
-    ) == 4
+    ) == 5
 
     # The pure FastAPI/static/configuration checks remain in the default tier.
     for name in (

@@ -15,7 +15,7 @@ Governing contract: `MASTER_SPEC.md` M8.4. Starting review baseline: `cbec38caff
 | Scenarios and action search | scenario, trade/acquisition/chain/unified/search modules | M4/M5 contracts | exhaustive references, state identity, coverage, paired-estimator tests | no execution/acceptance probability; GO with disclosure |
 | API and background runs | app contracts, service, HTTP, background, refresh | API schema 1.0, M6 docs | OpenAPI, direct/background parity, lifecycle/SQLite tests | local trust model only; GO |
 | Browser workspaces | React shell and four operational workspaces | M7 docs and UI vision | frontend tests, typecheck/build, accepted visual/accessibility evidence | League Insights deferred; GO |
-| Local operations | setup/start/stop/runtime scripts | M8.1/M8.3 | ownership, persistence, interruption/recovery, browser smoke | stalled ESPN calls can delay exit; GO with recovery procedure |
+| Local operations | setup/start/stop/runtime scripts | M8.1/M8.3 plus P0 follow-up | ownership, bounded shutdown, authenticated listener-loss recovery, persistence, interruption/recovery, browser smoke | synchronous calls can outlive cooperative waiting; authenticated process-tree recovery is supported |
 | Release guidance and gate | user guide, checklist, `verify-release.ps1` | M8.4 | documentation tests and final verification below | default excludes `windows_process`; opt-in runs it once; GO |
 
 “Verified live” is limited to the authorized sanitized evidence in M8.2. Credential-free fixtures prove code behavior, not live ESPN semantics. Deferred and unsupported behavior is not promoted by this audit.
@@ -62,7 +62,7 @@ Quick/Balanced/Detailed remain 5/25/100 paths and are relative workloads, not pr
 
 ## Persistence and recovery evidence
 
-Accepted disposable Windows tests verify launcher PID/creation-time/port/path/health ownership, duplicate-start protection, SQLite leases, graceful/unexpected exit, child cleanup, interruption, retained results, cancellation races, refresh shutdown, and restart. A synchronous ESPN call can outlive coordinator waiting; the safe procedure is in the user guide. Interrupted work is not automatically resumed.
+Accepted disposable Windows tests verify launcher PID/creation-time/port/path/health ownership, exact executable and command-line identity, duplicate-start protection, SQLite leases, graceful/unexpected exit, child cleanup, interruption, retained results, cancellation races, refresh shutdown, listener-closed/process-alive recovery, and restart. A synchronous ESPN call can outlive coordinator waiting; the launcher recovers only an authenticated owned process tree. Interrupted work is not automatically resumed.
 
 ## Dependency and packaging findings
 
@@ -79,8 +79,11 @@ README, roadmap, master specification, M8.2, and M8.3 now agree with independent
 | P2 | Authoritative docs still described accepted M8.3 as pending and M8.4 as unstarted. | Current status documents now agree. |
 | P2 | Ruff verification was not reproducible from the locked test install. | Added Ruff to the test extra and lock. |
 | P2 | No consolidated user guide, checklist, or one-command credential-free gate. | Added all three with explicit safety boundaries. |
+| P0 follow-up | Uvicorn could close its listener while application lifespan blocked indefinitely on an analytical executor; the health-dependent launcher then could not recover the still-live process. | Bounded coordinator shutdown, truthful pending state and lease retention, exact launcher process identity, and listener-independent authenticated process-tree recovery. |
 
-No P0 or P1 defect was found or remains open.
+The later P0 shutdown review found the listener-loss recovery defect described
+above. This follow-up closes it in implementation and returns it for independent
+review; no other P0 or P1 finding is known.
 
 ## Known limitations
 
@@ -89,7 +92,7 @@ No P0 or P1 defect was found or remains open.
 - Historical ESPN projections lack authenticated pregame provenance. Missing, explicit-zero, and policy-imputed-zero values remain distinct.
 - Unsupported ESPN semantics fail closed; some consolation periods require provenance-bearing manual configuration.
 - Baseline/manual cancellation is coarse, and running batches can finish after cancellation is requested.
-- A stalled synchronous ESPN retrieval can outlive bounded waits; forced thread termination is unsafe.
+- A stalled synchronous ESPN retrieval or analytical thread can outlive bounded cooperative waits; forced thread termination is unsafe. The launcher can recover the authenticated process tree, while `-PreserveOnTimeout` retains it for diagnosis.
 - Interrupted background work is retained as interrupted without automatic application resume.
 - Refresh supports one server-configured profile; deployment is local-only and assumes a trusted local account.
 - War Room never executes transactions or predicts acceptance, waiver success probability, or injuries.
@@ -99,17 +102,17 @@ No P0 or P1 defect was found or remains open.
 
 Environment: Windows 11, Python 3.12.10, pytest 8.4.2, Node/npm with the locked frontend tree; source baseline `cbec38c` plus this audit branch.
 
-- Default credential-free Python tier: **897 passed in 51.22 seconds**, with the 13 real-process tests deselected by `-m "not windows_process"`. It includes ordinary unit, API, snapshot, frontend-contract, documentation, security, deterministic replay, and numerical reference/oracle coverage. No real launcher/application process test executed in this tier.
+- Default credential-free Python tier after the P0 follow-up: **898 passed in 47.28 seconds**, with the 14 real-process tests deselected by `-m "not windows_process"`. It includes ordinary unit, API, snapshot, frontend-contract, documentation, security, deterministic replay, and numerical reference/oracle coverage. No real launcher/application process test executed in this tier.
 - Frontend: **5 files / 87 tests passed**; jsdom emitted its known unimplemented-canvas diagnostic. TypeScript typecheck passed. Vite production build passed (1,960 modules; 341.47 kB JS / 99.76 kB gzip; 88.79 kB CSS / 16.74 kB gzip).
-- Disposable Windows launcher/process tier: **13 passed in 136.90 seconds**, selected exactly once by `-m windows_process`. All ran on Windows with zero skips; no private database or unrelated process was used. Existing platform guards continue to skip them on unsupported systems.
+- Disposable Windows launcher/process tier: **14 passed in 145.65 seconds**, selected exactly once by `-m windows_process`. All ran on Windows with zero skips; no private database or unrelated process was used. Existing platform guards continue to skip them on unsupported systems.
 - Python compilation, Ruff correctness rules `E9,F63,F7,F82`, and `pip check`: passed.
 - npm production dependency audit: zero vulnerabilities. The audit does not claim a dev-dependency or general Python CVE scan.
-- Selection-contract regression: passed. Static marker/script assertions and pytest collection reported **897 default + 13 process = 910 total unique tests**, with disjoint selection.
+- Selection-contract regression: passed. Static marker/script assertions and pytest collection reported **898 default + 14 process = 912 total unique tests**, with disjoint selection.
 - Documentation links/status checks and repository security checks: included in the default tier and passed.
 - Working-tree and committed-revision whitespace checks: passed.
 - Production-browser smoke is the accepted real Edge evidence from M8.3; it was also exercised by the Windows process suite. No new live ESPN retrieval was performed, so no new live claim is made.
 
-The original M8.4 audit ran all 909 then-existing tests in the default invocation and repeated process tests in its optional tier. The follow-up corrects that release-gate defect and supersedes those tier counts. The current 910-test universe is partitioned without overlap. No test was skipped in either final Windows run.
+The original M8.4 audit ran all 909 then-existing tests in the default invocation and repeated process tests in its optional tier. The release-tier follow-up corrected that defect; the P0 follow-up adds two tests. The current 912-test universe is partitioned without overlap. No test was skipped in either final Windows run.
 
 ## Outstanding release blockers
 

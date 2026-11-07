@@ -102,9 +102,29 @@ No growth was observed in transient coordinator references after successive runs
 
 Refresh and analysis use independent bounded coordinators. Duplicate refresh is rejected. Cancellation before publication retains the existing snapshot; publication itself is non-cancellable once commit begins. A shutdown requests cancellation and waits for the configured bounded interval. If the ESPN library is blocked inside synchronous I/O, `ThreadPoolExecutor.shutdown(wait=False)` does not prove the thread or Python process has ended. The coordinator logs `refresh_shutdown_pending`; safe forced-thread termination is not available.
 
-The process follow-up ran a real loopback FastAPI/Uvicorn process with only the accepted upstream adapter boundary replaced by a local adapter blocked on a controlled release file. Refresh cancellation returned `cancel_requested`. The coordinator's wait was bounded, but `stop-local.ps1 -TimeoutSeconds 1` correctly failed with “left running,” and the process remained alive until the adapter was released. After release it exited, `start-local.ps1` safely reconciled stale metadata, the previously published snapshot retained identical canonical identity, the snapshot count remained one, and the ordinary production server restarted successfully. Inspection of installed `espn-api` 1.0 shows its synchronous `requests.get` calls do not expose a supported timeout through the repository's current boundary. No unsafe global monkeypatch or forced-thread termination was added.
+The original M8.3 process follow-up ran a real loopback FastAPI/Uvicorn process with only the accepted upstream adapter boundary replaced by a local adapter blocked on a controlled release file. Refresh cancellation returned `cancel_requested`. At that historical baseline the coordinator's wait was bounded, but `stop-local.ps1 -TimeoutSeconds 1` left the process running until the adapter was released. After release it exited, `start-local.ps1` safely reconciled stale metadata, the previously published snapshot retained identical canonical identity, the snapshot count remained one, and the ordinary production server restarted successfully. Inspection of installed `espn-api` 1.0 shows its synchronous `requests.get` calls do not expose a supported timeout through the repository's current boundary. No unsafe global monkeypatch or forced-thread termination was added. The P0 correction below supersedes the launcher's historical timeout behavior without rewriting this evidence.
 
-Safe recovery is therefore: retain launcher metadata, allow the upstream call to return (restore connectivity where applicable), wait for the launcher-owned process to exit, and start again. Do not delete metadata or kill a PID whose creation timestamp and health identity have not been established. If the upstream call never returns and health is already unavailable, an operating-system restart is safer than guessing process ownership. M8.4 should retain this limitation unless a supported upstream timeout becomes available.
+The P0 shutdown follow-up closes the operational gap demonstrated by this
+evidence. `BackgroundRunCoordinator.close()` no longer performs an unbounded
+executor wait. Both coordinators expose bounded completion, and lifespan logs
+whether each coordinator actually quiesced. `wait=False` is not treated as
+thread termination: a pending worker retains the run-store lease and process.
+The launcher records the observed executable and exact command-line digest in
+schema-v2 metadata. If the listener is already gone, `stop-local.ps1` can still
+authenticate that original process by PID, creation time, executable, command
+identity, configured paths, and descendant lineage before recovering only its
+process tree. Unverifiable identity fails closed.
+
+A disposable Windows regression reproduced the original boundary: a 10,000-path
+baseline entered `running`; a one-second diagnostic stop closed health but left
+the process alive; restart was rejected while it remained; a second ordinary
+stop recovered the authenticated process tree; restart retained the earlier
+completed result, left unfinished work non-successful, passed SQLite
+`quick_check`, and accepted a new baseline. The controlled stalled-refresh test
+still proves that the synchronous upstream thread may outlive the bounded
+lifespan wait. Recovery terminates the authenticated process, not the thread in
+isolation. `-PreserveOnTimeout` remains available when an operator deliberately
+wants to wait for upstream return or inspect logs.
 
 During the representative and stress searches, health and progress polling remained responsive at the latencies above. Polling is serialized with cancellation and latest-request guards in the frontend; closing the browser stops observation but not accepted backend work. Reopening the Simulation Center reads durable run state. Candidate page/detail queries read SQLite and never rerun Monte Carlo.
 

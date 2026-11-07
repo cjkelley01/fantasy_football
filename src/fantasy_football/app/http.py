@@ -126,15 +126,36 @@ def create_app(
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         yield
-        background_coordinator.close()
+        LOGGER.info("Application shutdown stage=coordinator_stop_requested")
+        refresh_finished = True
         if owned_refresh_coordinator is not None:
-            owned_refresh_coordinator.close()
-        if temporary_run_store is not None:
+            refresh_finished = owned_refresh_coordinator.close()
+            LOGGER.info(
+                "Application shutdown stage=refresh_close_complete finished=%s",
+                refresh_finished,
+            )
+        background_finished = background_coordinator.close()
+        LOGGER.info(
+            "Application shutdown stage=background_close_complete finished=%s",
+            background_finished,
+        )
+        if temporary_run_store is not None and background_finished:
             for suffix in ("", "-wal", "-shm"):
                 try:
                     Path(f"{temporary_run_store}{suffix}").unlink()
                 except FileNotFoundError:
                     pass
+        elif temporary_run_store is not None:
+            LOGGER.warning(
+                "Application shutdown stage=temporary_store_retained "
+                "code=background_shutdown_pending"
+            )
+        LOGGER.info(
+            "Application shutdown stage=lifespan_complete "
+            "background_finished=%s refresh_finished=%s",
+            background_finished,
+            refresh_finished,
+        )
 
     app = FastAPI(
         title="Fantasy Football Application Service",

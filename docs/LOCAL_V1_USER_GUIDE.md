@@ -19,7 +19,7 @@ The setup command is safe to repeat. Startup builds no development server: FastA
 .\scripts\stop-local.ps1
 ```
 
-The launcher verifies its recorded process identity before stopping anything. If ownership is ambiguous, it fails safely rather than terminating another process.
+The launcher verifies its recorded PID, creation time, executable, exact command identity, configured paths, and—while available—listener and health identity before stopping anything. It first requests graceful shutdown. If bounded graceful shutdown cannot finish, it recovers only the authenticated launcher-owned process tree and preserves both SQLite databases. If ownership is ambiguous, it fails safely rather than terminating another process.
 
 ## Configure ESPN access
 
@@ -62,7 +62,7 @@ Probability estimates describe the accepted provisional outcome model. Confidenc
 
 Simulation Center rediscovers retained runs for the selected snapshot. Requesting cancellation acknowledges intent first; the terminal state may be `cancelled`, or `completed` if completion committed first. Completed results remain available after a normal restart. Work active during an unexpected process exit is classified as interrupted on restart and is not automatically resumed.
 
-If an ESPN request stalls, cooperative shutdown can exceed the launcher timeout because the upstream synchronous request has no supported forced-thread cancellation. Keep the launcher metadata, restore connectivity if applicable, allow the owned process to exit, and start again. Never delete metadata or kill a PID unless its creation time and health identity establish ownership. If identity cannot be established, an operating-system restart is safer.
+If a run or ESPN request stalls, cooperative shutdown can exceed the launcher timeout because Python cannot safely force-stop an arbitrary running thread. Ordinary `stop-local.ps1` then performs authenticated process-tree recovery even when Uvicorn has already closed its listener. Completed results and databases remain intact; unfinished work is reconciled on restart. To inspect instead, use `stop-local.ps1 -PreserveOnTimeout`, then run ordinary `stop-local.ps1` when ready to recover. Never delete launcher metadata or kill a PID manually. If the launcher cannot authenticate ownership, it refuses termination; an operating-system restart is safer than guessing.
 
 ## Protect local data
 
