@@ -1,6 +1,6 @@
 # M8.2 End-to-End ESPN League Validation
 
-Status: **IMPLEMENTED — REVIEW PENDING**  
+Status: **COMPLETE AND ACCEPTED — 5 November 2026**
 Implementation baseline: `e7a464c` (accepted M8.1 launcher correction)  
 Governing contracts: `MASTER_SPEC.md` Sections 2.2, 2.3, 3, and 12; API schema 1.0
 
@@ -283,4 +283,4 @@ cover baseline, Opportunity Explorer, Trade Lab, and retained-history views.
 Recommendation: **ready for independent M8.2 acceptance review**. The representative
 live season now completes across baseline, bounded search, manual evaluation, API
 delivery, and restart retention without fabricated ESPN evidence. M8.2 stays
-**IMPLEMENTED — REVIEW PENDING** until that review; M8.3 has not started.
+This evidence was accepted on 5 November 2026. M8.3 subsequently completed the runtime and recovery certification; current release disposition is maintained in `M8_4_FINAL_RELEASE_AUDIT.md`.
