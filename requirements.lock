@@ -61,6 +61,8 @@ pyyaml==6.0.3
     # via fantasy-football-decision-engine (pyproject.toml)
 requests==2.34.2
     # via espn-api
+ruff==0.16.6
+    # via fantasy-football-decision-engine (pyproject.toml)
 starlette==0.46.2
     # via fastapi
 typing-extensions==4.16.0

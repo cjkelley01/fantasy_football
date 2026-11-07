@@ -19,7 +19,6 @@ from fantasy_football.espn_adapter import translate_bundle
 from fantasy_football.snapshot_store import SnapshotStore
 from tests.adapter_fixtures import source_bundle
 from tests.test_app_service import (
-    _action_request,
     _model,
     _precision,
     _selector,
@@ -159,47 +158,6 @@ def _baseline(snapshot, paths: int = 1) -> dict:
     ).model_dump(mode="json")
 
 
-def _slow_action(snapshot, paths: int = 5_000) -> dict:
-    request = _action_request(snapshot, execution_mode="bounded_overlap")
-    requesting_team = min(item.team_id for item in snapshot.teams)
-    counterparty = min(
-        item.team_id for item in snapshot.teams if item.team_id != requesting_team
-    )
-    requesting_player = min(
-        item.player_id for item in snapshot.roster_entries
-        if item.team_id == requesting_team
-    )
-    counterparty_player = min(
-        item.player_id for item in snapshot.roster_entries
-        if item.team_id == counterparty
-    )
-    return request.model_copy(update={
-        "simulation": _simulation(paths).model_copy(update={"require_complete": False}),
-        "candidate_search": request.candidate_search.model_copy(update={
-            "requesting_team_id": requesting_team,
-            "counterparty_team_ids": (counterparty,),
-            "tradeable_player_ids": (requesting_player, counterparty_player),
-        }),
-        "sampling": request.sampling.model_copy(update={
-            "initial_paths": paths,
-            "refinement_batch_paths": paths,
-            "maximum_paths_per_state": paths,
-            "minimum_finalist_states": 1,
-            "unique_state_evaluation_budget": 2,
-        }),
-        "resources": request.resources.model_copy(update={
-            "execution_mode": "bounded_overlap",
-            "worker_count": 2,
-            "maximum_in_flight_states": 2,
-            "paths_per_worker_task": 100,
-            "candidate_limit": 50,
-            "evaluation_state_limit": 2,
-            "simulation_path_budget": paths * 2,
-            "wall_clock_seconds": 300.0,
-        }),
-    }).model_dump(mode="json")
-
-
 def _launcher_fixture(tmp_path: Path):
     database = tmp_path / "persistent" / "league.sqlite3"
     frontend = _frontend(tmp_path / "frontend")
@@ -264,8 +222,13 @@ def test_unexpected_process_exit_recovers_durable_runs_and_sqlite(tmp_path: Path
         )["run_id"]
         assert _wait_status(base_url, completed_id, {"completed"})["result_available"]
 
+        # Use the admitted baseline ceiling rather than a tiny action universe.
+        # Search generation can legitimately discover no evaluable state and
+        # complete before process ownership is observed; 10,000 baseline paths
+        # deterministically keep real analytical workers active for this crash
+        # recovery boundary.
         interrupted_id = _request_json(
-            f"{base_url}/api/v1/runs/action-search", _slow_action(snapshot)
+            f"{base_url}/api/v1/runs/baseline", _baseline(snapshot, 10_000)
         )["run_id"]
         _wait_status(base_url, interrupted_id, {"running"})
         parent = _owned_process(runtime)
@@ -319,7 +282,7 @@ def test_launcher_graceful_shutdown_releases_children_and_lease(tmp_path: Path) 
         )["run_id"]
         _wait_status(base_url, completed_id, {"completed"})
         active_id = _request_json(
-            f"{base_url}/api/v1/runs/action-search", _slow_action(snapshot)
+            f"{base_url}/api/v1/runs/baseline", _baseline(snapshot, 10_000)
         )["run_id"]
         _wait_status(base_url, active_id, {"running"})
         parent = _owned_process(runtime)

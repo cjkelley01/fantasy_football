@@ -132,3 +132,31 @@ runtime profiles, not league rules. A corrected reusable-worker check now binds
 each process pool to the seed-bearing Monte Carlo run identity as well as the
 seed-independent, partition-compatible simulation fingerprint; this changes no
 league mechanic. Remaining supported and unsupported modes above are unchanged.
+
+## M8.4 release re-audit
+
+The final release audit repeated the production-source search across canonical
+translation, validation, season/postseason execution, transactions, V(R), Monte
+Carlo, trade/action search, application services, HTTP contracts, background
+execution, and frontend request construction.
+
+- Team count, roster slots, scoring, qualifiers, periods, and supported rules
+  remain **API-derived** canonical inputs.
+- Provenance-bearing consolation periods and other evidence gaps remain
+  **explicit validated configuration** and fail closed when absent or
+  contradictory.
+- Waiver processing, postseason participation, essential-only acquisitions,
+  and deterministic completion remain named **approved modeled policies**, not
+  universal ESPN claims.
+- HTTP deadlines, path ceilings, worker counts, page sizes, retained-result
+  limits, and Quick/Balanced/Detailed presets are **application resource
+  defaults**, not league mechanics.
+- Fourteen-team, six/eight-participant, seed, player-ID, and particular-week
+  values found in tests, benchmarks, evidence narratives, and examples are
+  **fixture/test/evidence constants**.
+
+No **unjustified production assumption** was found. The text in
+`league_rules_audit.py` describing investigated historical six-team and current
+eight-team consolation evidence is diagnostic provenance, not a production
+postseason selector. The manual consolation mapping and provenance contract are
+unchanged.

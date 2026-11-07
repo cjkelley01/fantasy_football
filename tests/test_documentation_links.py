@@ -34,12 +34,13 @@ def test_authoritative_documents_share_current_product_direction() -> None:
 
     for document in (readme, master_spec, roadmap):
         normalized = document.casefold()
-        assert "m0–m6.4" in normalized
+        assert "m0" in normalized
+        assert "m6.4" in normalized
         assert "complete and accepted" in normalized
         assert "m7.1" in normalized
         assert "m7.4" in normalized
         assert "implemented" in normalized
-        assert "review pending" in normalized
+        assert "ready for independent review" in normalized
         assert "m7.5" in normalized
         assert "m8" in normalized
 
@@ -92,13 +93,58 @@ def test_current_m7_parent_and_m8_status_are_aligned() -> None:
         assert "IN PROGRESS" not in summary
         assert "REVIEW PENDING" not in summary
     for document in documents.values():
-        assert "M7.1–M7.5" in document
+        assert "M7.1" in document
+        assert "M7.5" in document
         assert "M8.1" in document
         assert "M8.2" in document
-        assert "M8.1–M8.2 are **COMPLETE AND ACCEPTED**" in document
-        assert "M8.3" in document and "REVIEW PENDING" in document
-        assert "M8.4 is not started" in document
+        assert "M8.3" in document and "COMPLETE AND ACCEPTED" in document
+        assert "M8.4" in document
+        assert "READY FOR INDEPENDENT REVIEW" in document
+        assert "V1" in document
     assert "docs/M8_3_RUNTIME_AND_RECOVERY.md" in documents["README.md"]
+    assert "docs/M8_4_FINAL_RELEASE_AUDIT.md" in documents["README.md"]
+    assert "docs/LOCAL_V1_USER_GUIDE.md" in documents["README.md"]
+    assert "docs/RELEASE_CHECKLIST.md" in documents["README.md"]
+
+
+def test_m8_4_release_documents_and_verification_entrypoint_are_present() -> None:
+    audit = (REPOSITORY_ROOT / "docs" / "M8_4_FINAL_RELEASE_AUDIT.md").read_text(
+        encoding="utf-8"
+    )
+    guide = (REPOSITORY_ROOT / "docs" / "LOCAL_V1_USER_GUIDE.md").read_text(
+        encoding="utf-8"
+    )
+    checklist = (REPOSITORY_ROOT / "docs" / "RELEASE_CHECKLIST.md").read_text(
+        encoding="utf-8"
+    )
+    verifier = (REPOSITORY_ROOT / "scripts" / "verify-release.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    for heading in (
+        "Release requirement traceability",
+        "Security assessment",
+        "Known limitations",
+        "Final recommendation",
+    ):
+        assert heading in audit
+    assert "does not declare" in audit
+    assert "locally hosted" in guide
+    assert "Confidence intervals" in guide
+    assert "never executes real transactions" in guide
+    assert "performs no ESPN request" in checklist
+    for required_step in (
+        "Python credential-free suite",
+        "Frontend tests",
+        "TypeScript typecheck",
+        "Production frontend build",
+        "Ruff correctness",
+        "Python dependency consistency",
+        "Production dependency audit",
+        "Working-tree whitespace",
+        "Committed-revision whitespace",
+    ):
+        assert required_step in verifier
 
 
 def test_current_m5_parent_status_and_ui_vision_are_aligned() -> None:

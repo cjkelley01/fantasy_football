@@ -1,6 +1,6 @@
 # M8.3 Runtime, Resource Use, Interruption, and Recovery
 
-Status: **IMPLEMENTED — REVIEW PENDING**
+Status: **COMPLETE AND ACCEPTED — 6 November 2026**
 
 Governing contracts: `MASTER_SPEC.md` M8.3, `RUN_MANAGEMENT.md`, and the accepted M0–M8.2 analytical contracts. This milestone measures and hardens the local application; it does not weaken exact valuation, transaction, postseason, probability, or candidate-coverage semantics.
 
@@ -152,4 +152,4 @@ Known limitations:
 - background HTTP runs do not automatically resume after process interruption;
 - a small path budget commonly cannot establish statistical precision or ranking resolution.
 
-M8.3 is ready for independent review. M8.4 remains unstarted. Release review should confirm these limitations, rerun the credential-free suites, and decide whether the upstream refresh-timeout limitation is acceptable for V1.
+M8.3 passed independent review on 6 November 2026. M8.4 carries these limitations into the final release audit, reruns the credential-free gates, and determines whether the upstream refresh-timeout limitation is acceptable for local V1.
