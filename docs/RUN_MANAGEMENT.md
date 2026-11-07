@@ -151,6 +151,22 @@ suppressed. Simulation Center path presets are conservative presentation
 policies (5/25/100 path ceilings) and do not change these engine or admission
 contracts.
 
+The 6 November process follow-up uses disposable stores and actual PowerShell
+launchers. Unexpectedly killing a verified server parent with one observed
+analytical child left no orphan; restart marked its active row `interrupted`,
+reopened prior completed work, passed SQLite `quick_check`, and accepted new
+work. Graceful stop with one child exited in 1.625 seconds; the active result
+completed before cancellation won, which is a permitted atomic race. A real
+production-build Edge smoke observed cancellation acknowledgement and reopened
+retained results after restart.
+
+A controlled adapter blocked inside upstream retrieval proved a separate limit:
+refresh cancellation and coordinator shutdown waiting are bounded, but the
+Python process can remain alive until synchronous `espn-api` I/O returns. The
+launcher correctly times out and leaves that verified process untouched. There
+is no automatic resume or unsafe thread termination; see
+`M8_3_RUNTIME_AND_RECOVERY.md` for the safe recovery procedure.
+
 ## Verification evidence
 
 - Sixteen focused background tests cover baseline/manual/action-search engine

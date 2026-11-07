@@ -70,7 +70,7 @@ The prior UI presets (100, 500, and 2,000 paths) could imply roughly 111 minutes
 
 - Quick: 5-path ceiling, minimum 5, evaluate every path.
 - Balanced: 25-path ceiling, minimum 10, evaluate every 5 paths.
-- High precision: 100-path ceiling, minimum 25, evaluate every 10 paths.
+- Detailed: 100-path ceiling, minimum 25, evaluate every 10 paths.
 
 Confidence and target-width definitions are unchanged. These small budgets may stop without league-wide precision; the UI already reports that outcome. The Simulation Center now calls presets bounded workload policies, exposes the exact path ceiling, and states that runtime varies and the live validation observed roughly one minute per exact path. It does not fabricate an ETA. Users can still configure up to the accepted admission limits, and direct engine interfaces are unchanged.
 
@@ -82,6 +82,14 @@ Cancellation acknowledgment and actual cessation are distinct. Queued cancellati
 
 On store startup, durable `queued`, `running`, and `cancel_requested` rows left by a prior process are atomically classified `interrupted`; automatic analytical resume is not implemented. Accepted M3.6 checkpoint/resume remains an engine-level contract and is not silently applied to background HTTP jobs. Completed records reopen unchanged. A live-process application lease rejects a second owner.
 
+### Actual Windows process interruption and graceful shutdown
+
+The follow-up uses `tests/test_m8_3_process_recovery.py`, real PowerShell launchers, a disposable snapshot database, a disposable run database, the sanitized adapter fixture, and dynamically allocated loopback ports. It does not open or modify the configured live-league database. The test first persists a completed baseline, starts a two-worker action search, confirms `running`, reads the launcher-owned PID and creation timestamp, and observes only that process's recursive children. It then kills that verified parent unexpectedly.
+
+One analytical child was observed. The parent and child were both gone 0.015 seconds after the kill; no orphan remained. Restart through `start-local.ps1` removed the now-stale launcher record, acquired the same run-store lease, classified the active action search `interrupted`, retained and reopened the earlier completed result, passed `PRAGMA quick_check` on both snapshot and run databases, and completed a newly submitted baseline.
+
+The separate graceful case starts the same supported action search and invokes `stop-local.ps1`. One analytical child was observed. The launcher acknowledged and the parent/child exited in 1.625 seconds. In this bounded fixture the active computation committed completion before cancellation won the race; the terminal row and retained-result flag agreed after restart. This is accepted atomic behavior and is not described as immediate cancellation. Completed historical work remained available, the run database passed `PRAGMA quick_check`, and the restarted process reacquired the lease.
+
 ## SQLite and cleanup
 
 The run store uses WAL, `synchronous=FULL`, foreign keys, transactional result writes, atomic state-conditional terminal transitions, rollback on failed candidate/state writes, logical storage admission, expiry/retention purge, cascade deletion, and explicit lease release. Existing tests cover stale restart classification, competing owner rejection, storage exhaustion, candidate pagination/filtering before transfer, and terminal-result durability.
@@ -92,9 +100,15 @@ No growth was observed in transient coordinator references after successive runs
 
 ## Refresh and browser behavior
 
-Refresh and analysis use independent bounded coordinators. Duplicate refresh is rejected. Cancellation before publication retains the existing snapshot; publication itself is non-cancellable once commit begins. A shutdown requests cancellation and waits for the configured bounded interval. If the ESPN library is blocked inside synchronous I/O, `ThreadPoolExecutor.shutdown(wait=False)` does not prove the thread or Python process has ended. The coordinator logs `refresh_shutdown_pending`; safe forced-thread termination is not available. Launcher shutdown may consequently time out rather than killing an unrelated/ambiguous process. M8.4 should retain this explicit limitation unless supported upstream request timeouts are established.
+Refresh and analysis use independent bounded coordinators. Duplicate refresh is rejected. Cancellation before publication retains the existing snapshot; publication itself is non-cancellable once commit begins. A shutdown requests cancellation and waits for the configured bounded interval. If the ESPN library is blocked inside synchronous I/O, `ThreadPoolExecutor.shutdown(wait=False)` does not prove the thread or Python process has ended. The coordinator logs `refresh_shutdown_pending`; safe forced-thread termination is not available.
+
+The process follow-up ran a real loopback FastAPI/Uvicorn process with only the accepted upstream adapter boundary replaced by a local adapter blocked on a controlled release file. Refresh cancellation returned `cancel_requested`. The coordinator's wait was bounded, but `stop-local.ps1 -TimeoutSeconds 1` correctly failed with “left running,” and the process remained alive until the adapter was released. After release it exited, `start-local.ps1` safely reconciled stale metadata, the previously published snapshot retained identical canonical identity, the snapshot count remained one, and the ordinary production server restarted successfully. Inspection of installed `espn-api` 1.0 shows its synchronous `requests.get` calls do not expose a supported timeout through the repository's current boundary. No unsafe global monkeypatch or forced-thread termination was added.
+
+Safe recovery is therefore: retain launcher metadata, allow the upstream call to return (restore connectivity where applicable), wait for the launcher-owned process to exit, and start again. Do not delete metadata or kill a PID whose creation timestamp and health identity have not been established. If the upstream call never returns and health is already unavailable, an operating-system restart is safer than guessing process ownership. M8.4 should retain this limitation unless a supported upstream timeout becomes available.
 
 During the representative and stress searches, health and progress polling remained responsive at the latencies above. Polling is serialized with cancellation and latest-request guards in the frontend; closing the browser stops observation but not accepted backend work. Reopening the Simulation Center reads durable run state. Candidate page/detail queries read SQLite and never rerun Monte Carlo.
+
+The production-browser follow-up used the built Vite assets served by FastAPI and headless Microsoft Edge through Playwright Core—not mocked fetch responses. Against a disposable sanitized database it submitted a completed baseline and a 10,000-path active baseline, navigated League Overview → Simulation Center, rediscovered retained run history, selected the active run, requested cooperative cancellation, observed acknowledgement and terminal `cancelled`, opened the earlier retained championship result, stopped/restarted War Room, opened a new browser context, and reopened the same retained result. Two sanitized screenshots were inspected from the disposable test directory and intentionally not committed. The test completed in 40.01 seconds; queries did not rerun simulation.
 
 ## Reliability criteria and disposition
 
@@ -119,7 +133,8 @@ Operational API errors remain typed and sanitized. Logs and benchmark JSON conta
 
 Verification on the measured Windows host:
 
-- complete credential-free Python suite: **901 passed**, one upstream Starlette deprecation warning, 77.50 seconds;
+- complete credential-free Python suite after the follow-up: **905 passed**, one upstream Starlette deprecation warning, 151.50 seconds;
+- focused real-process follow-up: **4 passed** in 72.42 seconds, covering unexpected termination, graceful stop, stalled refresh, and production Edge behavior;
 - frontend suite: **87 passed** across five files, with only the expected jsdom canvas notices;
 - TypeScript project typecheck and production Vite build passed (1,960 modules; 341.45 kB JavaScript / 99.76 kB gzip);
 - Python compilation and Ruff `F,E9` checks passed;
