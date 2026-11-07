@@ -115,6 +115,7 @@ def test_server_rejects_non_loopback_configuration_and_bad_shutdown_pair() -> No
         main(["--shutdown-file", "request.txt"])
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_launcher_start_stop_restart_and_persistence(tmp_path: Path) -> None:
     frontend = _frontend(tmp_path / "frontend assets")
@@ -178,6 +179,7 @@ def test_launcher_start_stop_restart_and_persistence(tmp_path: Path) -> None:
         _powershell(stop, "-RuntimeDirectory", str(runtime))
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_launcher_does_not_take_over_occupied_port(tmp_path: Path) -> None:
     port = _port()
@@ -202,6 +204,7 @@ def test_launcher_does_not_take_over_occupied_port(tmp_path: Path) -> None:
         listener.close()
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_setup_verification_is_repeatable() -> None:
     setup = ROOT / "scripts" / "setup-local.ps1"
@@ -212,6 +215,7 @@ def test_setup_verification_is_repeatable() -> None:
     assert "setup verified" in second.stdout
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_launcher_rejects_malformed_metadata_and_pid_reuse(tmp_path: Path) -> None:
     start = ROOT / "scripts" / "start-local.ps1"
@@ -243,6 +247,7 @@ def test_launcher_rejects_malformed_metadata_and_pid_reuse(tmp_path: Path) -> No
         metadata.unlink(missing_ok=True)
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_stale_metadata_is_removed_before_port_conflict_check(tmp_path: Path) -> None:
     start = ROOT / "scripts" / "start-local.ps1"
@@ -273,6 +278,7 @@ def test_stale_metadata_is_removed_before_port_conflict_check(tmp_path: Path) ->
         metadata.unlink(missing_ok=True)
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_failed_readiness_cleans_terminal_process_metadata(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
@@ -293,6 +299,7 @@ def test_failed_readiness_cleans_terminal_process_metadata(tmp_path: Path) -> No
         metadata.unlink(missing_ok=True)
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_existing_pid_with_foreign_health_is_not_trusted(tmp_path: Path) -> None:
     port = _port()
@@ -330,6 +337,7 @@ def test_existing_pid_with_foreign_health_is_not_trusted(tmp_path: Path) -> None
         foreign.wait(timeout=5)
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_stop_timeout_preserves_live_owned_process(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"
@@ -360,6 +368,7 @@ def test_stop_timeout_preserves_live_owned_process(tmp_path: Path) -> None:
         assert stopped.returncode == 0, stopped.stdout + stopped.stderr
 
 
+@pytest.mark.windows_process
 @pytest.mark.skipif(sys.platform != "win32", reason="PowerShell launcher is Windows-specific")
 def test_start_rejects_missing_production_assets_before_process_creation(tmp_path: Path) -> None:
     runtime = tmp_path / "runtime"

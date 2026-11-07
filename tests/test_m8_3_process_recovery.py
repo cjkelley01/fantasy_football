@@ -35,6 +35,7 @@ from tests.test_local_installation import (
 
 
 TERMINAL = {"completed", "cancelled", "failed", "interrupted"}
+pytestmark = pytest.mark.windows_process
 
 
 def _run_stalled_refresh_server(
