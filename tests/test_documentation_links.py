@@ -134,7 +134,7 @@ def test_m8_4_release_documents_and_verification_entrypoint_are_present() -> Non
     assert "never executes real transactions" in guide
     assert "performs no ESPN request" in checklist
     for required_step in (
-        "Python credential-free suite",
+        "Python credential-free default suite",
         "Frontend tests",
         "TypeScript typecheck",
         "Production frontend build",

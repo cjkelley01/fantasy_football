@@ -16,7 +16,7 @@ Governing contract: `MASTER_SPEC.md` M8.4. Starting review baseline: `cbec38caff
 | API and background runs | app contracts, service, HTTP, background, refresh | API schema 1.0, M6 docs | OpenAPI, direct/background parity, lifecycle/SQLite tests | local trust model only; GO |
 | Browser workspaces | React shell and four operational workspaces | M7 docs and UI vision | frontend tests, typecheck/build, accepted visual/accessibility evidence | League Insights deferred; GO |
 | Local operations | setup/start/stop/runtime scripts | M8.1/M8.3 | ownership, persistence, interruption/recovery, browser smoke | stalled ESPN calls can delay exit; GO with recovery procedure |
-| Release guidance and gate | user guide, checklist, `verify-release.ps1` | M8.4 | documentation tests and final verification below | process tier is opt-in; GO |
+| Release guidance and gate | user guide, checklist, `verify-release.ps1` | M8.4 | documentation tests and final verification below | default excludes `windows_process`; opt-in runs it once; GO |
 
 “Verified live” is limited to the authorized sanitized evidence in M8.2. Credential-free fixtures prove code behavior, not live ESPN semantics. Deferred and unsupported behavior is not promoted by this audit.
 
@@ -99,16 +99,17 @@ No P0 or P1 defect was found or remains open.
 
 Environment: Windows 11, Python 3.12.10, pytest 8.4.2, Node/npm with the locked frontend tree; source baseline `cbec38c` plus this audit branch.
 
-- Full credential-free Python suite: **909 passed**, one upstream Starlette deprecation warning, 177.71 seconds. This includes documentation, API contracts, security, snapshot reconciliation, deterministic replay, and numerical reference/oracle tests.
+- Default credential-free Python tier: **897 passed in 51.22 seconds**, with the 13 real-process tests deselected by `-m "not windows_process"`. It includes ordinary unit, API, snapshot, frontend-contract, documentation, security, deterministic replay, and numerical reference/oracle coverage. No real launcher/application process test executed in this tier.
 - Frontend: **5 files / 87 tests passed**; jsdom emitted its known unimplemented-canvas diagnostic. TypeScript typecheck passed. Vite production build passed (1,960 modules; 341.47 kB JS / 99.76 kB gzip; 88.79 kB CSS / 16.74 kB gzip).
-- Disposable Windows launcher/process tier: **16 passed**, one upstream Starlette warning, 136.10 seconds. No private database or unrelated process was used.
+- Disposable Windows launcher/process tier: **13 passed in 136.90 seconds**, selected exactly once by `-m windows_process`. All ran on Windows with zero skips; no private database or unrelated process was used. Existing platform guards continue to skip them on unsupported systems.
 - Python compilation, Ruff correctness rules `E9,F63,F7,F82`, and `pip check`: passed.
 - npm production dependency audit: zero vulnerabilities. The audit does not claim a dev-dependency or general Python CVE scan.
-- Documentation links/status checks and repository security checks: included in the 909-test suite and passed; focused set was 65 passed.
+- Selection-contract regression: passed. Static marker/script assertions and pytest collection reported **897 default + 13 process = 910 total unique tests**, with disjoint selection.
+- Documentation links/status checks and repository security checks: included in the default tier and passed.
 - Working-tree and committed-revision whitespace checks: passed.
 - Production-browser smoke is the accepted real Edge evidence from M8.3; it was also exercised by the Windows process suite. No new live ESPN retrieval was performed, so no new live claim is made.
 
-The first sandboxed attempt was invalid evidence because the managed tool denied the user temp directory and Windows named pipes. The same suite was rerun with normal Windows process permissions and passed as recorded above. No test was skipped in the final full suite; platform-gated process tests ran on Windows.
+The original M8.4 audit ran all 909 then-existing tests in the default invocation and repeated process tests in its optional tier. The follow-up corrects that release-gate defect and supersedes those tier counts. The current 910-test universe is partitioned without overlap. No test was skipped in either final Windows run.
 
 ## Outstanding release blockers
 

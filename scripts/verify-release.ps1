@@ -20,7 +20,9 @@ function Invoke-ReleaseStep {
 
 Push-Location $repositoryRoot
 try {
-    Invoke-ReleaseStep "Python credential-free suite" $python @("-m", "pytest")
+    Invoke-ReleaseStep "Python credential-free default suite" $python @(
+        "-m", "pytest", "-m", "not windows_process"
+    )
     Invoke-ReleaseStep "Python compilation" $python @("-m", "compileall", "-q", "src", "tests")
     Invoke-ReleaseStep "Ruff correctness" $python @(
         "-m", "ruff", "check", "--select", "E9,F63,F7,F82", "."
@@ -37,7 +39,7 @@ try {
 
     if ($IncludeWindowsProcessTests) {
         Invoke-ReleaseStep "Disposable Windows process/recovery tests" $python @(
-            "-m", "pytest", "tests/test_local_installation.py", "tests/test_m8_3_process_recovery.py"
+            "-m", "pytest", "-m", "windows_process"
         )
     }
     else {

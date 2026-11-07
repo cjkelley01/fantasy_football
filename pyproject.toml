@@ -32,3 +32,6 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers -ra"
 testpaths = ["tests"]
+markers = [
+    "windows_process: starts, stops, kills, or otherwise controls real Windows application or launcher processes",
+]

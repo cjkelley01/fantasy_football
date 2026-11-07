@@ -95,6 +95,12 @@ Run the setup health check after configuration:
 
 The health check validates configuration and logging only. It performs no ESPN or network access; connectivity begins in M0.2.
 
+For release verification without starting or stopping real application
+processes, run `scripts\verify-release.ps1`. Add
+`-IncludeWindowsProcessTests` only when the disposable launcher/process tier is
+intended. The default and opt-in pytest marker selections are disjoint; see the
+[release checklist](docs/RELEASE_CHECKLIST.md).
+
 ## Read-only ESPN connectivity diagnostic
 
 M0.2 provides a read-only diagnostic for league identity, team and player ownership, standings, scoring, and eligible lineup slots:
