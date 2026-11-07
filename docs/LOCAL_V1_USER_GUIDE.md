@@ -27,6 +27,21 @@ Copy `.env.example` to `.env`. Set `ESPN_LEAGUE_ID` and `ESPN_SEASON`. A public 
 
 `SNAPSHOT_DB_PATH` controls the private append-only snapshot database. The related run database uses the same base path with `.runs.sqlite3`. Keep both under the ignored `outputs/` directory unless you deliberately choose another private local path.
 
+To enable an independently reviewed manual rule file, set its optional path in
+`.env` and restart War Room:
+
+```dotenv
+FANTASY_FOOTBALL_RULE_CONFIG_PATH=config/league_rules.local.yaml
+```
+
+Relative paths resolve from the repository directory used by
+`start-local.ps1`. A process-environment value overrides `.env`. On restart,
+`GET /api/v1/refresh/profile` reports
+`manual_rule_configuration_available: true` only when the file is readable,
+valid YAML, and identifies the configured league and season. The newly
+published snapshot, not that profile flag, is the authoritative evidence that
+an approved rule was actually applied.
+
 Some league rules are not exposed sufficiently by ESPN. When the application reports an unresolved capability—such as a consolation-period mapping—provide only the validated configuration described by the error and the league-configuration documentation. Do not guess.
 
 ## Refresh and select a league snapshot

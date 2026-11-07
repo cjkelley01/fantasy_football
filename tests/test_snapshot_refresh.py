@@ -17,7 +17,11 @@ from fantasy_football.app.service import (
     ApplicationServiceError,
 )
 from fantasy_football.config import EspnCredentials, Settings
-from fantasy_football.espn_adapter import EspnAdapterError, translate_bundle
+from fantasy_football.espn_adapter import (
+    EspnAdapterError,
+    load_manual_rule_config,
+    translate_bundle,
+)
 from fantasy_football.snapshot_store import PostCommitVerificationError, SnapshotStore
 from tests.adapter_fixtures import source_bundle
 
@@ -56,6 +60,27 @@ def _request(week: int = 2):
     }
 
 
+def _write_manual_consolation_config(path, *, league_id: int = 77, season: int = 2026):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""league_id: {league_id}
+season: {season}
+rules:
+  - rule_id: consolation_structure
+    gap_id: consolation_ladder
+    config_key: postseason.consolation_ladder
+    expected_raw_value: false
+    approved_value:
+      structure: bounded_winner_up_loser_down_v1
+      round_matchup_period_ids: [3]
+    approval: m8.2-reviewed-configuration
+    evidence_url: https://example.invalid/evidence/consolation
+""",
+        encoding="utf-8",
+    )
+    return path
+
+
 def test_refresh_profile_never_discloses_credentials_and_http_publishes(refresh_system) -> None:
     store, service, coordinator = refresh_system
     app = create_app(service, background_coordinator=None, refresh_coordinator=coordinator)
@@ -82,6 +107,102 @@ def test_refresh_profile_never_discloses_credentials_and_http_publishes(refresh_
         assert result["validation_findings"]
         assert "private-cookie-value" not in str(result)
         assert len(store.list_snapshots()) == 1
+
+
+@pytest.mark.parametrize("case", ["missing", "invalid_yaml", "wrong_league", "wrong_season"])
+def test_refresh_profile_fails_safely_for_invalid_manual_configuration(
+    tmp_path, case
+) -> None:
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    store.initialize()
+    service = ApplicationService(ApplicationDependencies(store))
+    path = tmp_path / "private" / "rules.yaml"
+    if case == "invalid_yaml":
+        path.parent.mkdir(parents=True)
+        path.write_text("rules: [unterminated", encoding="utf-8")
+    elif case == "wrong_league":
+        _write_manual_consolation_config(path, league_id=88)
+    elif case == "wrong_season":
+        _write_manual_consolation_config(path, season=2025)
+    settings = Settings(
+        league_id=77, season=2026, log_level="INFO",
+        snapshot_db_path=store.path, manual_rule_config_path=path,
+    )
+    coordinator = SnapshotRefreshCoordinator(RefreshDependencies(
+        store=store, application=service, settings_loader=lambda: settings,
+        adapter=lambda *_args, **_kwargs: translate_bundle(source_bundle()),
+    ))
+    app = create_app(service, background_coordinator=None, refresh_coordinator=coordinator)
+    try:
+        with TestClient(app) as client:
+            response = client.get("/api/v1/refresh/profile")
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "refresh_profile_unavailable"
+        assert str(path) not in response.text
+        assert "league_id=88" not in response.text
+    finally:
+        coordinator.close()
+
+
+def test_production_refresh_loads_dotenv_manual_rules_into_published_snapshot(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    for key in (
+        "ESPN_LEAGUE_ID", "ESPN_SEASON", "ESPN_S2", "ESPN_SWID",
+        "FANTASY_FOOTBALL_RULE_CONFIG_PATH",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    config_path = _write_manual_consolation_config(
+        tmp_path / "config" / "league_rules.local.yaml"
+    )
+    (tmp_path / ".env").write_text(
+        "ESPN_LEAGUE_ID=77\nESPN_SEASON=2026\n"
+        "FANTASY_FOOTBALL_RULE_CONFIG_PATH=config/league_rules.local.yaml\n",
+        encoding="utf-8",
+    )
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    store.initialize()
+    service = ApplicationService(ApplicationDependencies(store))
+    coordinator = SnapshotRefreshCoordinator.production(store, service)
+
+    def accepted_adapter(settings, *, first_simulation_week, manual_config):
+        assert first_simulation_week == 2
+        assert manual_config == config_path.resolve()
+        overrides = load_manual_rule_config(
+            manual_config, league_id=settings.league_id, season=settings.season
+        )
+        return translate_bundle(source_bundle(), manual_overrides=overrides)
+
+    object.__setattr__(coordinator, "dependencies", replace(
+        coordinator.dependencies, adapter=accepted_adapter
+    ))
+    try:
+        app = create_app(
+            service, background_coordinator=None, refresh_coordinator=coordinator
+        )
+        with TestClient(app) as client:
+            profile_response = client.get("/api/v1/refresh/profile")
+            assert profile_response.status_code == 200
+            assert profile_response.json()["manual_rule_configuration_available"] is True
+            submitted_response = client.post("/api/v1/refreshes", json=_request())
+            assert submitted_response.status_code == 202
+            refresh_id = submitted_response.json()["refresh_id"]
+        terminal = _wait(coordinator, refresh_id)
+        assert terminal.status == "completed"
+        published = store.load(coordinator.result(refresh_id).snapshot.snapshot_id)
+        assert tuple(
+            (item.round_number, item.matchup_period_id)
+            for item in published.snapshot.rules.consolation.rounds
+        ) == ((1, 3),)
+        interpretation = next(
+            item for item in published.snapshot.rules.interpretations
+            if item.rule_id == "consolation_structure"
+        )
+        assert interpretation.manual_config_key == "postseason.consolation_ladder"
+        assert interpretation.source_id == "manual-rule-consolation_structure"
+    finally:
+        coordinator.close()
 
 
 def test_repeated_refresh_is_append_only_and_duplicate_content_gets_new_identity(

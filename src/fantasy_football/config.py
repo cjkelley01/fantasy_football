@@ -31,6 +31,7 @@ class Settings:
     log_level: str
     snapshot_db_path: Path = Path("outputs/fantasy_football.sqlite3")
     credentials: EspnCredentials | None = field(default=None, repr=False)
+    manual_rule_config_path: Path | None = field(default=None, repr=False)
 
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -70,10 +71,23 @@ def _snapshot_db_path(values: Mapping[str, str]) -> Path:
     return Path(raw)
 
 
+def _manual_rule_config_path(
+    values: Mapping[str, str], *, base_directory: Path
+) -> Path | None:
+    raw = values.get("FANTASY_FOOTBALL_RULE_CONFIG_PATH", "").strip()
+    if not raw:
+        return None
+    configured = Path(raw).expanduser()
+    if not configured.is_absolute():
+        configured = base_directory / configured
+    return configured.resolve(strict=False)
+
+
 def load_settings(
     *,
     env_file: str | Path | None = ".env",
     environ: Mapping[str, str] | None = None,
+    base_directory: str | Path | None = None,
 ) -> Settings:
     """Load and validate settings, with process environment taking precedence.
 
@@ -94,6 +108,9 @@ def load_settings(
 
     process_values = os.environ if environ is None else environ
     values = {**file_values, **process_values}
+    configuration_base = (
+        Path.cwd() if base_directory is None else Path(base_directory).expanduser()
+    ).resolve(strict=False)
     log_level = values.get("LOG_LEVEL", "INFO").strip().upper()
     if log_level not in _LOG_LEVELS:
         allowed = ", ".join(sorted(_LOG_LEVELS))
@@ -105,4 +122,7 @@ def load_settings(
         log_level=log_level,
         snapshot_db_path=_snapshot_db_path(values),
         credentials=_credentials(values),
+        manual_rule_config_path=_manual_rule_config_path(
+            values, base_directory=configuration_base
+        ),
     )

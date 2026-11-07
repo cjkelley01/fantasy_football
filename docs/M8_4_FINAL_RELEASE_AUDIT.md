@@ -102,17 +102,17 @@ review; no other P0 or P1 finding is known.
 
 Environment: Windows 11, Python 3.12.10, pytest 8.4.2, Node/npm with the locked frontend tree; source baseline `cbec38c` plus this audit branch.
 
-- Default credential-free Python tier after the P0 follow-up: **898 passed in 47.28 seconds**, with the 14 real-process tests deselected by `-m "not windows_process"`. It includes ordinary unit, API, snapshot, frontend-contract, documentation, security, deterministic replay, and numerical reference/oracle coverage. No real launcher/application process test executed in this tier.
+- Default credential-free Python tier after the manual-rule configuration follow-up: **907 passed in 48.47 seconds**, with the 14 real-process tests deselected by `-m "not windows_process"`. It includes ordinary unit, API, snapshot, frontend-contract, documentation, security, deterministic replay, and numerical reference/oracle coverage. No real launcher/application process test executed in this tier.
 - Frontend: **5 files / 87 tests passed**; jsdom emitted its known unimplemented-canvas diagnostic. TypeScript typecheck passed. Vite production build passed (1,960 modules; 341.47 kB JS / 99.76 kB gzip; 88.79 kB CSS / 16.74 kB gzip).
 - Disposable Windows launcher/process tier: **14 passed in 145.65 seconds**, selected exactly once by `-m windows_process`. All ran on Windows with zero skips; no private database or unrelated process was used. Existing platform guards continue to skip them on unsupported systems.
 - Python compilation, Ruff correctness rules `E9,F63,F7,F82`, and `pip check`: passed.
 - npm production dependency audit: zero vulnerabilities. The audit does not claim a dev-dependency or general Python CVE scan.
-- Selection-contract regression: passed. Static marker/script assertions and pytest collection reported **898 default + 14 process = 912 total unique tests**, with disjoint selection.
+- Selection-contract regression: passed. Static marker/script assertions and pytest collection reported **907 default + 14 process = 921 total unique tests**, with disjoint selection.
 - Documentation links/status checks and repository security checks: included in the default tier and passed.
 - Working-tree and committed-revision whitespace checks: passed.
 - Production-browser smoke is the accepted real Edge evidence from M8.3; it was also exercised by the Windows process suite. No new live ESPN retrieval was performed, so no new live claim is made.
 
-The original M8.4 audit ran all 909 then-existing tests in the default invocation and repeated process tests in its optional tier. The release-tier follow-up corrected that defect; the P0 follow-up adds two tests. The current 912-test universe is partitioned without overlap. No test was skipped in either final Windows run.
+The original M8.4 audit ran all 909 then-existing tests in the default invocation and repeated process tests in its optional tier. The release-tier follow-up corrected that defect; the P0 and manual-rule configuration follow-ups add eleven tests. The current 921-test universe is partitioned without overlap. No test was skipped in either final Windows process run.
 
 ## Outstanding release blockers
 
