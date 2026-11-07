@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -27,6 +26,7 @@ from fantasy_football.espn_adapter import (
     AdapterResult,
     EspnAdapterError,
     fetch_and_translate,
+    load_manual_rule_config,
 )
 from fantasy_football.snapshot_store import (
     PostCommitVerificationError,
@@ -77,28 +77,41 @@ class SnapshotRefreshCoordinator:
 
     @classmethod
     def production(cls, store: SnapshotStore, application: ApplicationService):
-        configured = os.environ.get("FANTASY_FOOTBALL_RULE_CONFIG_PATH", "").strip()
         return cls(RefreshDependencies(
             store=store,
             application=application,
-            manual_config=Path(configured) if configured else None,
+            settings_loader=load_settings,
         ))
 
-    def profile(self) -> LeagueRefreshProfile:
+    def _configuration(self) -> tuple[Settings, Path | None]:
         try:
             settings = self.dependencies.settings_loader()
-        except SettingsError as exc:
+            manual_config = (
+                self.dependencies.manual_config
+                if self.dependencies.manual_config is not None
+                else settings.manual_rule_config_path
+            )
+            load_manual_rule_config(
+                manual_config,
+                league_id=settings.league_id,
+                season=settings.season,
+            )
+        except (SettingsError, EspnAdapterError, OSError) as exc:
             raise ApplicationServiceError(
                 "refresh_profile_unavailable", "unsupported_configuration",
                 "The configured local ESPN league profile is unavailable.",
             ) from exc
+        return settings, manual_config
+
+    def profile(self) -> LeagueRefreshProfile:
+        settings, manual_config = self._configuration()
         return LeagueRefreshProfile(
             league_id=settings.league_id,
             season=settings.season,
             credential_mode=(
                 "private_credentials_configured" if settings.credentials else "public"
             ),
-            manual_rule_configuration_available=self.dependencies.manual_config is not None,
+            manual_rule_configuration_available=manual_config is not None,
         )
 
     def submit(self, request: SnapshotRefreshRequest) -> SnapshotRefreshSubmission:
@@ -151,11 +164,11 @@ class SnapshotRefreshCoordinator:
         cancel = self._cancel[refresh_id]
         self._set(refresh_id, status="running", stage="retrieving_and_validating", started_at_utc=_now())
         try:
-            settings = self.dependencies.settings_loader()
+            settings, manual_config = self._configuration()
             result = self.dependencies.adapter(
                 settings,
                 first_simulation_week=request.first_simulation_week,
-                manual_config=self.dependencies.manual_config,
+                manual_config=manual_config,
             )
             if (
                 result.snapshot.league_id != request.league_id

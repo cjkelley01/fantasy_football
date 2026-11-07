@@ -51,6 +51,61 @@ def test_process_environment_overrides_dotenv(tmp_path: Path) -> None:
     assert settings.log_level == "WARNING"
 
 
+def test_manual_rule_path_loads_from_dotenv_relative_to_configuration_base(
+    tmp_path: Path,
+) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "ESPN_LEAGUE_ID=111\nESPN_SEASON=2026\n"
+        "FANTASY_FOOTBALL_RULE_CONFIG_PATH=config/rules.yaml\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(
+        env_file=env_file, environ={}, base_directory=tmp_path
+    )
+
+    assert settings.manual_rule_config_path == (tmp_path / "config/rules.yaml").resolve()
+
+
+def test_manual_rule_path_loads_from_process_environment(tmp_path: Path) -> None:
+    configured = tmp_path / "process-rules.yaml"
+    settings = load_settings(
+        env_file=None,
+        environ={
+            **VALID_ENV,
+            "FANTASY_FOOTBALL_RULE_CONFIG_PATH": str(configured),
+        },
+    )
+
+    assert settings.manual_rule_config_path == configured.resolve()
+
+
+def test_process_manual_rule_path_overrides_dotenv(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "ESPN_LEAGUE_ID=111\nESPN_SEASON=2026\n"
+        "FANTASY_FOOTBALL_RULE_CONFIG_PATH=config/from-file.yaml\n",
+        encoding="utf-8",
+    )
+
+    settings = load_settings(
+        env_file=env_file,
+        environ={"FANTASY_FOOTBALL_RULE_CONFIG_PATH": "config/from-process.yaml"},
+        base_directory=tmp_path,
+    )
+
+    assert settings.manual_rule_config_path == (
+        tmp_path / "config/from-process.yaml"
+    ).resolve()
+
+
+def test_manual_rule_path_is_optional() -> None:
+    settings = load_settings(env_file=None, environ=VALID_ENV)
+
+    assert settings.manual_rule_config_path is None
+
+
 @pytest.mark.parametrize("missing_key", ["ESPN_LEAGUE_ID", "ESPN_SEASON"])
 def test_missing_required_value_fails(missing_key: str) -> None:
     values = {key: value for key, value in VALID_ENV.items() if key != missing_key}

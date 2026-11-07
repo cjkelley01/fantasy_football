@@ -50,6 +50,18 @@ audited rule configuration is selected only by the server through
 `FANTASY_FOOTBALL_RULE_CONFIG_PATH`; browser-supplied paths are rejected by the
 strict DTO.
 
+The optional path is loaded by the same centralized `load_settings()` boundary
+as league identity, credentials, logging, and snapshot storage. Values supplied
+by the process environment override `.env`; a blank or absent value means no
+manual configuration. Relative paths resolve from the configured settings base,
+which is the repository working directory for `start-local.ps1`. The refresh
+profile validates the selected file's YAML and league/season identity through
+the accepted `load_manual_rule_config()` contract before reporting
+`manual_rule_configuration_available=true`. Missing, malformed, or mismatched
+files produce the sanitized `refresh_profile_unavailable` response without
+returning the local path or YAML details. The adapter validates and applies the
+same file during retrieval; browser input cannot replace it.
+
 Errors crossing the refresh boundary use stable safe codes. Adapter and upstream
 exception text is neither copied into API records nor emitted by the refresh
 coordinator's ordinary logs because it may contain URLs, cookies, or private raw
