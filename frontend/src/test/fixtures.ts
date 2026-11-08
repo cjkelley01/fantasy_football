@@ -9,7 +9,7 @@ export const snapshot: SnapshotSummary = {
     {team_id:2,display_name:"Sunday Union",wins:5,losses:2,ties:0,points_for:779.2,standing:2,playoff_seed:2,waiver_priority:3},
     {team_id:3,display_name:"Fourth & Long",wins:3,losses:4,ties:0,points_for:702.8,standing:3,playoff_seed:3,waiver_priority:2},
     {team_id:4,display_name:"Red Zone Club",wins:1,losses:6,ties:0,points_for:650.1,standing:4,playoff_seed:4,waiver_priority:1},
-  ], players:[{player_id:101,display_name:"Sanitized Player",default_position_id:2,eligible_lineup_slot_ids:[2,23],nfl_team_id:1,injury_status:null,acquisition_status:"ROSTERED",is_undroppable:false}],
+  ], players:[{player_id:101,display_name:"Sanitized Player",default_position_id:2,eligible_lineup_slot_ids:[2,23],nfl_team_id:1,injury_status:null,acquisition_status:"ONTEAM",is_undroppable:false}],
   roster_assignments:[{player_id:101,team_id:1,lineup_slot_id:2}], matchup_periods:[{matchup_period_id:8,scoring_weeks:[8],phase:"regular_season"}],
   matchups:[{matchup_id:1,matchup_period_id:8,home_team_id:1,away_team_id:4,bracket_type:null,entry_status:"scheduled"},{matchup_id:2,matchup_period_id:8,home_team_id:2,away_team_id:3,bracket_type:null,entry_status:"scheduled"}],
   league_structure:{lineup_slot_capacities:[[0,1,"QB"],[2,2,"RB"]],ordinary_roster_capacity:16,reserve_roster_capacity:2,championship_qualifier_count:2,championship_round_count:2,consolation_enabled:true,acquisition_type:"traditional",acquisition_uses_budget:false},
