@@ -35,9 +35,9 @@ The explorer deliberately remains useful when ranking is unresolved. Every retai
 
 ## Search construction handoff
 
-Simulation Center constructs the Opportunity Explorer's candidate universe from the active canonical snapshot. Player selection is identity-first: display name, position, NFL-team identifier, and fantasy ownership are visible, while raw IDs remain only in the advanced compatibility surface and submitted API payload. Requesting-team outgoing players, selected-counterparty incoming players, and unowned acquisition players are separate pools. Counterparties and positions support all, one, or several selections.
+Simulation Center constructs the Opportunity Explorer's candidate universe from the active canonical snapshot. Player selection is identity-first: display name, position, NFL-team identifier, and fantasy ownership are visible, while raw IDs remain only in the advanced compatibility surface and submitted API payload. Requesting-team outgoing players, selected-counterparty incoming players, and unowned acquisition players are separate pools. Counterparties and positions support all, one, or several selections. Canonical ownership comes from roster assignments; canonical `FREEAGENT` and `WAIVERS` status then determines which unowned players enter the acquisition pool. `ONTEAM` never substitutes for the authoritative roster relationship.
 
-An empty player selection has an explicit meaning: include every eligible player in that resolved pool. Immediately before submission the frontend expands that choice into sorted explicit player IDs in the unchanged API 1.0 `candidate_search` contract. The preview reports resolved outgoing, incoming, acquisition, counterparty, and unique-trade-player counts; resource limits remain separately visible because the preview is a declared universe, not a promise of exhaustive completion.
+Each directional player scope has an explicit mode: **All eligible players**, **Include only selected**, or **All except selected**. An empty include-only selection remains an empty, invalid universe; it never silently expands back to all. Team, counterparty, position, and snapshot changes clear incompatible player-specific choices. Immediately before submission the frontend expands the selected modes into sorted explicit player IDs in the unchanged API 1.0 `candidate_search` contract. The preview reports resolved outgoing, incoming, acquisition, counterparty, and unique-trade-player counts; resource limits remain separately visible because the preview is a declared universe, not a promise of exhaustive completion.
 
 ## Accessibility, responsive behavior, and scale
 
@@ -48,3 +48,5 @@ The sanitized fixture exercises positive, negative, and unavailable impacts; a m
 ## Limitations
 
 M7.3 explores already-retained results only. It does not create searches, submit ESPN transactions, model trade acceptance, manufacture waiver success, or provide M7.4 manual scenario composition. Comparison is deliberately local and bounded; server-side pagination remains authoritative for the complete retained universe. M5 statistical and model limitations remain in force.
+
+The broader contextual-help glossary, denominator-backed progress bars, and estimated-runtime system requested during the usability review remain deferred enhancements. Current progress remains limited to backend-authored lifecycle stages, elapsed time, counters, coverage flags, and stop reasons; no ETA or completion percentage is inferred. This remediation does not claim those deferred systems are complete.

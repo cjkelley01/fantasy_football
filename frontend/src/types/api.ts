@@ -49,6 +49,13 @@ export interface PlayerSummary {
   readonly is_undroppable: boolean | null;
 }
 
+/** Raw canonical ESPN acquisition-status vocabulary preserved by API 1.0. */
+export const CANONICAL_PLAYER_ACQUISITION_STATUSES = Object.freeze({
+  freeAgent: "FREEAGENT",
+  waivers: "WAIVERS",
+  onTeam: "ONTEAM",
+} as const);
+
 export interface RosterAssignment {
   readonly player_id: number;
   readonly team_id: number;

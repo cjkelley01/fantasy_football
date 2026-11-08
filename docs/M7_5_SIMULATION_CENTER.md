@@ -2,7 +2,7 @@
 
 Status: **COMPLETE AND ACCEPTED** (31 October 2026). Governing contracts: `MASTER_SPEC.md` M7.5, API schema 1.0, `RUN_MANAGEMENT.md`, and the visual-first standard in `UI_DESIGN_VISION.md`.
 
-The common action-search workflow keeps team, action family, counterparties, roster-aware player pools, and universe preview in the primary configuration surface. Statistical sampling, worker, path, response, and resource controls remain available under advanced search settings. Blank native player selections mean all eligible players in that scoped pool and are resolved to explicit stable IDs before the existing API 1.0 request is submitted; this is a presentation/runtime-policy convenience, not a new engine fallback.
+The common action-search workflow keeps team, action family, counterparties, roster-aware player pools, and universe preview in the primary configuration surface. Statistical sampling, worker, path, response, and resource controls remain available under advanced search settings. Native scopes explicitly distinguish all eligible, include-only, and all-except behavior and resolve to stable IDs before the existing API 1.0 request is submitted; this is a presentation/runtime-policy adapter, not a new engine fallback. Canonical `FREEAGENT` and `WAIVERS` status is reconciled with authoritative roster assignments when constructing the acquisition pool.
 
 ## Contract and output
 
