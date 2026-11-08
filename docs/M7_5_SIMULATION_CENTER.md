@@ -2,6 +2,8 @@
 
 Status: **COMPLETE AND ACCEPTED** (31 October 2026). Governing contracts: `MASTER_SPEC.md` M7.5, API schema 1.0, `RUN_MANAGEMENT.md`, and the visual-first standard in `UI_DESIGN_VISION.md`.
 
+The common action-search workflow keeps team, action family, counterparties, roster-aware player pools, and universe preview in the primary configuration surface. Statistical sampling, worker, path, response, and resource controls remain available under advanced search settings. Blank native player selections mean all eligible players in that scoped pool and are resolved to explicit stable IDs before the existing API 1.0 request is submitted; this is a presentation/runtime-policy convenience, not a new engine fallback.
+
 ## Contract and output
 
 The Simulation Center is an integrated Configure → Monitor → History surface. It submits accepted API 1.0 baseline and action-search requests, monitors retained run and progress records, and delegates completed-result rendering to League Overview, Opportunity Explorer, or Trade Lab. It does not implement analytical estimators, legality, roster completion, or candidate generation in TypeScript.

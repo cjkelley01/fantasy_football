@@ -31,6 +31,14 @@ M7.3 applies the [visual-first information design standard](UI_DESIGN_VISION.md)
 
 An evaluated candidate may still lack individual precision. A statistically competitive candidate is not necessarily the confirmed best action. A completed run may still have incomplete candidate coverage, incomplete numerical evaluation, incomplete precision, or unresolved ranking. All four are visible independently. Probability-point values are displayed as supplied and are never multiplied by 100 again.
 
+The explorer deliberately remains useful when ranking is unresolved. Every retained candidate path remains pageable and inspectable, evaluated paths expose their available requester and all-team evidence, and unevaluated paths remain visibly unavailable rather than disappearing. “Ranking unresolved” qualifies comparisons; it does not suppress valid partial evidence or promote a one-state evaluation to a global optimum.
+
+## Search construction handoff
+
+Simulation Center constructs the Opportunity Explorer's candidate universe from the active canonical snapshot. Player selection is identity-first: display name, position, NFL-team identifier, and fantasy ownership are visible, while raw IDs remain only in the advanced compatibility surface and submitted API payload. Requesting-team outgoing players, selected-counterparty incoming players, and unowned acquisition players are separate pools. Counterparties and positions support all, one, or several selections.
+
+An empty player selection has an explicit meaning: include every eligible player in that resolved pool. Immediately before submission the frontend expands that choice into sorted explicit player IDs in the unchanged API 1.0 `candidate_search` contract. The preview reports resolved outgoing, incoming, acquisition, counterparty, and unique-trade-player counts; resource limits remain separately visible because the preview is a declared universe, not a promise of exhaustive completion.
+
 ## Accessibility, responsive behavior, and scale
 
 Every graphical value has exact text or an accessible label. Native controls expose filtering, sorting, selection, pagination, and comparison; keyboard focus remains visible. The two-column browser/detail layout becomes a single flow on narrow screens, with an explicit **View selected path** link between discovery and detail. Filter controls remain horizontally navigable, status labels and transaction steps retain legible type, and every league-impact interval includes explicit `CI … pp` text.
