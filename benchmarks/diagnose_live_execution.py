@@ -178,6 +178,9 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
     for module, name, label in (
         (weekly, "add_player", "add_player"),
         (weekly, "drop_player", "drop_player"),
+        (weekly, "_optimistic_coverage_possible", "optimistic_coverage_matching"),
+        (weekly, "_ordinary_slot_index", "ordinary_slot_index"),
+        (weekly, "_team_owned", "team_owned_lookup"),
         (weekly, "optimize_starting_lineup", "lineup_optimization"),
         (evolving, "validate_evolving_state", "state_validation"),
         (evolving, "_replace_availability", "availability_replacement"),
