@@ -463,6 +463,10 @@ def _enumerate_plans(
     corrections = _correction_states(snapshot, state, team_id, slot_index)
     correction_count = len(corrections)
     dropped_states: dict[tuple[int, int], EvolvingLeagueState | TransactionStateError] = {}
+    # Multiple legal transaction paths can yield the same roster. Lineup
+    # coverage depends on roster entries, not transaction ledger history.
+    # Bound the cache so large searches do not retain every explored roster.
+    lineup_vacancies: OrderedDict[tuple, int] = OrderedDict()
     for player_id in available:
         player_had_structural_option = False
         for corrected in corrections:
@@ -557,14 +561,22 @@ def _enumerate_plans(
                             reasons.get("irrelevant_ir_correction", 0) + 1
                         )
                         continue
-                    after = optimize_starting_lineup(
-                        snapshot,
-                        team_id,
-                        state.scoring_week,
-                        roster_entries=resulting.roster_entries,
-                        workspace=workspace,
-                    )
-                    if after.vacancy_count >= baseline.vacancy_count:
+                    roster_key = resulting.roster_entries
+                    after_vacancies = lineup_vacancies.get(roster_key)
+                    if after_vacancies is None:
+                        after_vacancies = optimize_starting_lineup(
+                            snapshot,
+                            team_id,
+                            state.scoring_week,
+                            roster_entries=roster_key,
+                            workspace=workspace,
+                        ).vacancy_count
+                        lineup_vacancies[roster_key] = after_vacancies
+                        if len(lineup_vacancies) > 1024:
+                            lineup_vacancies.popitem(last=False)
+                    else:
+                        lineup_vacancies.move_to_end(roster_key)
+                    if after_vacancies >= baseline.vacancy_count:
                         reasons["no_coverage_improvement"] = (
                             reasons.get("no_coverage_improvement", 0) + 1
                         )
@@ -629,7 +641,7 @@ def _enumerate_plans(
                         resulting,
                         player_id,
                         baseline.vacancy_count,
-                        after.vacancy_count,
+                        after_vacancies,
                         total_value,
                         tie_key,
                     )
