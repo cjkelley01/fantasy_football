@@ -161,17 +161,29 @@ class _PlanDiagnostics:
     valuation_seconds: float
 
 
-def _ordinary_slot_ids(snapshot: LeagueSnapshot, player_id: int) -> tuple[int, ...]:
-    player = next(item for item in snapshot.players if item.player_id == player_id)
-    return tuple(
-        sorted(
-            rule.slot_id
-            for rule in snapshot.rules.lineup_slots
-            if rule.kind is not SlotKind.RESERVE
-            and rule.capacity > 0
-            and rule.slot_id in player.eligible_lineup_slot_ids
+def _ordinary_slot_index(snapshot: LeagueSnapshot) -> dict[int, tuple[int, ...]]:
+    """Index immutable player-to-ordinary-slot eligibility once per plan search."""
+    ordinary_slots = {
+        rule.slot_id
+        for rule in snapshot.rules.lineup_slots
+        if rule.kind is not SlotKind.RESERVE and rule.capacity > 0
+    }
+    return {
+        player.player_id: tuple(
+            sorted(ordinary_slots.intersection(player.eligible_lineup_slot_ids))
         )
-    )
+        for player in snapshot.players
+    }
+
+
+def _ordinary_slot_ids(
+    snapshot: LeagueSnapshot,
+    player_id: int,
+    slot_index: dict[int, tuple[int, ...]] | None = None,
+) -> tuple[int, ...]:
+    if slot_index is not None:
+        return slot_index[player_id]
+    return _ordinary_slot_index(snapshot)[player_id]
 
 
 def _team_owned(state: EvolvingLeagueState, team_id: int) -> tuple[int, ...]:
@@ -234,6 +246,7 @@ def _correction_states(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
     team_id: int,
+    slot_index: dict[int, tuple[int, ...]] | None = None,
 ) -> tuple[EvolvingLeagueState, ...]:
     """Exhaustively enumerate finite reactive IR correction effects.
 
@@ -268,7 +281,7 @@ def _correction_states(
         for blocker in _required_ir_blockers(snapshot, candidate, team_id):
             if blocker in placed:
                 continue
-            for slot_id in _ordinary_slot_ids(snapshot, blocker):
+            for slot_id in _ordinary_slot_ids(snapshot, blocker, slot_index):
                 try:
                     corrected = activate_from_ir(
                         candidate,
@@ -437,14 +450,15 @@ def _enumerate_plans(
     # Correction reachability depends on the acting roster, evidence, and IR
     # policy—not on the eventual acquisition identity. Explore this exact graph
     # once and reuse its immutable states for every declared pool candidate.
-    corrections = _correction_states(snapshot, state, team_id)
+    slot_index = _ordinary_slot_index(snapshot)
+    corrections = _correction_states(snapshot, state, team_id, slot_index)
     correction_count = len(corrections)
     dropped_states: dict[tuple[int, int], EvolvingLeagueState | TransactionStateError] = {}
     for player_id in available:
         player_had_structural_option = False
         for corrected in corrections:
             owned = _team_owned(corrected, team_id)
-            for slot_id in _ordinary_slot_ids(snapshot, player_id):
+            for slot_id in _ordinary_slot_ids(snapshot, player_id, slot_index):
                 player_had_structural_option = True
                 operations: list[tuple[int | None, EvolvingLeagueState]] = []
                 attempted += 1
