@@ -6,12 +6,60 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections import Counter
+from collections.abc import Mapping
 
 from fantasy_football.config import load_settings
 from fantasy_football.espn_adapter import (
     build_live_scoring_evidence_report,
     retrieve_bundle,
 )
+
+
+def _schedule_field_audit(bundle: object, current_week: int) -> dict[str, object]:
+    """Report only structural field names and counts, never ESPN record values."""
+    payload = bundle.pro_schedule.payload
+    settings = payload.get("settings", {})
+    teams = settings.get("proTeams", []) if isinstance(settings, Mapping) else []
+    all_fields: Counter[str] = Counter()
+    current_fields: Counter[str] = Counter()
+    nested_status_fields: Counter[str] = Counter()
+    current_games: set[str] = set()
+    all_games: set[str] = set()
+    for team in teams:
+        if not isinstance(team, Mapping):
+            continue
+        schedule = team.get("proGamesByScoringPeriod", {})
+        if not isinstance(schedule, Mapping):
+            continue
+        for week, games in schedule.items():
+            if not isinstance(games, list):
+                continue
+            for game in games:
+                if not isinstance(game, Mapping):
+                    continue
+                identifier = str(game.get("id", ""))
+                # IDs are used for deduplication only, never emitted.
+                if identifier in all_games:
+                    continue
+                all_games.add(identifier)
+                all_fields.update(str(k) for k in game.keys())
+                if str(week) == str(current_week):
+                    current_games.add(identifier)
+                    current_fields.update(str(k) for k in game.keys())
+                    for field in ("status", "gameStatus", "state", "competition"):
+                        nested = game.get(field)
+                        if isinstance(nested, Mapping):
+                            nested_status_fields.update(
+                                f"{field}.{k}" for k in nested.keys()
+                            )
+    return {
+        "distinct_schedule_games": len(all_games),
+        "distinct_current_week_games": len(current_games),
+        "all_game_field_presence": dict(sorted(all_fields.items())),
+        "current_week_field_presence": dict(sorted(current_fields.items())),
+        "current_week_nested_status_field_presence": dict(sorted(nested_status_fields.items())),
+    }
 
 
 def main() -> None:
@@ -53,6 +101,7 @@ def main() -> None:
     data = report.to_dict()
     print(json.dumps({
         "requested_first_simulation_week": args.first_simulation_week,
+        "schedule_field_audit": _schedule_field_audit(bundle, report.current_scoring_period),
         **{key: data[key] for key in keys},
     }, indent=2, sort_keys=True))
 
