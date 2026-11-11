@@ -160,3 +160,76 @@ def test_native_acquisition_rejection_is_atomic_and_matches_reference() -> None:
     else:
         raise AssertionError("acquiring a rostered player must fail")
     assert compact.to_reference() == reference
+
+
+def test_native_waiver_acquisition_matches_reference() -> None:
+    from tests.canonical_fixtures import canonical_snapshot
+    from fantasy_football.evolving_state import TransactionStateError
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    prepared = prepare_season(snapshot)
+    # Player 4 begins on waivers in this fixture. Compare the exact reference
+    # outcome, whether it is authorized or rejected by other league rules.
+    compact = CompactSeasonState.from_reference(prepared, initial)
+    try:
+        expected = add_player(
+            initial, snapshot, team_id=1, player_id=4,
+            lineup_slot_id=20, phase=TransactionPhase.WAIVER,
+        )
+    except TransactionStateError as exc:
+        import pytest
+        with pytest.raises(TransactionStateError) as caught:
+            compact.add_player(
+                team_id=1, player_id=4, lineup_slot_id=20,
+                phase=TransactionPhase.WAIVER,
+            )
+        assert caught.value.code == exc.code
+        assert str(caught.value) == str(exc)
+        assert compact.to_reference() == initial
+    else:
+        compact.add_player(
+            team_id=1, player_id=4, lineup_slot_id=20,
+            phase=TransactionPhase.WAIVER,
+        )
+        assert compact.to_reference() == expected
+
+
+def test_native_acquisition_rejections_match_reference_across_slots_and_players() -> None:
+    import pytest
+    from tests.canonical_fixtures import canonical_snapshot
+    from fantasy_football.evolving_state import TransactionStateError
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    prepared = prepare_season(snapshot)
+    slots = sorted({slot.slot_id for slot in snapshot.rules.lineup_slots} | {-999})
+    for team in snapshot.teams:
+        for player in snapshot.players:
+            for slot in slots:
+                compact = CompactSeasonState.from_reference(prepared, initial)
+                try:
+                    expected = add_player(
+                        initial, snapshot, team_id=team.team_id,
+                        player_id=player.player_id, lineup_slot_id=slot,
+                    )
+                except TransactionStateError as exc:
+                    with pytest.raises(TransactionStateError) as caught:
+                        compact.add_player(
+                            team_id=team.team_id,
+                            player_id=player.player_id,
+                            lineup_slot_id=slot,
+                        )
+                    assert (caught.value.code, str(caught.value)) == (exc.code, str(exc))
+                    assert compact.to_reference() == initial
+                else:
+                    compact.add_player(
+                        team_id=team.team_id,
+                        player_id=player.player_id,
+                        lineup_slot_id=slot,
+                    )
+                    assert compact.to_reference() == expected
