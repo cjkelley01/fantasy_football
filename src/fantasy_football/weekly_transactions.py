@@ -582,8 +582,9 @@ def _enumerate_plans(
                         )
                         continue
                     essential += 1
-                    essential_states.setdefault(_state_effect_key(resulting), resulting)
-                    state_key = (team_id, _state_effect_key(resulting))
+                    effect_key = _state_effect_key(resulting)
+                    essential_states.setdefault(effect_key, resulting)
+                    state_key = (team_id, effect_key)
                     cached_value = values.get(state_key)
                     if cached_value is None:
                         started = time.perf_counter()
@@ -599,7 +600,11 @@ def _enumerate_plans(
                         cached_value = (value.is_complete, value.total_value)
                         values[state_key] = cached_value
                         values.move_to_end(state_key)
-                        while len(values) > 512:
+                        # A single candidate sweep can revisit the same effect
+                        # through different correction/drop paths. Keep enough
+                        # exact-state valuations to avoid early eviction during
+                        # that sweep, while retaining a bounded cache.
+                        while len(values) > 2048:
                             values.popitem(last=False)
                     else:
                         values.move_to_end(state_key)
