@@ -52,3 +52,46 @@ Run the existing coverage differential tests and full suite on the current branc
 - Added 14-team whole-batch versus split-batch exact equivalence.
 - Added diagnostic-only operation timings for optimistic coverage matching, ordinary-slot index construction, and team ownership lookup. These are inclusive nested measurements and must not be summed blindly.
 - **Pending**: run new tests and full suite locally. These tests establish replay invariants, not a pinned serialized golden output against the pre-M9 implementation. Pinning an independently recorded baseline is still required before replacing production logic.
+
+
+## Architectural migration — compact season executor (11 November 2026)
+
+The 20-path local diagnostic improved from 54.875 s to 22.906 s using
+shared exact lineup workspaces and equivalent-candidate coverage matching.
+This is approximately 0.87 paths/s, still inadequate for thousands of paths.
+The project is now pursuing a second, high-throughput execution backend rather
+than relying on successive percentage improvements to the reference engine.
+
+### Implementation boundary
+
+- `prepared_season.py` is the first independently testable component:
+  validated canonical snapshots become deterministic, dense indexes for
+  teams, players, configured slots, eligibility masks, weekly effective
+  projections, and initial roster ownership. Missing player-weeks remain
+  distinguishable from explicit zero projections.
+- Preparation is read-only and does not change the currently selected engine,
+  transaction legality, Monte Carlo randomness, or outputs.
+- The existing reference engine stays available for full-path differential
+  comparisons. No performance claims apply to preparation alone.
+
+### Next implementation sequence
+
+1. Record independent pre-migration golden outputs for complete, incomplete,
+   positive-acquisition, waiver, IR and postseason scenarios.
+2. Introduce a compact per-path state with explicit mutation boundaries and
+   exact canonical-state reconstruction. Prove equivalence of each transaction
+   transition and error outcome before substituting internal operations.
+3. Port exact lineup coverage and weekly transaction search onto the compact
+   state, keeping exhaustive legal candidate coverage and all ordering rules.
+4. Port standings, waiver priority, postseason brackets, and scoring.
+   Compare full deterministic seasons across identical path-index/seed ranges.
+5. Profile batching and compiled kernels against the new executor. Only then
+   integrate behind an opt-in engine selection and existing application APIs.
+
+### Performance gates
+
+Measure noninstrumented and instrumented 20/100/1,000/10,000-path runs,
+including workloads with actual acquisitions. Report cold preparation time,
+steady-state paths/s, peak memory, exact parity, and incomplete-run behavior.
+The first intermediate target is 10,000 paths under 10 minutes; the original
+under-60-second target remains aspirational until demonstrated.
