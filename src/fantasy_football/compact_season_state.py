@@ -102,7 +102,7 @@ class CompactSeasonState:
             scoring_week=self.scoring_week,
             cycle_id=self.cycle_id,
             current_matchup_period_id=self.matchup_period_id,
-            roster_entries=tuple(sorted(entries, key=lambda entry: entry.player_id)),
+            roster_entries=tuple(sorted(entries, key=lambda entry: (entry.team_id, entry.player_id))),
             availability=tuple(self.availability_by_player),
             current_waiver_priority=tuple(prepared.team_ids[i] for i in self.waiver_priority),
             initial_window_waiver_priority=tuple(prepared.team_ids[i] for i in self.initial_waiver_priority),
