@@ -316,6 +316,65 @@ class CompactSeasonState:
             self.matchup_acquisitions[team] += 1
         self.ledger.append(record)
 
+    def place_on_ir(
+        self, *, team_id: int, player_id: int, reserve_slot_id: int,
+    ) -> None:
+        """Native ordinary-to-reserve correction; reject before mutation."""
+        prepared = self.prepared
+        try:
+            team = prepared.team_index(team_id)
+            player = prepared.player_index(player_id)
+        except ValueError:
+            raise TransactionStateError(
+                f"team {team_id} does not own player {player_id}",
+                TransactionErrorCode.OTHER,
+            ) from None
+        if self.owner_by_player[player] != team:
+            raise TransactionStateError(
+                f"team {team_id} does not own player {player_id}",
+                TransactionErrorCode.OTHER,
+            )
+        try:
+            slot = prepared.slot_index(reserve_slot_id)
+        except ValueError:
+            slot = -1
+        if slot < 0 or prepared.slot_kinds[slot] != SlotKind.RESERVE.value or prepared.slot_capacities[slot] <= 0:
+            raise TransactionStateError(
+                f"slot {reserve_slot_id} is not configured reserve capacity",
+                TransactionErrorCode.OTHER,
+            )
+        if not prepared.player_eligible_slot_masks[player] & (1 << slot):
+            raise TransactionStateError(
+                f"player {player_id} is not eligible for reserve slot {reserve_slot_id}",
+                TransactionErrorCode.OTHER,
+            )
+        injury = next(item.injury_status for item in prepared.snapshot.players if item.player_id == player_id)
+        if injury not in {"OUT", "IR"}:
+            raise TransactionStateError(
+                f"player {player_id} injury status {injury!r} does not establish IR placement eligibility",
+                TransactionErrorCode.OTHER,
+            )
+        occupancy = sum(
+            owner == team and self.slot_by_player[i] == slot
+            for i, owner in enumerate(self.owner_by_player)
+        )
+        if occupancy >= prepared.slot_capacities[slot]:
+            raise TransactionStateError(
+                f"team {team_id} slot {reserve_slot_id} occupancy {occupancy + 1} exceeds capacity {prepared.slot_capacities[slot]}",
+                TransactionErrorCode.SLOT_CAPACITY,
+            )
+        prior_slot = prepared.slot_ids[self.slot_by_player[player]]
+        priority = tuple(prepared.team_ids[i] for i in self.waiver_priority)
+        record = TransactionRecord(
+            len(self.ledger) + 1, self.scoring_week, self.cycle_id,
+            TransactionPhase.IR, TransactionAction.IR_PLACE,
+            team_id, player_id, None, team_id, team_id,
+            prior_slot, reserve_slot_id, None, None,
+            priority, priority, None, None, (),
+        )
+        self.slot_by_player[player] = slot
+        self.ledger.append(record)
+
     def apply_reference_transition(self, result: EvolvingLeagueState) -> None:
         """Temporary differential adapter, NOT a fast transaction implementation."""
         updated = type(self).from_reference(self.prepared, result)
