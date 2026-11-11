@@ -18,6 +18,7 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seconds", type=float, default=60.0)
+    parser.add_argument("--paths", type=int, default=1, help="Exact number of paths; defaults to 1")
     parser.add_argument("--latest-snapshot", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--disable-coverage-filter", action="store_true")
@@ -25,11 +26,13 @@ def main() -> int:
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error("--seconds must be positive")
+    if args.paths < 1:
+        parser.error("--paths must be at least 1")
 
     command = [
         sys.executable,
         str(Path(__file__).with_name("diagnose_live_execution.py")),
-        "--one-path",
+        "--paths", str(args.paths),
     ]
     if args.disable_coverage_filter:
         command.append("--disable-coverage-filter")
@@ -111,6 +114,9 @@ def main() -> int:
             "completed" if process.returncode == 0 else "failed"
         ),
         "limit_seconds": args.seconds,
+        "requested_paths": args.paths,
+        "completed_paths_per_second": round(completed_paths / elapsed, 4) if completed_paths is not None and elapsed > 0 else None,
+        "elapsed_seconds_per_completed_path": round(elapsed / completed_paths, 4) if completed_paths else None,
         "elapsed_seconds": round(elapsed, 3),
         "exit_code": process.returncode,
         "last_started_stage": last_stage,
