@@ -5,8 +5,6 @@ transaction legality, FLEX optimization, and V(R) ranking stay identical.
 """
 from __future__ import annotations
 
-from dataclasses import replace
-
 import pytest
 
 import fantasy_football.weekly_transactions as transactions
@@ -21,6 +19,7 @@ from tests.test_weekly_transactions import _policy, _staff_team_one, _state
         "competing_managers",
         "complete_roster",
         "flex_overlap",
+
     ),
 )
 def test_coverage_prefilter_matches_unpruned_policy(monkeypatch, fixture):
@@ -30,7 +29,7 @@ def test_coverage_prefilter_matches_unpruned_policy(monkeypatch, fixture):
         snapshot = _valuation_snapshot(competing_teams=2, pool_values=(8.0, 6.0))
     elif fixture == "complete_roster":
         snapshot = _staff_team_one(_valuation_snapshot(pool_values=(20.0,)))
-    else:
+    elif fixture == "flex_overlap":
         snapshot = _overlap_snapshot(pool_specs=((200, (23,), 9.0),))
 
     state = _state(snapshot)
@@ -47,8 +46,8 @@ def test_coverage_prefilter_matches_unpruned_policy(monkeypatch, fixture):
         snapshot, state, _policy()
     )
 
-    assert optimized.state == exhaustive.state
     assert optimized.acquisitions == exhaustive.acquisitions
+    assert optimized.state == exhaustive.state
     assert optimized.decisions == exhaustive.decisions or (
         # Diagnostic attempt/rejection counts are expected to differ because
         # the optimized search intentionally avoids impossible candidates.
@@ -61,3 +60,14 @@ def test_coverage_prefilter_matches_unpruned_policy(monkeypatch, fixture):
             for d in exhaustive.decisions
         )
     )
+
+
+def test_positive_acquisition_survives_coverage_prefilter(monkeypatch):
+    snapshot = _valuation_snapshot(pool_values=(8.0, 6.0))
+    state = _state(snapshot)
+    optimized = transactions.execute_weekly_essential_transactions(snapshot, state, _policy())
+    assert optimized.acquisitions, "Fixture must exercise an actual acquisition"
+    monkeypatch.setattr(transactions, "_optimistic_coverage_possible", lambda *args: True)
+    exhaustive = transactions.execute_weekly_essential_transactions(snapshot, state, _policy())
+    assert optimized.acquisitions == exhaustive.acquisitions
+    assert optimized.state == exhaustive.state
