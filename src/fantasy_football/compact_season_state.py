@@ -8,11 +8,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fantasy_football.canonical.model import RosterEntry
+from fantasy_football.canonical.model import RosterEntry, SlotKind
 from fantasy_football.evolving_state import (
     EvolvingLeagueState, PlayerAvailability, TransactionRecord,
     AcquisitionAvailability, TransactionAction, TransactionPhase,
-    TransactionStateError, TransactionErrorCode,
+    TransactionStateError, TransactionErrorCode, IRPolicy, IREligibility,
 )
 from fantasy_football.prepared_season import PreparedSeason
 from fantasy_football.evolving_state import _validate_drop_permission
@@ -160,6 +160,160 @@ class CompactSeasonState:
         self.slot_by_player[player] = -1
         self.raw_owner_by_player[player] = None
         self.availability_by_player[player] = held
+        self.ledger.append(record)
+
+
+    def add_player(
+        self, *, team_id: int, player_id: int, lineup_slot_id: int,
+        phase: TransactionPhase = TransactionPhase.FREE_AGENT,
+    ) -> None:
+        """Native indexed acquisition with reference-order authorization checks.
+
+        Requires a validated starting state. All rejection checks precede mutation.
+        """
+        prepared = self.prepared
+        snapshot = prepared.snapshot
+
+        def fail(message: str, code: TransactionErrorCode) -> None:
+            raise TransactionStateError(message, code)
+
+        try:
+            team = prepared.team_index(team_id)
+            player = prepared.player_index(player_id)
+        except ValueError:
+            fail(f"unknown team {team_id} or player {player_id}",
+                 TransactionErrorCode.UNKNOWN_REFERENCE)
+        if team not in self.waiver_priority:
+            fail(f"unknown team {team_id} or player {player_id}",
+                 TransactionErrorCode.UNKNOWN_REFERENCE)
+        available = self.availability_by_player[player]
+        required = (AcquisitionAvailability.WAIVERS if phase is TransactionPhase.WAIVER
+                    else AcquisitionAvailability.FREE_AGENT)
+        if available.status is not required:
+            fail(f"player {player_id} is {available.status.value}, not {required.value}",
+                 TransactionErrorCode.AVAILABILITY_MISMATCH)
+        if available.prohibited_cycle_id == self.cycle_id:
+            fail(f"player {player_id} is prohibited from reentry in cycle {self.cycle_id}",
+                 TransactionErrorCode.PROHIBITED_REENTRY)
+        try:
+            slot = prepared.slot_index(lineup_slot_id)
+        except ValueError:
+            slot = -1
+        if (slot < 0 or prepared.slot_capacities[slot] <= 0
+                or prepared.slot_kinds[slot] == SlotKind.RESERVE.value):
+            fail(f"lineup slot {lineup_slot_id} is not an ordinary configured destination",
+                 TransactionErrorCode.SLOT_ELIGIBILITY)
+        if not (prepared.player_eligible_slot_masks[player] & (1 << slot)):
+            fail(f"player {player_id} is ineligible for slot {lineup_slot_id}",
+                 TransactionErrorCode.SLOT_ELIGIBILITY)
+        for label, count, limit in (
+            ("season", self.season_acquisitions[team], snapshot.rules.acquisition.season_limit),
+            ("matchup-period", self.matchup_acquisitions[team], snapshot.rules.acquisition.matchup_limit),
+        ):
+            if limit is None:
+                continue
+            if count is None:
+                fail(
+                    f"team {team_id} {label} acquisition count is unknown; finite limit {limit} cannot be authorized",
+                    TransactionErrorCode.AUTHORIZATION_UNRESOLVED,
+                )
+            if count >= limit:
+                fail(f"team {team_id} has reached {label} acquisition limit {limit}",
+                     TransactionErrorCode.ACQUISITION_LIMIT)
+
+        reserve_slot_indices = {
+            i for i, kind in enumerate(prepared.slot_kinds)
+            if kind == SlotKind.RESERVE.value
+        }
+        reserve_players = sorted(
+            prepared.player_ids[i]
+            for i, owner in enumerate(self.owner_by_player)
+            if owner == team and self.slot_by_player[i] in reserve_slot_indices
+        )
+        if self.source.ir_policy is IRPolicy.STRICT:
+            evidence = {
+                item.player_id: item for item in self.source.ir_eligibility_evidence
+                if item.scoring_week == self.scoring_week
+            }
+            unresolved = tuple(
+                pid for pid in reserve_players
+                if pid not in evidence or evidence[pid].eligibility is IREligibility.UNKNOWN
+            )
+            if unresolved:
+                fail(
+                    f"team {team_id} strict IR acquisition legality is unresolved for reserve occupant(s) {unresolved}; "
+                    "separately verified evidence is required",
+                    TransactionErrorCode.IR_EVIDENCE_UNRESOLVED,
+                )
+            ineligible = tuple(
+                pid for pid in reserve_players
+                if evidence[pid].eligibility is IREligibility.INELIGIBLE
+            )
+            if ineligible:
+                fail(
+                    f"team {team_id} has IR-ineligible reserve occupant(s) {ineligible}; "
+                    "explicit roster correction is required before acquisition",
+                    TransactionErrorCode.IR_CORRECTION_REQUIRED,
+                )
+        if self.source.ir_policy is IRPolicy.PROJECTION_BASED and reserve_players:
+            week = prepared.weeks.index(self.scoring_week)
+            blockers = tuple(
+                pid for pid in reserve_players
+                if (prepared.projections[week][prepared.player_index(pid)] or 0) > 0
+            )
+            if blockers:
+                fail(
+                    f"team {team_id} has projection-based recovered reserve occupant(s) {blockers}; "
+                    "explicit roster correction is required before acquisition",
+                    TransactionErrorCode.IR_CORRECTION_REQUIRED,
+                )
+
+        occupancy = sum(
+            owner == team and self.slot_by_player[i] == slot
+            for i, owner in enumerate(self.owner_by_player)
+        )
+        if occupancy >= prepared.slot_capacities[slot]:
+            fail(
+                f"team {team_id} slot {lineup_slot_id} occupancy {occupancy + 1} "
+                f"exceeds capacity {prepared.slot_capacities[slot]}",
+                TransactionErrorCode.SLOT_CAPACITY,
+            )
+        position = prepared.player_positions[player]
+        position_limit = next(
+            (rule.maximum for rule in snapshot.rules.position_limits
+             if rule.position_id == position), None
+        )
+        if position_limit is not None:
+            position_count = sum(
+                owner == team and prepared.player_positions[i] == position
+                for i, owner in enumerate(self.owner_by_player)
+            )
+            if position_count >= position_limit:
+                fail(
+                    f"team {team_id} position {position} count {position_count + 1} "
+                    f"exceeds limit {position_limit}",
+                    TransactionErrorCode.POSITION_LIMIT,
+                )
+        rostered = PlayerAvailability(
+            player_id, AcquisitionAvailability.ROSTERED,
+            None, None, None, available.source_id,
+        )
+        priority = tuple(prepared.team_ids[i] for i in self.waiver_priority)
+        record = TransactionRecord(
+            len(self.ledger) + 1, self.scoring_week, self.cycle_id,
+            phase, TransactionAction.ADD, team_id, player_id,
+            None, None, team_id, None, lineup_slot_id,
+            available.status, rostered.status, priority, priority,
+            available.source_id, None, (),
+        )
+        self.owner_by_player[player] = team
+        self.slot_by_player[player] = slot
+        self.raw_owner_by_player[player] = team_id
+        self.availability_by_player[player] = rostered
+        if self.season_acquisitions[team] is not None:
+            self.season_acquisitions[team] += 1
+        if self.matchup_acquisitions[team] is not None:
+            self.matchup_acquisitions[team] += 1
         self.ledger.append(record)
 
     def apply_reference_transition(self, result: EvolvingLeagueState) -> None:
