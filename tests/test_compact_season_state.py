@@ -62,3 +62,48 @@ def test_compact_roundtrip_preserves_transaction_ledger() -> None:
         break
     else:
         raise AssertionError("fixture contains no droppable roster player")
+
+
+def test_native_drop_matches_reference_exactly() -> None:
+    snapshot = _snapshot()
+    reference = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    for entry in reference.roster_entries:
+        try:
+            expected = drop_player(
+                reference, snapshot, team_id=entry.team_id,
+                player_id=entry.player_id,
+                phase=TransactionPhase.ROSTER_CORRECTION,
+            )
+        except ValueError:
+            continue
+        compact = CompactSeasonState.from_reference(prepare_season(snapshot), reference)
+        compact.drop_player(
+            team_id=entry.team_id, player_id=entry.player_id,
+            phase=TransactionPhase.ROSTER_CORRECTION,
+        )
+        assert compact.to_reference() == expected
+        validate_evolving_state(compact.to_reference(), snapshot)
+        return
+    raise AssertionError("fixture contains no legal drops")
+
+
+def test_native_drop_rejects_wrong_owner_without_mutating_state() -> None:
+    from fantasy_football.evolving_state import TransactionStateError, TransactionErrorCode
+    snapshot = _snapshot()
+    reference = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    entry = reference.roster_entries[0]
+    other_team = next(team.team_id for team in snapshot.teams if team.team_id != entry.team_id)
+    compact = CompactSeasonState.from_reference(prepare_season(snapshot), reference)
+    try:
+        compact.drop_player(team_id=other_team, player_id=entry.player_id)
+    except TransactionStateError as exc:
+        assert exc.code is TransactionErrorCode.OWNERSHIP
+    else:
+        raise AssertionError("wrong-owner drop must fail")
+    assert compact.to_reference() == reference
