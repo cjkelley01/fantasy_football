@@ -63,7 +63,8 @@ def test_translate_sanitized_bundle_to_complete_valid_snapshot() -> None:
     protection = {item.player_id: item.is_undroppable for item in snapshot.players}
     assert protection[2] is True
     assert protection[5] is False
-    assert interpretations["undroppable_player_mapping"].status is InterpretationStatus.UNVERIFIED
+    assert interpretations["undroppable_player_mapping"].status is InterpretationStatus.UNDERSTOOD
+    assert interpretations["undroppable_player_mapping"].normalized_value == "true=droppable;false=undroppable"
     assert interpretations["undroppable_player_mapping"].source_id.startswith("player-current-")
     assert any(
         game.scoring_week == 1 and game.status is NFLGameStatus.COMPLETED
