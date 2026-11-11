@@ -904,4 +904,7 @@ def test_experimental_compact_acquisitions_match_reference_weekly_result() -> No
     actual = execute_weekly_essential_transactions(
         snapshot, state, policy, experimental_compact_acquisitions=True,
     )
-    assert actual == expected
+    # Wall-clock instrumentation is nondeterministic; compare every other field.
+    assert replace(actual, valuation_seconds=0.0) == replace(
+        expected, valuation_seconds=0.0,
+    )
