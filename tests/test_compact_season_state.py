@@ -110,47 +110,27 @@ def test_native_drop_rejects_wrong_owner_without_mutating_state() -> None:
 
 
 def test_native_acquisition_matches_reference_on_legal_candidate() -> None:
-    from fantasy_football.evolving_state import add_player, AcquisitionAvailability
-    snapshot = _snapshot()
+    from tests.canonical_fixtures import canonical_snapshot
+    from fantasy_football.evolving_state import add_player
+    snapshot = canonical_snapshot()
     initial = initialize_evolving_state(
         snapshot, scoring_week=snapshot.first_simulation_week,
         ir_policy=IRPolicy.PROJECTION_BASED,
     )
     prepared = prepare_season(snapshot)
-    # Try the existing fixture's legal roster vacancies and available players.
-    # This deliberately fails if the fixture cannot exercise a real acquisition.
-    available_ids = [
-        item.player_id for item in initial.availability
-        if item.status is AcquisitionAvailability.FREE_AGENT
-    ]
-    for entry in initial.roster_entries:
-        try:
-            after_drop = drop_player(
-                initial, snapshot, team_id=entry.team_id,
-                player_id=entry.player_id,
-            )
-        except ValueError:
-            continue
-        for player_id in available_ids:
-            player = next(p for p in snapshot.players if p.player_id == player_id)
-            for slot_id in player.eligible_lineup_slot_ids:
-                try:
-                    expected = add_player(
-                        after_drop, snapshot, team_id=entry.team_id,
-                        player_id=player_id, lineup_slot_id=slot_id,
-                    )
-                except ValueError:
-                    continue
-                compact = CompactSeasonState.from_reference(prepared, initial)
-                compact.drop_player(team_id=entry.team_id, player_id=entry.player_id)
-                compact.add_player(
-                    team_id=entry.team_id, player_id=player_id,
-                    lineup_slot_id=slot_id,
-                )
-                assert compact.to_reference() == expected
-                validate_evolving_state(compact.to_reference(), snapshot)
-                return
-    raise AssertionError("fixture does not provide a legal drop/add transaction")
+    # Explicit positive acquisition from the reference transaction test suite.
+    expected = add_player(
+        initial, snapshot, team_id=1, player_id=3, lineup_slot_id=20,
+    )
+    compact = CompactSeasonState.from_reference(prepared, initial)
+    compact.add_player(team_id=1, player_id=3, lineup_slot_id=20)
+    assert compact.to_reference() == expected
+    validate_evolving_state(compact.to_reference(), snapshot)
+    # Verify the second native transition and its accumulated ledger.
+    expected_dropped = drop_player(expected, snapshot, team_id=1, player_id=3)
+    compact.drop_player(team_id=1, player_id=3)
+    assert compact.to_reference() == expected_dropped
+    validate_evolving_state(compact.to_reference(), snapshot)
 
 
 def test_native_acquisition_rejection_is_atomic_and_matches_reference() -> None:
