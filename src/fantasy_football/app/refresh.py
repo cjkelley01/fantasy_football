@@ -170,6 +170,7 @@ class SnapshotRefreshCoordinator:
                 first_simulation_week=request.first_simulation_week,
                 manual_config=manual_config,
             )
+            self._set(refresh_id, first_simulation_week=result.snapshot.first_simulation_week)
             if (
                 result.snapshot.league_id != request.league_id
                 or result.snapshot.season != request.season
@@ -182,7 +183,10 @@ class SnapshotRefreshCoordinator:
                     ),
                 )
                 return
-            if result.snapshot.first_simulation_week != request.first_simulation_week:
+            if (
+                request.first_simulation_week is not None
+                and result.snapshot.first_simulation_week != request.first_simulation_week
+            ):
                 self._set(
                     refresh_id, status="failed", stage="failed", finished_at_utc=_now(),
                     error_code="simulation_horizon_mismatch",
@@ -235,6 +239,7 @@ class SnapshotRefreshCoordinator:
                 f"Player-weeks validated: {report.player_week_count}",
                 f"Projection records missing: {report.projection_missing_count}",
                 f"Explicit ESPN zero projections: {report.projection_zero_count}",
+                f"Simulation boundary: week {result.snapshot.first_simulation_week} ({result.snapshot.live_scoring.boundary_method.value if result.snapshot.live_scoring else 'legacy explicit'})",
             )
             completed = SnapshotRefreshResult(
                 refresh=final,

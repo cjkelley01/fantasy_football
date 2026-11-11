@@ -1,4 +1,4 @@
-"""Immutable, ESPN-independent canonical records for schema versions 2 and 3."""
+"""Immutable, ESPN-independent canonical records for schema versions 2 through 4."""
 
 from __future__ import annotations
 
@@ -7,9 +7,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import TypeAlias
 
+from fantasy_football.live_scoring import LiveScoringState, NFLGameStatus
 
-SCHEMA_VERSION = 3
-SUPPORTED_SCHEMA_VERSIONS = (2, 3)
+
+SCHEMA_VERSION = 4
+SUPPORTED_SCHEMA_VERSIONS = (2, 3, 4)
 JsonScalar: TypeAlias = str | int | float | bool | None
 
 
@@ -281,6 +283,8 @@ class NFLGame:
     home_nfl_team_id: int
     away_nfl_team_id: int
     kickoff_utc: datetime | None
+    status: NFLGameStatus = NFLGameStatus.UNKNOWN
+    status_source_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -314,3 +318,4 @@ class LeagueSnapshot:
     sources: tuple[SourceReference, ...]
     rule_gaps: tuple[RuleGap, ...]
     validation: ValidationMetadata
+    live_scoring: LiveScoringState | None = None

@@ -36,7 +36,7 @@ Default-position IDs and lineup-slot IDs remain separate namespaces even where t
 
 Recognized current ESPN states are reconciled with that table: `ONTEAM` requires a roster entry, while `FREEAGENT` and `WAIVERS` require no owner. Unknown acquisition enums are retained without guessed semantics and do not invalidate an otherwise coherent snapshot. A populated raw owner on a roster entry must agree with its authoritative team ID.
 
-The snapshot begins from cumulative current standings and current rosters. It explicitly stores `first_simulation_week` and `final_simulation_week`; it does not derive the first safe week from the wall clock. Every included player must have exactly one `PlayerWeek` for every required week in that inclusive range. Completed historical weeks and transaction history are outside the operational snapshot contract.
+The snapshot begins from cumulative current standings and current rosters. Schema v4 retains nullable `LiveScoringState` evidence and derives a safe `first_simulation_week` only from explicit game status, never the wall clock; an advanced manual override is labeled separately. Every included player has exactly one future `PlayerWeek` for every required week in the inclusive V1 range. Schema-v2/v3 snapshots remain readable without live-scoring metadata.
 
 ## Projection contract
 

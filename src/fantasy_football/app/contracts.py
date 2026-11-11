@@ -93,6 +93,25 @@ class LeagueStructure(ContractModel):
     acquisition_uses_budget: bool
 
 
+class ScoringWeekStateSummary(ContractModel):
+    scoring_week: int
+    status: Literal["completed", "partial", "unplayed", "unresolved"]
+    rationale: str
+
+
+class LiveScoringSummary(ContractModel):
+    current_scoring_period: int
+    last_fully_completed_period: int | None
+    earliest_unresolved_period: int | None
+    next_fully_unplayed_period: int | None
+    supported_simulation_week: int | None
+    partial_week_simulation_required: bool
+    boundary_method: Literal["automatic", "manual_override", "unresolved"]
+    boundary_rationale: str
+    weeks: tuple[ScoringWeekStateSummary, ...]
+    unresolved_capabilities: tuple[str, ...]
+
+
 class SnapshotSummary(ContractModel):
     api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
     snapshot_id: str
@@ -115,6 +134,7 @@ class SnapshotSummary(ContractModel):
     matchups: tuple[MatchupSummary, ...] = ()
     league_structure: LeagueStructure | None = None
     capabilities: tuple[RuleCapability, ...] = ()
+    live_scoring: LiveScoringSummary | None = None
 
 
 class NormalOutcomeModelConfiguration(ContractModel):
@@ -477,7 +497,7 @@ class SnapshotRefreshRequest(ContractModel):
     profile_id: Literal["configured_local_league"] = "configured_local_league"
     league_id: PositiveInt
     season: Annotated[int, Field(strict=True, ge=2000)]
-    first_simulation_week: Annotated[int, Field(strict=True, ge=1, le=25)]
+    first_simulation_week: Annotated[int, Field(strict=True, ge=1, le=25)] | None = None
 
 
 class SnapshotRefreshSubmission(ContractModel):
@@ -497,7 +517,7 @@ class SnapshotRefreshRecord(ContractModel):
     ]
     league_id: int
     season: int
-    first_simulation_week: int
+    first_simulation_week: int | None
     created_at_utc: datetime
     started_at_utc: datetime | None = None
     finished_at_utc: datetime | None = None

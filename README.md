@@ -20,7 +20,8 @@ V1 is a local web application restricted to localhost. The accepted React/TypeSc
 - [Undroppable-player evidence audit](docs/ESPN_UNDROPPABLE_AUDIT.md) — league and player field provenance, bounded live coverage, conservative legality semantics, and the proposed schema-v3 handoff.
 - [ESPN data dictionary](docs/ESPN_DATA_DICTIONARY.md) — proposed M1 logical fields, raw paths, identifier namespaces, transformations, evidence, and validation tiers.
 - [M0 feasibility and M1 handoff](docs/M0_FEASIBILITY_AND_M1_HANDOFF.md) — readiness matrix, rule-gap register, approved forecast/calibration policies, and the M1 recommendation.
-- [Canonical model](docs/CANONICAL_MODEL.md) — schema-v3 entities, historical v2 compatibility, slot/protection provenance, evolving-state legality, validation, and serialization.
+- [Canonical model](docs/CANONICAL_MODEL.md) — schema-v4 entities, historical v2/v3 compatibility, live-scoring evidence, slot/protection provenance, validation, and serialization.
+- [Live-week scoring](docs/LIVE_WEEK_SCORING.md) — LW1 evidence audit, automatic V1 boundary detection, compatibility, and the deferred LW2 integration contract.
 - [ESPN-to-canonical adapter](docs/ESPN_CANONICAL_ADAPTER.md) — M1.2 retrieval, translation, reconciliation, YAML rule-gap configuration, testing, and live acceptance evidence.
 - [Snapshot storage](docs/SNAPSHOT_STORAGE.md) — M1.3 SQLite schema, canonical authority, source evidence, atomic publication, integrity checks, retention, and verification.
 - [Roster valuation](docs/ROSTER_VALUATION.md) — M2.3c unified V(R), exact shared-pool allocation, and approximation boundaries.
@@ -257,7 +258,7 @@ M2.3a closes a defensive legality gap: a frozen starter is rejected while their 
 
 ## Immutable evolving roster state
 
-M2.3b exposes pure transaction-legality primitives in `fantasy_football.evolving_state`. Start a path from a published schema-v3 snapshot and pass the resulting `state.roster_entries` to M2.1 and M2.2:
+M2.3b exposes pure transaction-legality primitives in `fantasy_football.evolving_state`. Start a path from a published schema-v3-or-later snapshot and pass the resulting `state.roster_entries` to M2.1 and M2.2:
 
 ```python
 from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state

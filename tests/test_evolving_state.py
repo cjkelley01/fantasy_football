@@ -85,6 +85,10 @@ def test_scoped_state_validation_reuses_only_the_same_accepted_object() -> None:
 def _v2_payload() -> str:
     data = json.loads(snapshot_to_json(canonical_snapshot()))
     data["schema_version"] = 2
+    data.pop("live_scoring")
+    for game in data["nfl_games"]:
+        game.pop("status")
+        game.pop("status_source_id")
     data["rules"].pop("undroppable_list_enabled")
     data["rules"].pop("undroppable_list_source_id")
     for player in data["players"]:
@@ -113,15 +117,23 @@ def _eligibility_artifact(snapshot, claims):
     return replace(snapshot, sources=snapshot.sources + (source,)), payload, source.source_id
 
 
-def test_schema_v3_round_trip_is_deterministic_and_preserves_three_states() -> None:
+def test_current_schema_round_trip_is_deterministic_and_preserves_protection_states() -> None:
     snapshot = canonical_snapshot()
     encoded = snapshot_to_json(snapshot)
     decoded = snapshot_from_json(encoded)
-    assert decoded.schema_version == SCHEMA_VERSION == 3
+    assert decoded.schema_version == SCHEMA_VERSION == 4
     assert snapshot_to_json(decoded) == encoded
     assert {item.player_id: item.is_undroppable for item in decoded.players} == {
         -101: False, 1: True, 2: False, 3: False, 4: None,
     }
+
+
+def test_schema_v3_snapshot_remains_eligible_for_accepted_transaction_engine() -> None:
+    snapshot = replace(canonical_snapshot(), schema_version=3, live_scoring=None)
+    state = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week, ir_policy=IRPolicy.STRICT,
+    )
+    assert state.source_schema_version == 3
 
 
 def test_schema_v2_bytes_round_trip_without_synthesizing_v3_fields() -> None:
@@ -131,7 +143,7 @@ def test_schema_v2_bytes_round_trip_without_synthesizing_v3_fields() -> None:
     assert snapshot.rules.undroppable_list_enabled is None
     assert all(item.is_undroppable is None for item in snapshot.players)
     assert snapshot_to_json(snapshot) == payload
-    with pytest.raises(TransactionStateError, match="requires schema 3"):
+    with pytest.raises(TransactionStateError, match="requires schema 3 or later"):
         initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.STRICT)
 
 

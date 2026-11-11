@@ -52,7 +52,7 @@ def test_publish_load_and_reopen_preserves_complete_canonical_and_sources(store,
     assert UUID(metadata.snapshot_id).version == 4
     assert loaded.canonical_json.decode("utf-8") == snapshot_to_json(loaded.snapshot)
     assert loaded.snapshot.snapshot_id == ID_1
-    assert loaded.metadata.canonical_schema_version == SCHEMA_VERSION == 3
+    assert loaded.metadata.canonical_schema_version == SCHEMA_VERSION == 4
     assert loaded.metadata.canonical_sha256 != result.report.canonical_sha256
     assert len(loaded.raw_sources) == len(result.raw_sources) == loaded.metadata.source_count
     assert {item.response.source_id for item in loaded.raw_sources} == {item.source_id for item in result.raw_sources}
@@ -110,7 +110,19 @@ def test_existing_schema_v2_document_loads_byte_for_byte_without_migration(store
         undroppable_list_enabled=None,
         undroppable_list_source_id=None,
     )
-    v2 = replace(loaded_v3.snapshot, schema_version=2, rules=v2_rules, players=v2_players)
+    v2 = replace(
+        loaded_v3.snapshot,
+        schema_version=2,
+        rules=v2_rules,
+        players=v2_players,
+        nfl_games=tuple(
+            game for game in loaded_v3.snapshot.nfl_games
+            if loaded_v3.snapshot.first_simulation_week
+            <= game.scoring_week
+            <= loaded_v3.snapshot.final_simulation_week
+        ),
+        live_scoring=None,
+    )
     original_bytes = snapshot_to_json(v2).encode("utf-8")
     digest = hashlib.sha256(original_bytes).hexdigest()
     connection = sqlite3.connect(store.path)
@@ -152,7 +164,7 @@ def test_new_publication_rejects_schema_v2_candidate(store, result) -> None:
             for item in snapshot.players
         ),
     )
-    with pytest.raises(SnapshotStoreError, match="new publications require canonical schema 3"):
+    with pytest.raises(SnapshotStoreError, match="new publications require canonical schema 4"):
         store.publish(replace(result, snapshot=v2), snapshot_id=ID_1, published_at_utc=PUBLISHED)
 
 

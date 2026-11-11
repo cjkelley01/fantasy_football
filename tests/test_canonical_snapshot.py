@@ -86,6 +86,14 @@ def test_deterministic_round_trip_preserves_null_zero_negative_and_unresolved_ru
     assert restored.lineup_slot_namespace.observed_slot_ids == (0, 16, 20, 21, 25)
 
 
+def test_schema_v3_snapshot_remains_readable_without_live_scoring_metadata() -> None:
+    snapshot = replace(canonical_snapshot(), schema_version=3, live_scoring=None)
+    payload = snapshot_to_json(snapshot)
+    assert '"live_scoring"' not in payload
+    assert '"status_source_id"' not in payload
+    assert snapshot_from_json(payload) == snapshot
+
+
 def test_serialization_order_is_independent_of_input_record_order() -> None:
     snapshot = canonical_snapshot()
     reversed_snapshot = replace(

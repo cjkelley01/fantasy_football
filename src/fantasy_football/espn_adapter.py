@@ -1,4 +1,4 @@
-"""Read-only ESPN retrieval and pure translation into canonical schema v3."""
+"""Read-only ESPN retrieval and pure translation into canonical schema v4."""
 
 from __future__ import annotations
 
@@ -69,6 +69,13 @@ from fantasy_football.canonical.validation import (
 )
 from fantasy_football.config import Settings, SettingsError, load_settings
 from fantasy_football.logging_config import configure_logging
+from fantasy_football.live_scoring import (
+    LiveScoringError,
+    NFLGameStatus,
+    PlayerScoringObservation,
+    ScoreEvidenceStatus,
+    resolve_live_scoring_state,
+)
 
 LOGGER = logging.getLogger(__name__)
 LEAGUE_VIEWS = ("mTeam", "mRoster", "mMatchup", "mSettings", "mStandings")
@@ -127,6 +134,7 @@ class EspnSourceBundle:
     future_player_pages: tuple[PlayerPage, ...]
     pro_schedule: CapturedResponse
     league_reconciliation: CapturedResponse
+    simulation_week_automatically_detected: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -436,6 +444,40 @@ def _projection_record(player_id: int, season: int, week: int, raw: float | None
         player_id, season, week, raw, ProjectionClass.PRESENT, raw,
         ProjectionSource.ESPN, source_id,
     )
+
+
+def _player_actual(wrapper: Mapping[str, Any], *, player_id: int, season: int, week: int) -> float | None:
+    matches = []
+    player = _mapping(wrapper.get("player"), f"player_id={player_id}.player")
+    for value in _list(player.get("stats", []), f"player_id={player_id}.stats"):
+        stat = _mapping(value, f"player_id={player_id}.stat")
+        if stat.get("seasonId") == season and stat.get("scoringPeriodId") == week and stat.get("statSourceId") == 0:
+            if stat.get("statSplitTypeId") != 1:
+                raise EspnAdapterError(f"player_id={player_id}, week={week}: actual statSplitTypeId must equal 1")
+            if "appliedTotal" not in stat:
+                raise EspnAdapterError(f"player_id={player_id}, week={week}: matching actual lacks appliedTotal")
+            matches.append(_number(stat["appliedTotal"], f"player_id={player_id}, week={week}", "appliedTotal"))
+    if len(matches) > 1:
+        raise EspnAdapterError(f"player_id={player_id}, week={week}: duplicate matching actual records")
+    return matches[0] if matches else None
+
+
+_GAME_STATUSES = {
+    "STATUS_SCHEDULED": NFLGameStatus.SCHEDULED,
+    "STATUS_IN_PROGRESS": NFLGameStatus.IN_PROGRESS,
+    "STATUS_FINAL": NFLGameStatus.COMPLETED,
+    "STATUS_POSTPONED": NFLGameStatus.POSTPONED,
+    "STATUS_CANCELED": NFLGameStatus.CANCELED,
+}
+
+
+def _game_status(game: Mapping[str, Any], *, game_id: str) -> NFLGameStatus:
+    raw = game.get("status")
+    if raw is None:
+        return NFLGameStatus.UNKNOWN
+    if not isinstance(raw, str) or raw not in _GAME_STATUSES:
+        raise EspnAdapterError(f"NFL game {game_id}: unsupported status={raw!r}")
+    return _GAME_STATUSES[raw]
 
 
 def _settings(raw: Mapping[str, Any], name: str) -> Mapping[str, Any]:
@@ -980,6 +1022,25 @@ def _bundle_final_week(bundle: EspnSourceBundle) -> int:
     return max(weeks)
 
 
+def _translate_live_observations(
+    pages: tuple[PlayerPage, ...], *, season: int, current_week: int,
+) -> tuple[PlayerScoringObservation, ...]:
+    current, _ = _parse_pool_pages(pages, label="current player pool")
+    source_by_player: dict[int, str] = {}
+    for page in pages:
+        for value in _list(page.response.payload.get("players"), f"current offset={page.offset}.players"):
+            source_by_player[_int(_mapping(value, "current player").get("id"), "current player", "id", nonzero=True)] = page.response.source_id
+    result = []
+    for player_id, wrapper in current.items():
+        actual = _player_actual(wrapper, player_id=player_id, season=season, week=current_week)
+        result.append(PlayerScoringObservation(
+            player_id=player_id, scoring_week=current_week, actual_points=actual,
+            actual_status=ScoreEvidenceStatus.CONFIRMED if actual is not None else ScoreEvidenceStatus.UNAVAILABLE,
+            remaining_projection=None, lineup_locked=None, source_id=source_by_player[player_id],
+        ))
+    return tuple(sorted(result, key=lambda item: item.player_id))
+
+
 def _translate_nfl_calendar(
     source: CapturedResponse, *, first_week: int, final_week: int
 ) -> tuple[tuple[NFLTeam, ...], tuple[NFLGame, ...]]:
@@ -1023,6 +1084,8 @@ def _translate_nfl_calendar(
                     home_nfl_team_id=_int(game.get("homeProTeamId"), f"NFL game {game_id}", "homeProTeamId", minimum=1),
                     away_nfl_team_id=_int(game.get("awayProTeamId"), f"NFL game {game_id}", "awayProTeamId", minimum=1),
                     kickoff_utc=kickoff,
+                    status=_game_status(game, game_id=game_id),
+                    status_source_id=source.source_id,
                 )
                 previous = games.get(game_id)
                 if previous is not None and previous != canonical:
@@ -1183,7 +1246,7 @@ def translate_bundle(
         raise EspnAdapterError(
             f"first_simulation_week={bundle.first_simulation_week} exceeds final required scoring week={final_week}"
         )
-    periods, regular_end, _ = _parse_periods(
+    periods, regular_end, period_map = _parse_periods(
         initial, first_week=bundle.first_simulation_week, final_week=final_week
     )
     rules, gaps = _translate_rules(
@@ -1221,11 +1284,31 @@ def translate_bundle(
         slot_id for player in players for slot_id in player.eligible_lineup_slot_ids
     }))
     _ownership_reconciliation(players, rosters, bundle.current_player_pages)
+    all_weeks = tuple(sorted({week for weeks in period_map.values() for week in weeks}))
     nfl_teams, nfl_games = _translate_nfl_calendar(
-        bundle.pro_schedule,
-        first_week=bundle.first_simulation_week,
-        final_week=final_week,
+        bundle.pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks)
     )
+    try:
+        live_scoring = resolve_live_scoring_state(
+            current_scoring_period=_int(initial.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1),
+            scoring_weeks=all_weeks, games=nfl_games,
+            observations=_translate_live_observations(
+                bundle.current_player_pages,
+                season=bundle.season,
+                current_week=_int(
+                    initial.get("scoringPeriodId"),
+                    "league response", "scoringPeriodId", minimum=1,
+                ),
+            ),
+            source_ids=(bundle.league_initial.source_id, bundle.pro_schedule.source_id, *(page.response.source_id for page in bundle.current_player_pages)),
+            manual_override=None if bundle.simulation_week_automatically_detected else bundle.first_simulation_week,
+        )
+    except LiveScoringError as exc:
+        raise EspnAdapterError(f"live scoring boundary resolution failed: {exc}") from exc
+    if live_scoring.supported_simulation_week != bundle.first_simulation_week:
+        raise EspnAdapterError(
+            "automatic live scoring boundary conflicts with the retrieved simulation horizon"
+        )
     matchups = _translate_matchups(initial, periods=periods, regular_end=regular_end)
     reconciled = _reconcile_mutable_state(initial, bundle.league_reconciliation.payload)
     raw_sources = (
@@ -1279,9 +1362,10 @@ def translate_bundle(
         rule_gaps=gaps,
         validation=ValidationMetadata(
             validated_at_utc=bundle.retrieval_finished_at_utc,
-            validator_version="m2.3b-schema-v3",
+            validator_version="lw1-schema-v4",
             warnings=warnings,
         ),
+        live_scoring=live_scoring,
     )
     try:
         validate_snapshot(snapshot)
@@ -1316,7 +1400,7 @@ def translate_bundle(
         canonical_sha256=canonical_sha256,
         reconciled_state=reconciled,
         warnings=warnings,
-        unresolved_rule_gaps=unresolved,
+        unresolved_rule_gaps=tuple(sorted(set(unresolved).union(live_scoring.unresolved_capabilities))),
     )
     return AdapterResult(snapshot, report, captured)
 
@@ -1324,13 +1408,14 @@ def translate_bundle(
 def retrieve_bundle(
     settings: Settings,
     *,
-    first_simulation_week: int,
+    first_simulation_week: int | None,
     page_size: int = 250,
     max_retries: int = 2,
 ) -> EspnSourceBundle:
     """Sequentially retrieve all source responses required for one candidate snapshot."""
 
-    _int(first_simulation_week, "adapter input", "first_simulation_week", minimum=1)
+    if first_simulation_week is not None:
+        _int(first_simulation_week, "adapter input", "first_simulation_week", minimum=1)
     _int(page_size, "adapter input", "page_size", minimum=1)
     credentials = settings.credentials
     league = League(
@@ -1366,11 +1451,11 @@ def retrieve_bundle(
     if not all_weeks:
         raise EspnAdapterError("scheduleSettings.matchupPeriods contains no weeks")
     final_week = max(all_weeks)
-    if first_simulation_week < current_week:
+    if first_simulation_week is not None and first_simulation_week < current_week:
         raise EspnAdapterError(
             f"first_simulation_week={first_simulation_week} precedes ESPN current scoring week={current_week}"
         )
-    if first_simulation_week > final_week:
+    if first_simulation_week is not None and first_simulation_week > final_week:
         raise EspnAdapterError(
             f"first_simulation_week={first_simulation_week} exceeds final required scoring week={final_week}"
         )
@@ -1414,11 +1499,6 @@ def retrieve_bundle(
         raise EspnAdapterError(f"{role} week={week}: pagination exceeded 100 full pages")
 
     current_pages = retrieve_week(current_week, role="current")
-    future_pages = tuple(
-        page
-        for week in range(first_simulation_week, final_week + 1)
-        for page in retrieve_week(week, role="future")
-    )
     pro_payload = request_with_retries(
         request.get_pro_schedule,
         context="request_type=nfl_schedule view=proTeamSchedules_wl",
@@ -1431,6 +1511,28 @@ def retrieve_bundle(
         endpoint=request.ENDPOINT,
         view=PRO_SCHEDULE_VIEW,
         parameters=(),
+    )
+    automatically_detected = first_simulation_week is None
+    if automatically_detected:
+        periods, _, period_map = _parse_periods(initial_payload, first_week=min(all_weeks), final_week=final_week)
+        del periods
+        _, full_games = _translate_nfl_calendar(pro_schedule, first_week=min(all_weeks), final_week=final_week)
+        state = resolve_live_scoring_state(
+            current_scoring_period=current_week,
+            scoring_weeks=(week for weeks in period_map.values() for week in weeks),
+            games=full_games,
+            observations=_translate_live_observations(
+                current_pages, season=settings.season, current_week=current_week,
+            ),
+            source_ids=(initial.source_id, pro_schedule.source_id),
+        )
+        if state.supported_simulation_week is None:
+            raise EspnAdapterError(state.boundary_rationale)
+        first_simulation_week = state.supported_simulation_week
+    future_pages = tuple(
+        page
+        for week in range(first_simulation_week, final_week + 1)
+        for page in retrieve_week(week, role="future")
     )
     reconciliation_payload = request_with_retries(
         request.get_league,
@@ -1457,13 +1559,14 @@ def retrieve_bundle(
         future_player_pages=future_pages,
         pro_schedule=pro_schedule,
         league_reconciliation=reconciliation,
+        simulation_week_automatically_detected=automatically_detected,
     )
 
 
 def fetch_and_translate(
     settings: Settings,
     *,
-    first_simulation_week: int,
+    first_simulation_week: int | None = None,
     expected_team_count: int | None = None,
     manual_config: str | Path | None = None,
     page_size: int = 250,

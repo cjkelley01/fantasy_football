@@ -21,9 +21,9 @@ export interface HealthResponse {
 
 export type RefreshStatus = "queued"|"running"|"cancel_requested"|"completed"|"cancelled"|"failed"|"interrupted";
 export interface LeagueRefreshProfile {readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly credential_mode:"public"|"private_credentials_configured";readonly manual_rule_configuration_available:boolean;}
-export interface SnapshotRefreshRequest {readonly api_schema_version:"1.0";readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly first_simulation_week:number;}
+export interface SnapshotRefreshRequest {readonly api_schema_version:"1.0";readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly first_simulation_week:number|null;}
 export interface SnapshotRefreshSubmission {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly created_at_utc:string;}
-export interface SnapshotRefreshRecord {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly stage:"queued"|"retrieving_and_validating"|"publishing"|"verifying"|"completed"|"cancelled"|"failed"|"interrupted";readonly league_id:number;readonly season:number;readonly first_simulation_week:number;readonly created_at_utc:string;readonly started_at_utc:string|null;readonly finished_at_utc:string|null;readonly snapshot_id:string|null;readonly publication_committed:boolean;readonly error_code:string|null;readonly error_message:string|null;}
+export interface SnapshotRefreshRecord {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly stage:"queued"|"retrieving_and_validating"|"publishing"|"verifying"|"completed"|"cancelled"|"failed"|"interrupted";readonly league_id:number;readonly season:number;readonly first_simulation_week:number|null;readonly created_at_utc:string;readonly started_at_utc:string|null;readonly finished_at_utc:string|null;readonly snapshot_id:string|null;readonly publication_committed:boolean;readonly error_code:string|null;readonly error_message:string|null;}
 export interface SnapshotRefreshResult {readonly api_schema_version:"1.0";readonly refresh:SnapshotRefreshRecord;readonly snapshot:SnapshotSummary;readonly validation_findings:readonly string[];readonly unresolved_capabilities:readonly string[];}
 
 export interface TeamSummary {
@@ -88,6 +88,19 @@ export interface LeagueStructure {
   readonly acquisition_uses_budget: boolean;
 }
 
+export interface LiveScoringSummary {
+  readonly current_scoring_period:number;
+  readonly last_fully_completed_period:number|null;
+  readonly earliest_unresolved_period:number|null;
+  readonly next_fully_unplayed_period:number|null;
+  readonly supported_simulation_week:number|null;
+  readonly partial_week_simulation_required:boolean;
+  readonly boundary_method:"automatic"|"manual_override"|"unresolved";
+  readonly boundary_rationale:string;
+  readonly weeks:readonly {readonly scoring_week:number;readonly status:"completed"|"partial"|"unplayed"|"unresolved";readonly rationale:string}[];
+  readonly unresolved_capabilities:readonly string[];
+}
+
 export interface SnapshotSummary {
   readonly api_schema_version: "1.0";
   readonly snapshot_id: string;
@@ -115,6 +128,7 @@ export interface SnapshotSummary {
     readonly source_id: string | null;
     readonly detail: string | null;
   }[];
+  readonly live_scoring?:LiveScoringSummary|null;
 }
 
 export interface BackgroundRunRecord {

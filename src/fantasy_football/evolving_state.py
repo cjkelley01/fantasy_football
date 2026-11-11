@@ -13,13 +13,14 @@ from functools import wraps
 from typing import Iterable
 
 from fantasy_football.canonical.model import (
-    SCHEMA_VERSION,
     InterpretationStatus,
     LeagueSnapshot,
     RosterEntry,
     SlotKind,
 )
 from fantasy_football.canonical.validation import validate_snapshot
+
+TRANSACTION_SCHEMA_MIN_VERSION = 3
 
 
 class TransactionErrorCode(StrEnum):
@@ -409,8 +410,11 @@ def validate_evolving_state(state: EvolvingLeagueState, snapshot: LeagueSnapshot
 
     validate_snapshot(snapshot)
     _assert_snapshot(state, snapshot)
-    if state.source_schema_version != SCHEMA_VERSION:
-        _fail(f"transaction state requires canonical schema {SCHEMA_VERSION}; schema-v2 cannot authorize drops")
+    if state.source_schema_version < TRANSACTION_SCHEMA_MIN_VERSION:
+        _fail(
+            f"transaction state requires canonical schema {TRANSACTION_SCHEMA_MIN_VERSION} or later; "
+            "schema-v2 cannot authorize drops"
+        )
     if not isinstance(state.ir_policy, IRPolicy):
         _fail("ir_policy must be projection_based or strict")
     if not snapshot.first_simulation_week <= state.scoring_week <= snapshot.final_simulation_week:
@@ -533,8 +537,11 @@ def initialize_evolving_state(
     ir_eligibility_evidence: tuple[IREligibilityEvidence, ...] = (),
 ) -> EvolvingLeagueState:
     validate_snapshot(snapshot)
-    if snapshot.schema_version != SCHEMA_VERSION:
-        _fail(f"automatic transaction state requires schema {SCHEMA_VERSION}; observed {snapshot.schema_version}")
+    if snapshot.schema_version < TRANSACTION_SCHEMA_MIN_VERSION:
+        _fail(
+            f"automatic transaction state requires schema {TRANSACTION_SCHEMA_MIN_VERSION} or later; "
+            f"observed {snapshot.schema_version}"
+        )
     if snapshot.snapshot_id is None:
         _fail("evolving transaction state requires a published source snapshot ID")
     priorities = sorted(snapshot.teams, key=lambda item: item.waiver_priority or 0)
