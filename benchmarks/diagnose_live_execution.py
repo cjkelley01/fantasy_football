@@ -146,6 +146,8 @@ def instrument(overall: float) -> None:
             complete_plans=diagnostic.complete_plans,
             valuation_evaluations=diagnostic.evaluations,
             valuation_seconds=round(diagnostic.valuation_seconds, 6),
+            # Aggregate error codes only: no player, team, or roster identifiers.
+            failure_codes={item.reason: item.count for item in diagnostic.failure_codes},
         )
         return result
 
