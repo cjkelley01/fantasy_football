@@ -945,3 +945,25 @@ def test_indexed_optimistic_coverage_matches_reference_predicate() -> None:
                 projected_available=projected_available,
             )
             assert actual == expected, (team.team_id, player.player_id)
+
+
+@pytest.mark.parametrize("compact_acquisitions", [False, True])
+def test_experimental_indexed_coverage_matches_complete_weekly_result(
+    compact_acquisitions: bool,
+) -> None:
+    """Indexed pruning must preserve complete weekly decisions and diagnostics."""
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    policy = _policy(waivers=True)
+    expected = execute_weekly_essential_transactions(
+        snapshot, state, policy,
+        experimental_compact_acquisitions=compact_acquisitions,
+    )
+    actual = execute_weekly_essential_transactions(
+        snapshot, state, policy,
+        experimental_compact_acquisitions=compact_acquisitions,
+        experimental_indexed_coverage=True,
+    )
+    assert replace(actual, valuation_seconds=0.0) == replace(
+        expected, valuation_seconds=0.0,
+    )
