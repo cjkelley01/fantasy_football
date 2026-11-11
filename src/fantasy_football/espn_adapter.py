@@ -1299,6 +1299,15 @@ def translate_bundle(
     players, player_weeks, page_lengths = _translate_players_and_weeks(bundle)
     _undroppable_roster_reconciliation(players, initial)
     mapping_source_id = bundle.current_player_pages[0].response.source_id
+    # ESPN's documented "Can't Drop" status denotes players on the enabled
+    # Undroppables list. The captured player.droppable boolean is inverted
+    # into is_undroppable, and roster/player-pool values must reconcile above.
+    # Missing individual flags remain unknown and cannot authorize a drop.
+    # References:
+    # https://support.espn.com/hc/en-us/articles/115003848251-Drop-a-Player
+    # https://support.espn.com/hc/en-us/articles/360000093791-Claim-a-Player-Off-Waivers
+    # Observed raw field shape:
+    # https://github.com/pseudo-r/Public-ESPN-Fantasy-API/blob/main/docs/response_schemas.md
     rules = replace(
         rules,
         interpretations=rules.interpretations + (
@@ -1306,8 +1315,8 @@ def translate_bundle(
                 "undroppable_player_mapping",
                 "players[].player.droppable",
                 "boolean",
-                None,
-                InterpretationStatus.UNVERIFIED,
+                "true=droppable;false=undroppable",
+                InterpretationStatus.UNDERSTOOD,
                 mapping_source_id,
             ),
         ),
