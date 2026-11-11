@@ -22,6 +22,7 @@ from espn_api.requests.espn_requests import (
     ESPNInvalidLeague,
     ESPNUnknownError,
 )
+from requests import get as requests_get
 from requests import ConnectionError as RequestsConnectionError
 from requests import RequestException, Timeout
 
@@ -134,6 +135,7 @@ class EspnSourceBundle:
     future_player_pages: tuple[PlayerPage, ...]
     pro_schedule: CapturedResponse
     league_reconciliation: CapturedResponse
+    nfl_scoreboard: CapturedResponse | None = None
     simulation_week_automatically_detected: bool = False
 
 
@@ -501,6 +503,87 @@ _GAME_STATUSES = {
     "STATUS_POSTPONED": NFLGameStatus.POSTPONED,
     "STATUS_CANCELED": NFLGameStatus.CANCELED,
 }
+
+
+_SCOREBOARD_STATES = {
+    "pre": NFLGameStatus.SCHEDULED,
+    "in": NFLGameStatus.IN_PROGRESS,
+    "post": NFLGameStatus.COMPLETED,
+}
+
+
+def _scoreboard_statuses(
+    scoreboard: CapturedResponse, schedule_games: Sequence[NFLGame], *, current_week: int,
+) -> dict[str, NFLGameStatus]:
+    """Require exact NFL event ID and team identity reconciliation for current week."""
+    scheduled = {game.game_id: game for game in schedule_games if game.scoring_week == current_week}
+    events = scoreboard.payload.get("events")
+    if not isinstance(events, list):
+        raise EspnAdapterError("NFL scoreboard events must be a list")
+    found: dict[str, NFLGameStatus] = {}
+    for event in events:
+        if not isinstance(event, Mapping):
+            raise EspnAdapterError("NFL scoreboard event must be an object")
+        game_id = str(event.get("id", ""))
+        if game_id not in scheduled or game_id in found:
+            raise EspnAdapterError("NFL scoreboard game IDs do not reconcile with fantasy schedule")
+        status = event.get("status")
+        kind = status.get("type") if isinstance(status, Mapping) else None
+        state = kind.get("state") if isinstance(kind, Mapping) else None
+        if state not in _SCOREBOARD_STATES:
+            raise EspnAdapterError("NFL scoreboard game state is missing or unsupported")
+        competitions = event.get("competitions")
+        if not isinstance(competitions, list) or len(competitions) != 1:
+            raise EspnAdapterError("NFL scoreboard competition identity is missing")
+        competitors = competitions[0].get("competitors") if isinstance(competitions[0], Mapping) else None
+        if not isinstance(competitors, list) or len(competitors) != 2:
+            raise EspnAdapterError("NFL scoreboard team identity is missing")
+        team_ids: dict[str, int] = {}
+        for competitor in competitors:
+            if not isinstance(competitor, Mapping) or competitor.get("homeAway") not in ("home", "away"):
+                raise EspnAdapterError("NFL scoreboard home/away team identity is invalid")
+            team = competitor.get("team")
+            try:
+                team_ids[competitor["homeAway"]] = int(team["id"])
+            except (KeyError, ValueError, TypeError):
+                raise EspnAdapterError("NFL scoreboard team ID is invalid") from None
+        expected = scheduled[game_id]
+        if team_ids != {"home": expected.home_nfl_team_id, "away": expected.away_nfl_team_id}:
+            raise EspnAdapterError("NFL scoreboard team IDs disagree with fantasy schedule")
+        found[game_id] = _SCOREBOARD_STATES[state]
+    if found.keys() != scheduled.keys():
+        raise EspnAdapterError("NFL scoreboard does not cover every current-week game")
+    return found
+
+
+def _apply_scoreboard_statuses(
+    games: Sequence[NFLGame], scoreboard: CapturedResponse | None, *, current_week: int,
+) -> tuple[NFLGame, ...]:
+    if scoreboard is None:
+        return tuple(games)
+    statuses = _scoreboard_statuses(scoreboard, games, current_week=current_week)
+    return tuple(
+        replace(game, status=statuses[game.game_id], status_source_id=scoreboard.source_id)
+        if game.game_id in statuses else game for game in games
+    )
+
+
+def _fetch_nfl_scoreboard(season: int, week: int) -> CapturedResponse:
+    endpoint = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+    params = {"dates": season, "seasontype": 2, "week": week, "limit": 100}
+    try:
+        response = requests_get(endpoint, params=params, timeout=15)
+        response.raise_for_status()
+        payload = response.json()
+    except (RequestException, ValueError) as exc:
+        raise EspnAdapterError(f"NFL scoreboard retrieval failed: {type(exc).__name__}") from exc
+    if not isinstance(payload, Mapping):
+        raise EspnAdapterError("NFL scoreboard response must be an object")
+    return capture_response(
+        payload, source_id="nfl-scoreboard", request_type="nfl_scoreboard",
+        endpoint=endpoint, view="scoreboard",
+        parameters=tuple((key, value) for key, value in params.items()),
+    )
 
 
 def _game_status(game: Mapping[str, Any], *, game_id: str) -> NFLGameStatus:
@@ -1329,6 +1412,10 @@ def translate_bundle(
     nfl_teams, nfl_games = _translate_nfl_calendar(
         bundle.pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks)
     )
+    nfl_games = _apply_scoreboard_statuses(
+        nfl_games, bundle.nfl_scoreboard,
+        current_week=_int(initial.get('scoringPeriodId'), 'league response', 'scoringPeriodId', minimum=1),
+    )
     try:
         live_scoring = resolve_live_scoring_state(
             current_scoring_period=_int(initial.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1),
@@ -1342,7 +1429,7 @@ def translate_bundle(
                     "league response", "scoringPeriodId", minimum=1,
                 ),
             ),
-            source_ids=(bundle.league_initial.source_id, bundle.pro_schedule.source_id, *(page.response.source_id for page in bundle.current_player_pages)),
+            source_ids=(bundle.league_initial.source_id, bundle.pro_schedule.source_id, *((bundle.nfl_scoreboard.source_id,) if bundle.nfl_scoreboard else ()), *(page.response.source_id for page in bundle.current_player_pages)),
             manual_override=None if bundle.simulation_week_automatically_detected else bundle.first_simulation_week,
         )
     except LiveScoringError as exc:
@@ -1358,6 +1445,7 @@ def translate_bundle(
         *bundle.current_player_pages,
         *bundle.future_player_pages,
         bundle.pro_schedule,
+        *((bundle.nfl_scoreboard,) if bundle.nfl_scoreboard else ()),
         bundle.league_reconciliation,
     )
     captured = tuple(
@@ -1608,6 +1696,7 @@ def build_live_scoring_evidence_report(
             if game.scoring_week == current_week:
                 key = game.status.value
                 current_status_counts[key] = current_status_counts.get(key, 0) + 1
+        full_games = _apply_scoreboard_statuses(full_games, nfl_scoreboard, current_week=current_week)
         state = resolve_live_scoring_state(
             current_scoring_period=current_week,
             scoring_weeks=all_weeks,
@@ -1782,6 +1871,7 @@ def retrieve_bundle(
         view=PRO_SCHEDULE_VIEW,
         parameters=(),
     )
+    nfl_scoreboard = _fetch_nfl_scoreboard(settings.season, current_week)
     automatically_detected = first_simulation_week is None
     if automatically_detected:
         periods, _, period_map = _parse_periods(initial_payload, first_week=min(all_weeks), final_week=final_week)
@@ -1833,6 +1923,7 @@ def retrieve_bundle(
         future_player_pages=future_pages,
         pro_schedule=pro_schedule,
         league_reconciliation=reconciliation,
+        nfl_scoreboard=nfl_scoreboard,
         simulation_week_automatically_detected=automatically_detected,
     )
 
