@@ -64,17 +64,29 @@ def main() -> int:
             events.append(event)
 
     stages = Counter()
+    stage_seconds = Counter()
+    weekly_seconds = Counter()
     totals = Counter()
+    completed_paths = None
+    incomplete_paths = None
     operations = {}
     peak_rss = 0.0
     last_stage = None
     for event in events:
         if event.get("event") == "started":
             last_stage = event["stage"]
+        if event.get("stage") == "diagnostic" and event.get("event") == "completed":
+            completed_paths = event.get("completed_paths")
+            incomplete_paths = event.get("incomplete_paths")
         if event.get("event") != "finished":
             continue
         stage = event["stage"]
         stages[stage] += 1
+        stage_seconds[stage] += float(event.get("stage_seconds", 0))
+        if stage == "weekly_transactions":
+            week = event.get("relative_scoring_week")
+            if week is not None:
+                weekly_seconds[str(week)] += float(event.get("stage_seconds", 0))
         peak_rss = max(peak_rss, float(event.get("parent_rss_mib", 0)))
         if stage == "team_transaction_plans":
             for name, profile in event.get("operation_profile", {}).items():
@@ -103,6 +115,10 @@ def main() -> int:
         "exit_code": process.returncode,
         "last_started_stage": last_stage,
         "finished_stage_counts": dict(sorted(stages.items())),
+        "stage_wall_seconds": {k: round(v, 4) for k, v in sorted(stage_seconds.items())},
+        "weekly_transaction_seconds_by_week": {k: round(v, 4) for k, v in sorted(weekly_seconds.items())},
+        "completed_paths": completed_paths,
+        "incomplete_paths": incomplete_paths,
         "completed_team_search_totals": dict(sorted(
             (k, round(v, 4) if isinstance(v, float) else v)
             for k, v in totals.items()
