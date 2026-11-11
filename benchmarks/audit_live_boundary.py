@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from urllib.request import Request, urlopen
 from collections import Counter
 from collections.abc import Mapping
 
@@ -62,6 +63,42 @@ def _schedule_field_audit(bundle: object, current_week: int) -> dict[str, object
     }
 
 
+def _public_nfl_scoreboard_probe(season: int, week: int) -> dict[str, object]:
+    """Probe public ESPN NFL scoreboard, exposing only aggregate status evidence."""
+    url = (
+        "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
+        f"?dates={season}&seasontype=2&week={week}&limit=100"
+    )
+    try:
+        with urlopen(Request(url, headers={"User-Agent": "FantasyFootballBoundaryAudit/1.0"}), timeout=15) as response:
+            payload = json.load(response)
+        events = payload.get("events", [])
+        if not isinstance(events, list):
+            return {"error": "events_not_list"}
+        statuses: Counter[str] = Counter()
+        missing_status = 0
+        event_ids: set[str] = set()
+        for event in events:
+            if not isinstance(event, Mapping):
+                continue
+            event_ids.add(str(event.get("id", "")))
+            status = event.get("status")
+            state = status.get("type", {}).get("state") if isinstance(status, Mapping) else None
+            if isinstance(state, str):
+                statuses[state] += 1
+            else:
+                missing_status += 1
+        return {
+            "distinct_event_count": len(event_ids),
+            "status_state_counts": dict(sorted(statuses.items())),
+            "missing_status_count": missing_status,
+            "matches_fantasy_current_week_game_count": len(event_ids) == 14,
+            "note": "Diagnostic only: no scoreboard statuses are accepted as canonical evidence.",
+        }
+    except Exception as exc:
+        return {"error_type": type(exc).__name__, "note": "Public scoreboard probe failed; canonical state unchanged."}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--first-simulation-week", type=int, default=10)
@@ -102,6 +139,7 @@ def main() -> None:
     print(json.dumps({
         "requested_first_simulation_week": args.first_simulation_week,
         "schedule_field_audit": _schedule_field_audit(bundle, report.current_scoring_period),
+        "public_nfl_scoreboard_probe": _public_nfl_scoreboard_probe(bundle.season, report.current_scoring_period),
         **{key: data[key] for key in keys},
     }, indent=2, sort_keys=True))
 
