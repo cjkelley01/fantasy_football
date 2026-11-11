@@ -908,3 +908,40 @@ def test_experimental_compact_acquisitions_match_reference_weekly_result() -> No
     assert replace(actual, valuation_seconds=0.0) == replace(
         expected, valuation_seconds=0.0,
     )
+
+
+def test_indexed_optimistic_coverage_matches_reference_predicate() -> None:
+    """Cross-check the first compact weekly kernel across teams and candidates."""
+    from fantasy_football.compact_season_state import CompactSeasonState
+    from fantasy_football.compact_weekly_search import optimistic_coverage_possible
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+    from fantasy_football.prepared_season import prepare_season
+    from fantasy_football.weekly_transactions import _optimistic_coverage_possible
+
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    prepared = prepare_season(snapshot)
+    compact = CompactSeasonState.from_reference(prepared, state)
+    workspace = prepare_lineup_optimization(snapshot)
+    week = workspace.week_records[state.scoring_week]
+    projected_available = frozenset(
+        pid for pid, record in week.items() if record.projected_lineup_available
+    )
+    starters = tuple(slot.lineup_slot_id for slot in workspace.slots)
+    for team in snapshot.teams:
+        baseline = optimize_starting_lineup(
+            snapshot, team.team_id, state.scoring_week,
+            roster_entries=state.roster_entries, workspace=workspace,
+        ).filled_starting_slot_count
+        for player in snapshot.players:
+            expected = _optimistic_coverage_possible(
+                snapshot, state, team.team_id, player.player_id,
+                baseline, workspace,
+            )
+            actual = optimistic_coverage_possible(
+                prepared, compact, team_id=team.team_id,
+                candidate_id=player.player_id,
+                baseline_filled=baseline, starting_slot_ids=starters,
+                projected_available=projected_available,
+            )
+            assert actual == expected, (team.team_id, player.player_id)
