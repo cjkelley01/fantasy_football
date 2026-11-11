@@ -855,6 +855,36 @@ def add_player(
             "explicit roster correction is required before acquisition",
             TransactionErrorCode.IR_CORRECTION_REQUIRED,
         )
+    # Reject capacity failures before allocating a full hypothetical state,
+    # copying the availability pool, and validating every player. These checks
+    # mirror the capacity/position invariants in validate_evolving_state.
+    slot_occupancy = sum(
+        entry.team_id == team_id and entry.lineup_slot_id == lineup_slot_id
+        for entry in state.roster_entries
+    )
+    if slot_occupancy >= slot.capacity:
+        _fail(
+            f"team {team_id} slot {lineup_slot_id} occupancy {slot_occupancy + 1} "
+            f"exceeds capacity {slot.capacity}",
+            TransactionErrorCode.SLOT_CAPACITY,
+        )
+    position_id = players[player_id].default_position_id
+    position_limit = next(
+        (rule.maximum for rule in snapshot.rules.position_limits
+         if rule.position_id == position_id), None
+    )
+    if position_limit is not None:
+        position_count = sum(
+            entry.team_id == team_id
+            and players[entry.player_id].default_position_id == position_id
+            for entry in state.roster_entries
+        )
+        if position_count >= position_limit:
+            _fail(
+                f"team {team_id} position {position_id} count {position_count + 1} "
+                f"exceeds limit {position_limit}",
+                TransactionErrorCode.POSITION_LIMIT,
+            )
     entry = RosterEntry(player_id, team_id, lineup_slot_id, team_id)
     rostered = PlayerAvailability(player_id, AcquisitionAvailability.ROSTERED, None, None, None, available.source_id)
     season_counts = dict(state.season_acquisition_counts)
