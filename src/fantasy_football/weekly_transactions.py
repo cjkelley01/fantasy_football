@@ -16,6 +16,7 @@ from fantasy_football.evolving_state import (
     IRPolicy,
     TransactionPhase,
     TransactionStateError,
+    TransactionErrorCode,
     acquisition_blocking_ir_players,
     activate_from_ir,
     add_player,
@@ -113,6 +114,7 @@ class TeamDecision:
     unresolved_authorization_plans: int
     rejection_summaries: tuple[CandidateRejectionSummary, ...]
     selected_player_id: int | None
+    failure_codes: tuple[CandidateRejectionSummary, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,6 +161,7 @@ class _PlanDiagnostics:
     rejections: tuple[CandidateRejectionSummary, ...]
     evaluations: int
     valuation_seconds: float
+    failure_codes: tuple[CandidateRejectionSummary, ...] = ()
 
 
 def _ordinary_slot_index(snapshot: LeagueSnapshot) -> dict[int, tuple[int, ...]]:
@@ -435,6 +438,12 @@ def _enumerate_plans(
         )
     )
     reasons: dict[str, int] = {}
+    failure_codes: dict[str, int] = {}
+
+    def record_failure(stage: str, error: TransactionStateError) -> None:
+        code = error.code.value if isinstance(error.code, TransactionErrorCode) else str(error.code)
+        key = f"{stage}:{code}"
+        failure_codes[key] = failure_codes.get(key, 0) + 1
     plans_by_state: dict[EvolvingLeagueState, _Plan] = {}
     legal_states: dict[EvolvingLeagueState, EvolvingLeagueState] = {}
     essential_states: dict[EvolvingLeagueState, EvolvingLeagueState] = {}
@@ -472,6 +481,7 @@ def _enumerate_plans(
                         phase=phase,
                     )
                 except TransactionStateError as exc:
+                    record_failure("direct_add", exc)
                     direct_error = str(exc)
                 else:
                     direct_error = None
@@ -506,6 +516,7 @@ def _enumerate_plans(
                                 phase=phase,
                             )
                         except TransactionStateError as exc:
+                            record_failure("drop" if isinstance(dropped, TransactionStateError) else "add_after_drop", exc)
                             text = str(exc)
                             if "unknown" in text or "unresolved" in text:
                                 category = "unresolved_authorization"
@@ -648,6 +659,7 @@ def _enumerate_plans(
             ),
             evaluations,
             valuation_seconds,
+            tuple(CandidateRejectionSummary(reason, count) for reason, count in sorted(failure_codes.items())),
         ),
         len(legal_states),
         (tuple(legal_states[key] for key in sorted(legal_states, key=repr))),
@@ -810,6 +822,7 @@ def execute_weekly_essential_transactions(
                             diagnostic.unresolved_plans,
                             diagnostic.rejections,
                             None,
+                            diagnostic.failure_codes,
                         )
                     )
                     continue
@@ -877,6 +890,7 @@ def execute_weekly_essential_transactions(
                         diagnostic.unresolved_plans,
                         diagnostic.rejections,
                         selected.player_id,
+                        diagnostic.failure_codes,
                     )
                 )
                 successes += 1
