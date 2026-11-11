@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import faulthandler
+import hashlib
 import json
 import logging
 import sqlite3
@@ -26,6 +27,7 @@ from fantasy_football.snapshot_store import SnapshotStore
 
 TRACE_MEMORY = False
 OPERATION_SUMMARY = {}
+REUSE_SUMMARY = {"calls": 0, "identical_state_calls": 0, "distinct_states": 0, "by_week": {}}
 VALUATION_SUMMARY = {"calls": 0, "seconds": 0.0, "replacement_candidates": 0, "allocation_states": 0}
 
 try:
@@ -121,6 +123,29 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
                 return original(*args, **kwargs)
 
         setattr(season, name, measured)
+
+    transaction_signatures = set()
+    original_weekly = season.execute_weekly_essential_transactions
+
+    def measured_weekly(*args, **kwargs):
+        # Diagnostic-only exact-input fingerprint. No identifiers are emitted.
+        # Include the full evolving state, policy, and participation selection.
+        state = args[1]
+        policy = args[2]
+        eligible = kwargs.get("eligible_team_ids")
+        signature = hashlib.sha256(repr((state, policy, eligible)).encode("utf-8")).digest()
+        repeated = signature in transaction_signatures
+        transaction_signatures.add(signature)
+        REUSE_SUMMARY["calls"] += 1
+        REUSE_SUMMARY["identical_state_calls"] += int(repeated)
+        REUSE_SUMMARY["distinct_states"] = len(transaction_signatures)
+        week = str(state.scoring_week)
+        entry = REUSE_SUMMARY["by_week"].setdefault(week, {"calls": 0, "identical_state_calls": 0})
+        entry["calls"] += 1
+        entry["identical_state_calls"] += int(repeated)
+        return original_weekly(*args, **kwargs)
+
+    season.execute_weekly_essential_transactions = measured_weekly
 
     for name, stage in (
         ("_preflight", "canonical_preflight"),
@@ -324,6 +349,7 @@ def main() -> int:
         emit("diagnostic", "failed", overall, exception_type=type(exc).__name__)
         return 1
     finally:
+        emit("transaction_reuse_opportunity", "finished", overall, **REUSE_SUMMARY)
         emit("roster_valuation_summary", "finished", overall,
              valuation_calls=VALUATION_SUMMARY["calls"],
              valuation_seconds=round(VALUATION_SUMMARY["seconds"], 6),
