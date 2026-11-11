@@ -27,6 +27,7 @@ from fantasy_football.snapshot_store import SnapshotStore
 
 TRACE_MEMORY = False
 OPERATION_SUMMARY = {}
+SEASON_LINEUP_SUMMARY = {"calls": 0, "seconds": 0.0}
 REUSE_SUMMARY = {"calls": 0, "identical_state_calls": 0, "distinct_states": 0, "by_week": {}}
 VALUATION_SUMMARY = {"calls": 0, "seconds": 0.0, "replacement_candidates": 0, "allocation_states": 0}
 
@@ -189,7 +190,17 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
 
     # Season scoring invokes its own imported optimizer reference, separate
     # from the transaction-search module. Attribute that cost independently.
-    profile_operation(season, "optimize_starting_lineup", "season_lineup_optimization")
+    original_season_lineup = season.optimize_starting_lineup
+
+    def measured_season_lineup(*args, **kwargs):
+        started = time.perf_counter()
+        try:
+            return original_season_lineup(*args, **kwargs)
+        finally:
+            SEASON_LINEUP_SUMMARY["calls"] += 1
+            SEASON_LINEUP_SUMMARY["seconds"] += time.perf_counter() - started
+
+    season.optimize_starting_lineup = measured_season_lineup
 
     original_plans = weekly._enumerate_plans
 
@@ -356,6 +367,9 @@ def main() -> int:
         emit("diagnostic", "failed", overall, exception_type=type(exc).__name__)
         return 1
     finally:
+        emit("season_lineup_profile", "finished", overall,
+             calls=SEASON_LINEUP_SUMMARY["calls"],
+             seconds=round(SEASON_LINEUP_SUMMARY["seconds"], 6))
         emit("transaction_reuse_opportunity", "finished", overall, **REUSE_SUMMARY)
         emit("roster_valuation_summary", "finished", overall,
              valuation_calls=VALUATION_SUMMARY["calls"],
