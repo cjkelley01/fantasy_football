@@ -17,6 +17,7 @@ import tracemalloc
 from contextlib import contextmanager
 from pathlib import Path
 
+import fantasy_football.evolving_state as evolving
 import fantasy_football.season_simulator as season
 import fantasy_football.weekly_transactions as weekly
 from fantasy_football.app.contracts import BaselineAnalysisRequest
@@ -24,6 +25,7 @@ from fantasy_football.app.service import ApplicationDependencies, ApplicationSer
 from fantasy_football.snapshot_store import SnapshotStore
 
 TRACE_MEMORY = False
+OPERATION_SUMMARY = {}
 VALUATION_SUMMARY = {"calls": 0, "seconds": 0.0, "replacement_candidates": 0, "allocation_states": 0}
 
 try:
@@ -131,9 +133,35 @@ def instrument(overall: float) -> None:
     ):
         wrap(name, stage)
 
+    # Inclusive wall-clock timings by operation, reset for each team search.
+    # Nested calls overlap: these are diagnostic costs, not additive totals.
+    def profile_operation(module, name: str, label: str) -> None:
+        original = getattr(module, name)
+
+        def measured(*args, **kwargs):
+            started = time.perf_counter()
+            try:
+                return original(*args, **kwargs)
+            finally:
+                item = OPERATION_SUMMARY.setdefault(label, [0, 0.0])
+                item[0] += 1
+                item[1] += time.perf_counter() - started
+
+        setattr(module, name, measured)
+
+    for module, name, label in (
+        (weekly, "add_player", "add_player"),
+        (weekly, "drop_player", "drop_player"),
+        (weekly, "optimize_starting_lineup", "lineup_optimization"),
+        (evolving, "validate_evolving_state", "state_validation"),
+        (evolving, "_replace_availability", "availability_replacement"),
+    ):
+        profile_operation(module, name, label)
+
     original_plans = weekly._enumerate_plans
 
     def measured_plans(*args, **kwargs):
+        OPERATION_SUMMARY.clear()
         started = time.perf_counter()
         result = original_plans(*args, **kwargs)
         diagnostic = result[1]
@@ -150,6 +178,8 @@ def instrument(overall: float) -> None:
             valuation_seconds=round(diagnostic.valuation_seconds, 6),
             # Aggregate error codes only: no player, team, or roster identifiers.
             failure_codes={item.reason: item.count for item in diagnostic.failure_codes},
+            operation_profile={key: {"calls": item[0], "seconds": round(item[1], 6)}
+                               for key, item in sorted(OPERATION_SUMMARY.items())},
         )
         return result
 
