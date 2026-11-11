@@ -59,6 +59,7 @@ def main() -> int:
 
     stages = Counter()
     totals = Counter()
+    operations = {}
     peak_rss = 0.0
     last_stage = None
     for event in events:
@@ -70,6 +71,10 @@ def main() -> int:
         stages[stage] += 1
         peak_rss = max(peak_rss, float(event.get("parent_rss_mib", 0)))
         if stage == "team_transaction_plans":
+            for name, profile in event.get("operation_profile", {}).items():
+                entry = operations.setdefault(name, {"calls": 0, "seconds": 0.0})
+                entry["calls"] += profile["calls"]
+                entry["seconds"] += profile["seconds"]
             for key in (
                 "candidate_players", "sequences_attempted", "unique_legal_states",
                 "essential_plans", "complete_plans", "valuation_evaluations",
@@ -97,6 +102,10 @@ def main() -> int:
             for k, v in totals.items()
         )),
         "peak_reported_rss_mib": round(peak_rss, 3),
+        "completed_team_operation_profile": {
+            name: {"calls": entry["calls"], "seconds": round(entry["seconds"], 4)}
+            for name, entry in sorted(operations.items())
+        },
         "partial_results": timed_out,
         "stderr_tail": stderr.splitlines()[-4:] if not timed_out else [],
     }
