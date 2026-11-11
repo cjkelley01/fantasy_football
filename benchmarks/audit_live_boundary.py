@@ -63,7 +63,7 @@ def _schedule_field_audit(bundle: object, current_week: int) -> dict[str, object
     }
 
 
-def _public_nfl_scoreboard_probe(season: int, week: int) -> dict[str, object]:
+def _public_nfl_scoreboard_probe(season: int, week: int, schedule_ids: set[str]) -> dict[str, object]:
     """Probe public ESPN NFL scoreboard, exposing only aggregate status evidence."""
     url = (
         "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
@@ -92,7 +92,10 @@ def _public_nfl_scoreboard_probe(season: int, week: int) -> dict[str, object]:
             "distinct_event_count": len(event_ids),
             "status_state_counts": dict(sorted(statuses.items())),
             "missing_status_count": missing_status,
-            "matches_fantasy_current_week_game_count": len(event_ids) == 14,
+            "matches_fantasy_current_week_game_count": len(event_ids) == len(schedule_ids),
+            "matching_game_ids": len(event_ids & schedule_ids),
+            "schedule_games_without_scoreboard_match": len(schedule_ids - event_ids),
+            "scoreboard_games_without_schedule_match": len(event_ids - schedule_ids),
             "note": "Diagnostic only: no scoreboard statuses are accepted as canonical evidence.",
         }
     except Exception as exc:
@@ -136,10 +139,16 @@ def main() -> None:
         "limitations",
     )
     data = report.to_dict()
+    current_schedule_ids = {
+        str(game.get("id"))
+        for team in bundle.pro_schedule.payload.get("settings", {}).get("proTeams", [])
+        for game in team.get("proGamesByScoringPeriod", {}).get(str(report.current_scoring_period), [])
+        if isinstance(game, Mapping)
+    }
     print(json.dumps({
         "requested_first_simulation_week": args.first_simulation_week,
         "schedule_field_audit": _schedule_field_audit(bundle, report.current_scoring_period),
-        "public_nfl_scoreboard_probe": _public_nfl_scoreboard_probe(bundle.season, report.current_scoring_period),
+        "public_nfl_scoreboard_probe": _public_nfl_scoreboard_probe(bundle.season, report.current_scoring_period, current_schedule_ids),
         **{key: data[key] for key in keys},
     }, indent=2, sort_keys=True))
 
