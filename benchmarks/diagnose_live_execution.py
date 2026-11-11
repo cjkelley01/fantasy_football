@@ -24,6 +24,8 @@ from fantasy_football.app.service import ApplicationDependencies, ApplicationSer
 from fantasy_football.snapshot_store import SnapshotStore
 
 TRACE_MEMORY = False
+VALUATION_SUMMARY = {"calls": 0, "seconds": 0.0, "replacement_candidates": 0, "allocation_states": 0}
+
 try:
     import psutil
 except ImportError:  # pragma: no cover - optional benchmark instrumentation
@@ -157,19 +159,16 @@ def instrument(overall: float) -> None:
 
     def measured_value(*args, **kwargs):
         started = time.perf_counter()
-        result = original_value(*args, **kwargs)
-        emit(
-            "roster_valuation",
-            "finished",
-            overall,
-            stage_seconds=round(time.perf_counter() - started, 6),
-            valuation_weeks=len(result.weeks),
-            replacement_candidates=sum(
-                week.replacement_candidate_count for week in result.weeks
-            ),
-            allocation_states=sum(
-                week.allocation_states_explored for week in result.weeks
-            ),
+        try:
+            result = original_value(*args, **kwargs)
+        finally:
+            VALUATION_SUMMARY["calls"] += 1
+            VALUATION_SUMMARY["seconds"] += time.perf_counter() - started
+        VALUATION_SUMMARY["replacement_candidates"] += sum(
+            week.replacement_candidate_count for week in result.weeks
+        )
+        VALUATION_SUMMARY["allocation_states"] += sum(
+            week.allocation_states_explored for week in result.weeks
         )
         return result
 
@@ -257,6 +256,7 @@ def main() -> int:
     if args.stack_interval_seconds > 0:
         faulthandler.dump_traceback_later(args.stack_interval_seconds, repeat=True)
     overall = time.perf_counter()
+    VALUATION_SUMMARY.update(calls=0, seconds=0.0, replacement_candidates=0, allocation_states=0)
     emit("diagnostic", "started", overall)
     if args.api_terminal:
         return run_api_terminal(args, overall)
@@ -280,6 +280,11 @@ def main() -> int:
         emit("diagnostic", "failed", overall, exception_type=type(exc).__name__)
         return 1
     finally:
+        emit("roster_valuation_summary", "finished", overall,
+             valuation_calls=VALUATION_SUMMARY["calls"],
+             valuation_seconds=round(VALUATION_SUMMARY["seconds"], 6),
+             replacement_candidates=VALUATION_SUMMARY["replacement_candidates"],
+             allocation_states=VALUATION_SUMMARY["allocation_states"])
         if args.stack_interval_seconds > 0:
             faulthandler.cancel_dump_traceback_later()
         if TRACE_MEMORY:
