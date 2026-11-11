@@ -33,6 +33,7 @@ from fantasy_football.lineup_optimizer import (
 )
 from fantasy_football.roster_value import value_roster
 from fantasy_football.compact_season_state import CompactSeasonState
+from fantasy_football.compact_weekly_search import optimistic_coverage_possible
 from fantasy_football.prepared_season import PreparedSeason, prepare_season
 
 
@@ -489,6 +490,7 @@ def _enumerate_plans(
     phase: TransactionPhase,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
     experimental_prepared: PreparedSeason | None = None,
+    experimental_indexed_coverage: bool = False,
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] | None = None,
@@ -565,6 +567,20 @@ def _enumerate_plans(
     coverage_cache: dict[tuple[int, tuple[int, ...], bool], bool] = {}
     starter_ids = frozenset(slot.lineup_slot_id for slot in workspace.slots)
     week_records = workspace.week_records[state.scoring_week]
+    projected_available = frozenset(
+        player_id for player_id, record in week_records.items()
+        if record.projected_lineup_available
+    ) if experimental_indexed_coverage else frozenset()
+    prepared_coverage = (
+        experimental_prepared if experimental_prepared is not None
+        else prepare_season(snapshot)
+    ) if experimental_indexed_coverage else None
+    compact_corrections = (
+        {id(corrected): CompactSeasonState.from_reference(prepared_coverage, corrected)
+         for corrected in corrections}
+        if prepared_coverage is not None else {}
+    )
+    starter_slot_ids = tuple(slot.lineup_slot_id for slot in workspace.slots)
     for player_id in available:
         player_had_structural_option = False
         for corrected in corrections:
@@ -578,10 +594,19 @@ def _enumerate_plans(
             )
             coverage_possible = coverage_cache.get(coverage_key)
             if coverage_possible is None:
-                coverage_possible = _optimistic_coverage_possible(
-                    snapshot, corrected, team_id, player_id,
-                    baseline.filled_starting_slot_count, workspace,
-                )
+                if prepared_coverage is not None:
+                    coverage_possible = optimistic_coverage_possible(
+                        prepared_coverage, compact_corrections[id(corrected)],
+                        team_id=team_id, candidate_id=player_id,
+                        baseline_filled=baseline.filled_starting_slot_count,
+                        starting_slot_ids=starter_slot_ids,
+                        projected_available=projected_available,
+                    )
+                else:
+                    coverage_possible = _optimistic_coverage_possible(
+                        snapshot, corrected, team_id, player_id,
+                        baseline.filled_starting_slot_count, workspace,
+                    )
                 coverage_cache[coverage_key] = coverage_possible
             if not coverage_possible:
                 reasons["cannot_improve_starter_coverage"] = (
@@ -830,6 +855,7 @@ def execute_weekly_essential_transactions(
     *,
     eligible_team_ids: tuple[int, ...] | None = None,
     experimental_compact_acquisitions: bool = False,
+    experimental_indexed_coverage: bool = False,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> WeeklyTransactionResult:
     """Execute one immutable sequential weekly waiver/free-agent window.
@@ -939,6 +965,7 @@ def execute_weekly_essential_transactions(
                         phase=phase,
                         lineup_workspace=lineup_workspace,
                         experimental_prepared=experimental_prepared,
+                        experimental_indexed_coverage=experimental_indexed_coverage,
                         valuation_cache=valuation_cache,
                     )
                 )
