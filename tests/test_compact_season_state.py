@@ -233,3 +233,55 @@ def test_native_acquisition_rejections_match_reference_across_slots_and_players(
                         lineup_slot_id=slot,
                     )
                     assert compact.to_reference() == expected
+
+
+def test_native_ir_placement_matches_reference_when_legal() -> None:
+    from fantasy_football.evolving_state import place_on_ir, TransactionStateError
+    from tests.test_roster_value import _valuation_snapshot
+    snapshot = _valuation_snapshot()
+    reference = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    reserve_ids = [
+        slot.slot_id for slot in snapshot.rules.lineup_slots
+        if slot.kind.value == "reserve" and slot.capacity > 0
+    ]
+    checked = 0
+    for entry in reference.roster_entries:
+        for reserve_id in reserve_ids:
+            try:
+                expected = place_on_ir(
+                    reference, snapshot, team_id=entry.team_id,
+                    player_id=entry.player_id, reserve_slot_id=reserve_id,
+                )
+            except TransactionStateError:
+                continue
+            compact = CompactSeasonState.from_reference(prepare_season(snapshot), reference)
+            compact.place_on_ir(
+                team_id=entry.team_id, player_id=entry.player_id,
+                reserve_slot_id=reserve_id,
+            )
+            assert compact.to_reference() == expected
+            checked += 1
+    if not checked:
+        import pytest
+        pytest.skip("fixture has no legal IR placements")
+
+
+def test_native_ir_placement_wrong_owner_is_atomic() -> None:
+    from fantasy_football.evolving_state import TransactionStateError
+    snapshot = _snapshot()
+    reference = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    entry = reference.roster_entries[0]
+    other = next(team.team_id for team in snapshot.teams if team.team_id != entry.team_id)
+    compact = CompactSeasonState.from_reference(prepare_season(snapshot), reference)
+    import pytest
+    with pytest.raises(TransactionStateError):
+        compact.place_on_ir(
+            team_id=other, player_id=entry.player_id, reserve_slot_id=-999,
+        )
+    assert compact.to_reference() == reference
