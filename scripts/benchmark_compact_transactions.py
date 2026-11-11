@@ -6,6 +6,13 @@ This is a microbenchmark, not an end-to-end Monte Carlo performance claim.
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
+
+# Direct script execution sets sys.path[0] to scripts/, not the repository root.
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 import statistics
 from time import perf_counter
 
