@@ -10,9 +10,12 @@ from dataclasses import dataclass
 
 from fantasy_football.canonical.model import RosterEntry
 from fantasy_football.evolving_state import (
-    EvolvingLeagueState, PlayerAvailability, TransactionRecord,\n    AcquisitionAvailability, TransactionAction, TransactionPhase,\n    TransactionStateError, TransactionErrorCode,
+    EvolvingLeagueState, PlayerAvailability, TransactionRecord,
+    AcquisitionAvailability, TransactionAction, TransactionPhase,
+    TransactionStateError, TransactionErrorCode,
 )
-from fantasy_football.prepared_season import PreparedSeason\nfrom fantasy_football.evolving_state import _validate_drop_permission
+from fantasy_football.prepared_season import PreparedSeason
+from fantasy_football.evolving_state import _validate_drop_permission
 
 
 @dataclass(slots=True)
