@@ -105,7 +105,8 @@ def configured_request(args) -> BaselineAnalysisRequest:
     return request
 
 
-def instrument(overall: float) -> None:
+def instrument(overall: float, *, max_team_searches: int = 0) -> None:
+    completed_team_searches = 0
     def wrap(name: str, stage: str):
         original = getattr(season, name)
 
@@ -161,6 +162,7 @@ def instrument(overall: float) -> None:
     original_plans = weekly._enumerate_plans
 
     def measured_plans(*args, **kwargs):
+        nonlocal completed_team_searches
         OPERATION_SUMMARY.clear()
         started = time.perf_counter()
         result = original_plans(*args, **kwargs)
@@ -181,6 +183,9 @@ def instrument(overall: float) -> None:
             operation_profile={key: {"calls": item[0], "seconds": round(item[1], 6)}
                                for key, item in sorted(OPERATION_SUMMARY.items())},
         )
+        completed_team_searches += 1
+        if max_team_searches and completed_team_searches >= max_team_searches:
+            raise SystemExit(0)
         return result
 
     weekly._enumerate_plans = measured_plans
@@ -278,6 +283,8 @@ def main() -> int:
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--latest-snapshot", action="store_true")
     parser.add_argument("--one-path", action="store_true")
+    parser.add_argument("--disable-coverage-filter", action="store_true")
+    parser.add_argument("--max-team-searches", type=int, default=0)
     args = parser.parse_args()
     global TRACE_MEMORY
     TRACE_MEMORY = args.trace_memory
@@ -296,7 +303,11 @@ def main() -> int:
         service = ApplicationService(ApplicationDependencies(store))
         with timed("canonical_load", overall):
             service._load(request.snapshot)
-        instrument(overall)
+        if args.disable_coverage_filter:
+            # Exact original candidate enumeration; retain all legality and
+            # valuation logic. Only disable the optimistic coverage prefilter.
+            weekly._optimistic_coverage_possible = lambda *args: True
+        instrument(overall, max_team_searches=args.max_team_searches)
         with timed("baseline_service", overall):
             result = service.run_baseline(request)
         emit(
