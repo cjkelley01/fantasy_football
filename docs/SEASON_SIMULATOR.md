@@ -1,7 +1,7 @@
 # Deterministic Season Simulator
 
 M2.5 is implemented by `fantasy_football.season_simulator`. The coordinator is
-pure and immutable: it consumes a published canonical schema-v3 snapshot, one
+pure and immutable: it consumes a published canonical schema-v3-or-later snapshot, one
 externally supplied deterministic score scenario, explicit transaction and IR
 policies, and optional validated consolation configuration. It performs no
 network access and generates no random values.

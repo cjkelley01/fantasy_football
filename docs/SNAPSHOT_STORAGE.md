@@ -19,7 +19,7 @@ Indexes support deterministic newest selection by `(league_id, season, published
 
 ## Identity, serialization, and checksums
 
-Each publication attempt that reaches persistence receives a newly generated UUID. It is not derived from content, so identical refreshes remain separately retained. The UUID is applied immutably to the final `LeagueSnapshot`; new publication requires schema v3 and serialization occurs before the write transaction. SHA-256 covers the exact UTF-8 canonical JSON bytes, including the UUID.
+Each publication attempt that reaches persistence receives a newly generated UUID. It is not derived from content, so identical refreshes remain separately retained. The UUID is applied immutably to the final `LeagueSnapshot`; new publication requires the current schema (v4 after LW1) and serialization occurs before the write transaction. SHA-256 covers the exact UTF-8 canonical JSON bytes, including the UUID.
 
 Existing v2 rows, canonical bytes, publication IDs, checksums, and raw evidence are never rewritten. The same SQLite-v1 layout stores both document versions because the canonical version is already explicit in metadata and JSON. Loading v2 reconstructs the historical typed contract and reserializes byte-for-byte without adding v3 protection fields. Its previously supported inspection and reproducibility behavior remains available, while automatic-drop authorization rejects it precisely because it lacks player-level protection evidence. No database migration is required.
 

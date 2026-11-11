@@ -20,6 +20,7 @@ from fantasy_football.espn_adapter import (
     request_with_retries,
     translate_bundle,
 )
+from fantasy_football.live_scoring import BoundaryMethod, NFLGameStatus, ScoreEvidenceStatus
 from tests.adapter_fixtures import source_bundle
 
 
@@ -52,7 +53,7 @@ def test_translate_sanitized_bundle_to_complete_valid_snapshot() -> None:
     assert interpretations["playoff_tie"].normalized_value == "higher_seed"
     assert {item.gap_id for item in snapshot.rule_gaps}.isdisjoint({"regular_tie", "playoff_tie"})
     assert len(result.raw_sources) == 12
-    assert snapshot.schema_version == 3
+    assert snapshot.schema_version == 4
     assert snapshot.rules.undroppable_list_enabled is True
     assert snapshot.rules.undroppable_list_source_id == "league-initial"
     protection = {item.player_id: item.is_undroppable for item in snapshot.players}
@@ -60,6 +61,10 @@ def test_translate_sanitized_bundle_to_complete_valid_snapshot() -> None:
     assert protection[5] is False
     assert interpretations["undroppable_player_mapping"].status is InterpretationStatus.UNVERIFIED
     assert interpretations["undroppable_player_mapping"].source_id.startswith("player-current-")
+    assert any(
+        game.scoring_week == 1 and game.status is NFLGameStatus.COMPLETED
+        for game in snapshot.nfl_games
+    )
 
 
 def test_contradictory_roster_undroppable_evidence_fails() -> None:
@@ -73,6 +78,23 @@ def test_contradictory_roster_undroppable_evidence_fails() -> None:
 def test_identical_source_bundle_translates_deterministically() -> None:
     bundle = source_bundle()
     assert translate_bundle(bundle).snapshot == translate_bundle(bundle).snapshot
+
+
+def test_live_scoring_preserves_zero_actual_and_automatic_boundary_evidence() -> None:
+    bundle = source_bundle()
+    wrapper = bundle.current_player_pages[0].response.payload["players"][0]
+    wrapper["player"]["stats"].append({
+        "seasonId": 2026, "scoringPeriodId": 2, "statSourceId": 0,
+        "statSplitTypeId": 1, "appliedTotal": 0.0,
+    })
+    result = translate_bundle(replace(bundle, simulation_week_automatically_detected=True))
+    live = result.snapshot.live_scoring
+    assert live is not None
+    assert live.boundary_method is BoundaryMethod.AUTOMATIC
+    assert live.supported_simulation_week == 2
+    observed = next(item for item in live.observations if item.player_id == wrapper["id"])
+    assert observed.actual_points == 0.0
+    assert observed.actual_status is ScoreEvidenceStatus.CONFIRMED
 
 
 def test_future_ownership_never_overwrites_current_authority() -> None:

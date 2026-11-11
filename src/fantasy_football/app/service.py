@@ -21,6 +21,7 @@ from fantasy_football.app.contracts import (
     CandidateSummary,
     ConfidenceInterval,
     LeagueStructure,
+    LiveScoringSummary,
     ManualScenarioRequest,
     ManualScenarioResult,
     MatchupPeriodSummary,
@@ -31,6 +32,7 @@ from fantasy_football.app.contracts import (
     PlayerSummary,
     RosterAssignment,
     RuleCapability,
+    ScoringWeekStateSummary,
     RunIdentity,
     SearchCoverageResult,
     SnapshotListQuery,
@@ -263,6 +265,21 @@ class ApplicationService:
             for gap in snapshot.rule_gaps
             for capability in gap.affected_capabilities
         )
+        live = snapshot.live_scoring
+        live_summary = None if live is None else LiveScoringSummary(
+            current_scoring_period=live.current_scoring_period,
+            last_fully_completed_period=live.last_fully_completed_period,
+            earliest_unresolved_period=live.earliest_unresolved_period,
+            next_fully_unplayed_period=live.next_fully_unplayed_period,
+            supported_simulation_week=live.supported_simulation_week,
+            partial_week_simulation_required=live.partial_week_simulation_required,
+            boundary_method=live.boundary_method.value,
+            boundary_rationale=live.boundary_rationale,
+            weeks=tuple(ScoringWeekStateSummary(
+                scoring_week=item.scoring_week, status=item.status.value, rationale=item.rationale,
+            ) for item in live.weeks),
+            unresolved_capabilities=live.unresolved_capabilities,
+        )
         return SnapshotSummary(
             snapshot_id=loaded.metadata.snapshot_id,
             league_id=snapshot.league_id,
@@ -353,6 +370,7 @@ class ApplicationService:
                 )
             ),
             capabilities=capabilities,
+            live_scoring=live_summary,
         )
 
     @staticmethod

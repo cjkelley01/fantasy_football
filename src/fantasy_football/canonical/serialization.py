@@ -44,6 +44,15 @@ from fantasy_football.canonical.model import (
     ValidationMetadata,
 )
 from fantasy_football.canonical.validation import CanonicalValidationError, validate_snapshot
+from fantasy_football.live_scoring import (
+    BoundaryMethod,
+    LiveScoringState,
+    NFLGameStatus,
+    PlayerScoringObservation,
+    ScoreEvidenceStatus,
+    ScoringPeriodStatus,
+    ScoringWeekState,
+)
 
 
 class CanonicalSerializationError(ValueError):
@@ -94,6 +103,10 @@ def _sort_records(data: dict[str, Any]) -> None:
         source["parameters"].sort(key=lambda item: item[0])
     for scoring in rules["scoring"]:
         scoring["overrides"].sort(key=lambda item: item[0])
+    live = data.get("live_scoring")
+    if live is not None:
+        live["weeks"].sort(key=lambda item: item["scoring_week"])
+        live["observations"].sort(key=lambda item: (item["scoring_week"], item["player_id"]))
 
 
 def snapshot_to_json(snapshot: LeagueSnapshot) -> str:
@@ -107,6 +120,11 @@ def snapshot_to_json(snapshot: LeagueSnapshot) -> str:
         for player in data["players"]:
             player.pop("is_undroppable", None)
             player.pop("undroppable_source_id", None)
+    if snapshot.schema_version < 4:
+        data.pop("live_scoring", None)
+        for game in data["nfl_games"]:
+            game.pop("status", None)
+            game.pop("status_source_id", None)
     _sort_records(data)
     return json.dumps(data, indent=2, sort_keys=True, allow_nan=False) + "\n"
 
@@ -243,7 +261,8 @@ def _decode(data: Mapping[str, Any]) -> LeagueSnapshot:
         nfl_teams=_records(data["nfl_teams"], "nfl_teams", lambda item: NFLTeam(**item)),
         nfl_games=_records(data["nfl_games"], "nfl_games", lambda item: NFLGame(
             game_id=item["game_id"], scoring_week=item["scoring_week"], home_nfl_team_id=item["home_nfl_team_id"],
-            away_nfl_team_id=item["away_nfl_team_id"], kickoff_utc=_optional_timestamp(item.get("kickoff_utc"), "nfl_game.kickoff_utc"))),
+            away_nfl_team_id=item["away_nfl_team_id"], kickoff_utc=_optional_timestamp(item.get("kickoff_utc"), "nfl_game.kickoff_utc"),
+            status=NFLGameStatus(item.get("status", "unknown")), status_source_id=item.get("status_source_id"))),
         sources=_records(data["sources"], "sources", _source),
         rule_gaps=_records(data["rule_gaps"], "rule_gaps", lambda item: RuleGap(
             gap_id=item["gap_id"], reason=item["reason"], source_id=item["source_id"],
@@ -251,6 +270,32 @@ def _decode(data: Mapping[str, Any]) -> LeagueSnapshot:
         validation=ValidationMetadata(
             validated_at_utc=_optional_timestamp(validation.get("validated_at_utc"), "validation.validated_at_utc"),
             validator_version=validation["validator_version"], warnings=tuple(validation.get("warnings", []))),
+        live_scoring=_live_scoring(data.get("live_scoring")),
+    )
+
+
+def _live_scoring(value: Any) -> LiveScoringState | None:
+    if value is None:
+        return None
+    data = _mapping(value, "live_scoring")
+    return LiveScoringState(
+        current_scoring_period=data["current_scoring_period"],
+        weeks=_records(data["weeks"], "live_scoring.weeks", lambda item: ScoringWeekState(
+            scoring_week=item["scoring_week"], status=ScoringPeriodStatus(item["status"]),
+            game_ids=tuple(item["game_ids"]), rationale=item["rationale"])),
+        observations=_records(data["observations"], "live_scoring.observations", lambda item: PlayerScoringObservation(
+            player_id=item["player_id"], scoring_week=item["scoring_week"],
+            actual_points=item.get("actual_points"), actual_status=ScoreEvidenceStatus(item["actual_status"]),
+            remaining_projection=item.get("remaining_projection"), lineup_locked=item.get("lineup_locked"),
+            source_id=item["source_id"])),
+        last_fully_completed_period=data.get("last_fully_completed_period"),
+        earliest_unresolved_period=data.get("earliest_unresolved_period"),
+        next_fully_unplayed_period=data.get("next_fully_unplayed_period"),
+        supported_simulation_week=data.get("supported_simulation_week"),
+        partial_week_simulation_required=data["partial_week_simulation_required"],
+        boundary_method=BoundaryMethod(data["boundary_method"]),
+        boundary_rationale=data["boundary_rationale"], source_ids=tuple(data["source_ids"]),
+        unresolved_capabilities=tuple(data["unresolved_capabilities"]),
     )
 
 
@@ -281,7 +326,9 @@ def snapshot_from_json(payload: str) -> LeagueSnapshot:
         not v3_player_fields.issubset(_mapping(item, f"players[{index}]"))
         for index, item in enumerate(player_rows)
     ):
-        raise CanonicalSerializationError("schema-v3 document is missing required protection fields")
+        raise CanonicalSerializationError(
+            "schema-v3-or-later document is missing required protection fields"
+        )
     try:
         snapshot = _decode(data)
         validate_snapshot(snapshot)

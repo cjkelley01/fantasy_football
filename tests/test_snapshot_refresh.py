@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import fantasy_football.app.refresh as refresh_module
+from fantasy_football.app.contracts import SnapshotRefreshRequest
 from fantasy_football.app.http import create_app
 from fantasy_football.app.refresh import RefreshDependencies, SnapshotRefreshCoordinator
 from fantasy_football.app.service import (
@@ -103,10 +104,54 @@ def test_refresh_profile_never_discloses_credentials_and_http_publishes(refresh_
         assert _wait(coordinator, refresh_id).status == "completed"
         result = client.get(f"/api/v1/refreshes/{refresh_id}/result").json()
         assert result["snapshot"]["snapshot_id"] == result["refresh"]["snapshot_id"]
+        assert result["snapshot"]["live_scoring"]["supported_simulation_week"] == 2
+        assert result["snapshot"]["live_scoring"]["boundary_method"] == "manual_override"
         assert result["refresh"]["publication_committed"] is True
         assert result["validation_findings"]
         assert "private-cookie-value" not in str(result)
         assert len(store.list_snapshots()) == 1
+
+
+def test_automatic_refresh_resolves_and_publishes_live_scoring_boundary(tmp_path) -> None:
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    store.initialize()
+    service = ApplicationService(ApplicationDependencies(store))
+    settings = Settings(
+        league_id=77, season=2026, log_level="INFO", snapshot_db_path=store.path,
+    )
+
+    def automatic_adapter(settings, *, first_simulation_week, manual_config):
+        assert settings.league_id == 77
+        assert first_simulation_week is None
+        assert manual_config is None
+        return translate_bundle(replace(
+            source_bundle(), simulation_week_automatically_detected=True,
+        ))
+
+    coordinator = SnapshotRefreshCoordinator(RefreshDependencies(
+        store=store,
+        application=service,
+        settings_loader=lambda: settings,
+        adapter=automatic_adapter,
+    ))
+    try:
+        submission = coordinator.submit(SnapshotRefreshRequest(**{
+            "api_schema_version": "1.0",
+            "profile_id": "configured_local_league",
+            "league_id": 77,
+            "season": 2026,
+            "first_simulation_week": None,
+        }))
+        record = _wait(coordinator, submission.refresh_id)
+        assert record.status == "completed"
+        assert record.first_simulation_week == 2
+        published = store.load(record.snapshot_id).snapshot
+        assert published.first_simulation_week == 2
+        assert published.live_scoring is not None
+        assert published.live_scoring.boundary_method.value == "automatic"
+        assert published.live_scoring.supported_simulation_week == 2
+    finally:
+        coordinator.close()
 
 
 @pytest.mark.parametrize("case", ["missing", "invalid_yaml", "wrong_league", "wrong_season"])
@@ -220,8 +265,6 @@ def test_repeated_refresh_is_append_only_and_duplicate_content_gets_new_identity
 
 
 def _request_model():
-    from fantasy_football.app.contracts import SnapshotRefreshRequest
-
     return SnapshotRefreshRequest(**_request())
 
 

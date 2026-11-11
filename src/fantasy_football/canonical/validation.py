@@ -21,6 +21,14 @@ from fantasy_football.canonical.model import (
     SUPPORTED_SCHEMA_VERSIONS,
     SlotKind,
 )
+from fantasy_football.live_scoring import (
+    BoundaryMethod,
+    LiveScoringError,
+    NFLGameStatus,
+    ScoreEvidenceStatus,
+    ScoringPeriodStatus,
+    resolve_live_scoring_state,
+)
 
 
 class CanonicalValidationError(ValueError):
@@ -517,6 +525,9 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
             if observed != team_ids:
                 _fail("MatchupPeriod", period.matchup_period_id, "regular schedule coverage", f"expected teams {sorted(team_ids)}, observed {sorted(observed)}")
 
+    live = snapshot.live_scoring
+    live_week_ids = set() if live is None else {item.scoring_week for item in live.weeks}
+    allowed_nfl_weeks = required_weeks | live_week_ids
     nfl_team_ids = _unique((team.nfl_team_id for team in snapshot.nfl_teams), entity="NFLTeam", field="nfl_team_id")
     for team in snapshot.nfl_teams:
         _integer(team.nfl_team_id, entity="NFLTeam", identifier=team.nfl_team_id, field="nfl_team_id", minimum=1)
@@ -535,10 +546,14 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
         _integer(game.away_nfl_team_id, entity="NFLGame", identifier=game.game_id, field="away_nfl_team_id", minimum=1)
         if game.home_nfl_team_id == game.away_nfl_team_id or game.home_nfl_team_id not in nfl_team_ids or game.away_nfl_team_id not in nfl_team_ids:
             _fail("NFLGame", game.game_id, "teams", "contains duplicate or unknown NFL team")
-        if game.scoring_week not in required_weeks:
-            _fail("NFLGame", game.game_id, "scoring_week", "outside snapshot horizon")
+        if game.scoring_week not in allowed_nfl_weeks:
+            _fail("NFLGame", game.game_id, "scoring_week", "outside simulation and live-scoring evidence")
         if game.kickoff_utc is not None:
             _aware(game.kickoff_utc, entity="NFLGame", identifier=game.game_id, field="kickoff_utc")
+        if not isinstance(game.status, NFLGameStatus):
+            _fail("NFLGame", game.game_id, "status", "must use a supported NFLGameStatus")
+        if game.status_source_id is not None and game.status_source_id not in source_ids:
+            _fail("NFLGame", game.game_id, "status_source_id", f"unknown source {game.status_source_id!r}")
         for team_id in (game.home_nfl_team_id, game.away_nfl_team_id):
             nfl_appearances[(game.scoring_week, team_id)] += 1
             if nfl_appearances[(game.scoring_week, team_id)] > 1:
@@ -549,6 +564,65 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
         for team_id in nfl_team_ids:
             if nfl_appearances[(week, team_id)] == 0 and bye_by_team[team_id] != week:
                 _fail("NFLTeam", team_id, "schedule coverage", f"has neither game nor bye in required week {week}")
+
+    if live is not None:
+        _integer(live.current_scoring_period, entity="LiveScoringState", identifier="current", field="current_scoring_period", minimum=1)
+        _tuple(live.weeks, entity="LiveScoringState", identifier="current", field="weeks")
+        _tuple(live.observations, entity="LiveScoringState", identifier="current", field="observations")
+        week_ids = _unique((item.scoring_week for item in live.weeks), entity="ScoringWeekState", field="scoring_week")
+        for item in live.weeks:
+            _integer(item.scoring_week, entity="ScoringWeekState", identifier=item.scoring_week, field="scoring_week", minimum=1)
+            if not isinstance(item.status, ScoringPeriodStatus):
+                _fail("ScoringWeekState", item.scoring_week, "status", "uses an unsupported status")
+            _tuple(item.game_ids, entity="ScoringWeekState", identifier=item.scoring_week, field="game_ids")
+            _nonempty(item.rationale, entity="ScoringWeekState", identifier=item.scoring_week, field="rationale")
+        if live.current_scoring_period not in week_ids:
+            _fail("LiveScoringState", "current", "current_scoring_period", "is absent from week evidence")
+        if live.supported_simulation_week is not None and live.supported_simulation_week != snapshot.first_simulation_week:
+            _fail("LiveScoringState", "current", "supported_simulation_week", "must equal the canonical first_simulation_week")
+        if not isinstance(live.boundary_method, BoundaryMethod):
+            _fail("LiveScoringState", "current", "boundary_method", "uses an unsupported method")
+        for source_id in live.source_ids:
+            if source_id not in source_ids:
+                _fail("LiveScoringState", "current", "source_ids", f"references unknown source {source_id!r}")
+        _unique(((item.player_id, item.scoring_week) for item in live.observations), entity="PlayerScoringObservation", field="player_week")
+        for item in live.observations:
+            if item.player_id not in player_ids:
+                _fail("PlayerScoringObservation", item.player_id, "player_id", "references an unknown player")
+            if not isinstance(item.actual_status, ScoreEvidenceStatus):
+                _fail("PlayerScoringObservation", item.player_id, "actual_status", "uses an unsupported status")
+            if item.actual_status is ScoreEvidenceStatus.CONFIRMED and item.actual_points is None:
+                _fail("PlayerScoringObservation", item.player_id, "actual_points", "confirmed evidence requires a numeric value")
+            if item.actual_status is ScoreEvidenceStatus.UNAVAILABLE and item.actual_points is not None:
+                _fail("PlayerScoringObservation", item.player_id, "actual_points", "unavailable evidence cannot carry a numeric value")
+            if item.actual_points is not None:
+                _finite(item.actual_points, entity="PlayerScoringObservation", identifier=item.player_id, field="actual_points")
+            if item.remaining_projection is not None:
+                _finite(item.remaining_projection, entity="PlayerScoringObservation", identifier=item.player_id, field="remaining_projection")
+            if item.source_id not in source_ids:
+                _fail("PlayerScoringObservation", item.player_id, "source_id", f"references unknown source {item.source_id!r}")
+            if item.lineup_locked is not None and not isinstance(item.lineup_locked, bool):
+                _fail("PlayerScoringObservation", item.player_id, "lineup_locked", "must be boolean or unresolved")
+        try:
+            resolved_live = resolve_live_scoring_state(
+                current_scoring_period=live.current_scoring_period,
+                scoring_weeks=week_ids,
+                games=snapshot.nfl_games,
+                observations=live.observations,
+                source_ids=live.source_ids,
+                manual_override=(
+                    live.supported_simulation_week
+                    if live.boundary_method is BoundaryMethod.MANUAL_OVERRIDE
+                    else None
+                ),
+            )
+        except LiveScoringError as exc:
+            _fail("LiveScoringState", "current", "evidence", str(exc))
+        if resolved_live != live:
+            _fail(
+                "LiveScoringState", "current", "evidence",
+                "stored classification or boundary is inconsistent with canonical game and score evidence",
+            )
 
     gap_ids = _unique((gap.gap_id for gap in snapshot.rule_gaps), entity="RuleGap", field="gap_id")
     for gap in snapshot.rule_gaps:

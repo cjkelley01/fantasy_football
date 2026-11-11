@@ -136,12 +136,16 @@ def league_payload() -> dict:
 
 def _nfl_schedule() -> dict:
     teams = [
-        {"id": team_id, "abbrev": f"T{team_id}", "byeWeek": 2 if team_id in {1, 2} else 10, "proGamesByScoringPeriod": {"2": [], "3": []}}
+        {"id": team_id, "abbrev": f"T{team_id}", "byeWeek": 2 if team_id in {1, 2} else 10, "proGamesByScoringPeriod": {"1": [], "2": [], "3": []}}
         for team_id in range(1, 33)
     ]
     by_id = {team["id"]: team for team in teams}
     game_id = 1000
-    for week, ids in ((2, list(range(3, 33))), (3, list(range(1, 33)))):
+    for week, ids in (
+        (1, list(range(1, 33))),
+        (2, list(range(3, 33))),
+        (3, list(range(1, 33))),
+    ):
         for home, away in zip(ids[::2], ids[1::2]):
             game = {
                 "id": game_id,
@@ -149,6 +153,7 @@ def _nfl_schedule() -> dict:
                 "homeProTeamId": home,
                 "awayProTeamId": away,
                 "date": 1797000000000 + game_id,
+                "status": "STATUS_FINAL" if week == 1 else "STATUS_SCHEDULED",
             }
             by_id[home]["proGamesByScoringPeriod"][str(week)].append(game)
             by_id[away]["proGamesByScoringPeriod"][str(week)].append(deepcopy(game))
