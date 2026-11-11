@@ -32,6 +32,8 @@ from fantasy_football.lineup_optimizer import (
     prepare_lineup_optimization,
 )
 from fantasy_football.roster_value import value_roster
+from fantasy_football.compact_season_state import CompactSeasonState
+from fantasy_football.prepared_season import PreparedSeason, prepare_season
 
 
 class WeeklyTransactionError(ValueError):
@@ -457,6 +459,28 @@ def _optimistic_coverage_possible(
     return False
 
 
+def _experimental_compact_add(
+    prepared: PreparedSeason,
+    state: EvolvingLeagueState,
+    *,
+    team_id: int,
+    player_id: int,
+    lineup_slot_id: int,
+    phase: TransactionPhase,
+) -> EvolvingLeagueState:
+    """Experimental transaction boundary; reference state remains authoritative.
+
+    Conversion and reconstruction are included in performance measurements.
+    This must not be enabled by default before end-to-end parity gates pass.
+    """
+    compact = CompactSeasonState.from_reference(prepared, state)
+    compact.add_player(
+        team_id=team_id, player_id=player_id,
+        lineup_slot_id=lineup_slot_id, phase=phase,
+    )
+    return compact.to_reference()
+
+
 def _enumerate_plans(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
@@ -464,6 +488,7 @@ def _enumerate_plans(
     team_id: int,
     phase: TransactionPhase,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
+    experimental_prepared: PreparedSeason | None = None,
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] | None = None,
@@ -474,6 +499,18 @@ def _enumerate_plans(
     tuple[EvolvingLeagueState, ...],
     tuple[EvolvingLeagueState, ...],
 ]:
+    def acquire(candidate_state: EvolvingLeagueState, *, team_id: int, player_id: int,
+                lineup_slot_id: int, phase: TransactionPhase) -> EvolvingLeagueState:
+        if experimental_prepared is None:
+            return add_player(
+                candidate_state, snapshot, team_id=team_id,
+                player_id=player_id, lineup_slot_id=lineup_slot_id, phase=phase,
+            )
+        return _experimental_compact_add(
+            experimental_prepared, candidate_state, team_id=team_id,
+            player_id=player_id, lineup_slot_id=lineup_slot_id, phase=phase,
+        )
+
     workspace = lineup_workspace or prepare_lineup_optimization(snapshot)
     values = valuation_cache if valuation_cache is not None else OrderedDict()
     baseline = optimize_starting_lineup(
@@ -557,9 +594,8 @@ def _enumerate_plans(
                 operations: list[tuple[int | None, EvolvingLeagueState]] = []
                 attempted += 1
                 try:
-                    direct = add_player(
+                    direct = acquire(
                         corrected,
-                        snapshot,
                         team_id=team_id,
                         player_id=player_id,
                         lineup_slot_id=slot_id,
@@ -592,9 +628,8 @@ def _enumerate_plans(
                         try:
                             if isinstance(dropped, TransactionStateError):
                                 raise dropped
-                            resulting = add_player(
+                            resulting = acquire(
                                 dropped,
-                                snapshot,
                                 team_id=team_id,
                                 player_id=player_id,
                                 lineup_slot_id=slot_id,
@@ -778,6 +813,7 @@ def execute_weekly_essential_transactions(
     policy: WeeklyTransactionPolicy,
     *,
     eligible_team_ids: tuple[int, ...] | None = None,
+    experimental_compact_acquisitions: bool = False,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> WeeklyTransactionResult:
     """Execute one immutable sequential weekly waiver/free-agent window.
@@ -837,6 +873,7 @@ def execute_weekly_essential_transactions(
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] = OrderedDict()
+    experimental_prepared = prepare_season(snapshot) if experimental_compact_acquisitions else None
 
     def run_phase(phase: TransactionPhase, order_factory) -> tuple[int, int]:
         nonlocal current, total_candidates, total_corrections, total_attempted
@@ -885,6 +922,7 @@ def execute_weekly_essential_transactions(
                         team_id=team_id,
                         phase=phase,
                         lineup_workspace=lineup_workspace,
+                        experimental_prepared=experimental_prepared,
                         valuation_cache=valuation_cache,
                     )
                 )
