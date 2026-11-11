@@ -21,6 +21,12 @@ from fantasy_football.canonical.model import (
 )
 from fantasy_football.canonical.validation import CanonicalValidationError
 from fantasy_football.evolving_state import IRPolicy
+from fantasy_football.live_scoring import (
+    BoundaryMethod,
+    LiveScoringState,
+    ScoringPeriodStatus,
+    ScoringWeekState,
+)
 from fantasy_football.postseason import (
     BracketGraph,
     BracketGraphNode,
@@ -100,6 +106,46 @@ def _run(snapshot=None, scenario=None, *, policy=None, postseason_policy=None):
             else postseason_policy
         ),
     )
+
+
+def test_partial_current_week_cannot_be_silently_omitted_from_simulation() -> None:
+    snapshot = _snapshot()
+    current_week = snapshot.first_simulation_week - 1
+    source_id = snapshot.sources[0].source_id
+    # This reproduces the unsafe schema-v4 shape emitted before the LW1 remediation:
+    # the next unplayed week was authorized despite an unresolved partial current week.
+    unsafe_live = LiveScoringState(
+        current_scoring_period=current_week,
+        weeks=(
+            ScoringWeekState(
+                current_week,
+                ScoringPeriodStatus.PARTIAL,
+                (1001, 1002),
+                "One NFL game is complete while another remains scheduled.",
+            ),
+            ScoringWeekState(
+                snapshot.first_simulation_week,
+                ScoringPeriodStatus.UNPLAYED,
+                (1003,),
+                "Every NFL game is explicitly scheduled and not started.",
+            ),
+        ),
+        observations=(),
+        last_fully_completed_period=None,
+        earliest_unresolved_period=current_week,
+        next_fully_unplayed_period=snapshot.first_simulation_week,
+        supported_simulation_week=snapshot.first_simulation_week,
+        partial_week_simulation_required=True,
+        boundary_method=BoundaryMethod.AUTOMATIC,
+        boundary_rationale="Legacy next-unplayed selection.",
+        source_ids=(source_id,),
+        unresolved_capabilities=(),
+    )
+    with pytest.raises(
+        SeasonSimulationError,
+        match="does not establish a safe fully unplayed V1 boundary",
+    ):
+        _run(replace(snapshot, live_scoring=unsafe_live))
 
 
 ACTIVE_PARTICIPATION_RULE_ID = "fixture-active-participants"

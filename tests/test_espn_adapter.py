@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 from copy import deepcopy
 from dataclasses import replace
 
@@ -13,9 +14,12 @@ from fantasy_football.canonical.model import (
     JsonObject,
     ProjectionClass,
 )
+from fantasy_football.canonical.serialization import snapshot_from_json, snapshot_to_json
+from fantasy_football.canonical.validation import CanonicalValidationError, validate_snapshot
 from fantasy_football.espn_adapter import (
     EspnAdapterError,
     ManualRuleOverride,
+    build_live_scoring_evidence_report,
     load_manual_rule_config,
     request_with_retries,
     translate_bundle,
@@ -95,6 +99,93 @@ def test_live_scoring_preserves_zero_actual_and_automatic_boundary_evidence() ->
     observed = next(item for item in live.observations if item.player_id == wrapper["id"])
     assert observed.actual_points == 0.0
     assert observed.actual_status is ScoreEvidenceStatus.CONFIRMED
+
+
+def test_live_scoring_diagnostic_reports_sanitized_mixed_actual_coverage() -> None:
+    bundle = source_bundle()
+    wrappers = [
+        wrapper
+        for page in bundle.current_player_pages
+        for wrapper in page.response.payload["players"]
+    ]
+    rostered = next(item for item in wrappers if item["onTeamId"] > 0)
+    unrostered = next(item for item in wrappers if item["onTeamId"] == 0)
+    rostered["player"]["stats"].append({
+        "seasonId": 2026, "scoringPeriodId": 2, "statSourceId": 0,
+        "statSplitTypeId": 1, "appliedTotal": 0.0,
+    })
+    unrostered["player"]["stats"].append({
+        "seasonId": 2026, "scoringPeriodId": 2, "statSourceId": 0,
+        "statSplitTypeId": 1, "appliedTotal": 7.25,
+    })
+    report = build_live_scoring_evidence_report(
+        league_id=bundle.league_id,
+        season=bundle.season,
+        league_initial=bundle.league_initial,
+        current_player_pages=bundle.current_player_pages,
+        pro_schedule=bundle.pro_schedule,
+    )
+    assert report.player_count == 5
+    assert report.rostered_player_count == 4
+    assert report.unrostered_player_count == 1
+    assert report.actual_record_count == 2
+    assert report.explicit_zero_actual_count == 1
+    assert report.rostered_actual_record_count == 1
+    assert report.unrostered_actual_record_count == 1
+    assert report.missing_actual_record_count == 3
+    assert report.supported_simulation_week == 2
+    assert report.observed_game_status_tokens == (
+        ("STATUS_FINAL", 16), ("STATUS_SCHEDULED", 31),
+    )
+    assert all("Sanitized Player" not in item for item in report.limitations)
+
+
+def test_live_scoring_diagnostic_reports_unknown_token_without_inventing_boundary() -> None:
+    bundle = source_bundle()
+    teams = bundle.pro_schedule.payload["settings"]["proTeams"]
+    game = next(
+        game
+        for team in teams
+        for games in team["proGamesByScoringPeriod"].values()
+        for game in games
+        if game["scoringPeriodId"] == 2
+    )
+    target_id = game["id"]
+    for team in teams:
+        for games in team["proGamesByScoringPeriod"].values():
+            for duplicate in games:
+                if duplicate["id"] == target_id:
+                    duplicate["status"] = "STATUS_DELAYED_UNKNOWN"
+    report = build_live_scoring_evidence_report(
+        league_id=bundle.league_id,
+        season=bundle.season,
+        league_initial=bundle.league_initial,
+        current_player_pages=bundle.current_player_pages,
+        pro_schedule=bundle.pro_schedule,
+    )
+    assert report.unsupported_game_status_tokens == ("STATUS_DELAYED_UNKNOWN",)
+    assert report.supported_simulation_week is None
+    assert report.current_week_game_statuses == ()
+
+
+def test_earlier_schema_v4_live_scoring_document_remains_readable_but_untrusted() -> None:
+    snapshot = translate_bundle(source_bundle()).snapshot
+    document = json.loads(snapshot_to_json(snapshot))
+    document["live_scoring"].pop("current_matchup_period_scoring_weeks")
+    restored = snapshot_from_json(json.dumps(document))
+    assert restored.live_scoring is not None
+    assert restored.live_scoring.current_matchup_period_scoring_weeks == ()
+
+
+def test_inconsistent_live_scoring_boundary_metadata_is_rejected() -> None:
+    snapshot = translate_bundle(source_bundle()).snapshot
+    assert snapshot.live_scoring is not None
+    invalid = replace(
+        snapshot,
+        live_scoring=replace(snapshot.live_scoring, next_fully_unplayed_period=3),
+    )
+    with pytest.raises(CanonicalValidationError, match="next_fully_unplayed_period"):
+        validate_snapshot(invalid)
 
 
 def test_future_ownership_never_overwrites_current_authority() -> None:

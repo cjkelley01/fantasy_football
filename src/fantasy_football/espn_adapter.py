@@ -186,6 +186,38 @@ class AdapterResult:
     raw_sources: tuple[CapturedResponse, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class LiveScoringEvidenceReport:
+    """Sanitized aggregate evidence for validating LW1 against a live league."""
+
+    league_id: int
+    season: int
+    current_scoring_period: int
+    supported_game_status_tokens: tuple[str, ...]
+    observed_game_status_tokens: tuple[tuple[str, int], ...]
+    unsupported_game_status_tokens: tuple[str, ...]
+    current_week_game_statuses: tuple[tuple[str, int], ...]
+    player_count: int
+    rostered_player_count: int
+    unrostered_player_count: int
+    actual_record_count: int
+    explicit_zero_actual_count: int
+    missing_actual_record_count: int
+    rostered_actual_record_count: int
+    unrostered_actual_record_count: int
+    bye_player_count: int
+    bye_player_actual_record_count: int
+    next_fully_unplayed_period: int | None
+    supported_simulation_week: int | None
+    boundary_rationale: str
+    unresolved_capabilities: tuple[str, ...]
+    source_request_count: int
+    limitations: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return asdict(self)
+
+
 def _fail(context: str, field: str, message: str) -> None:
     raise EspnAdapterError(f"{context}: field {field!r}: {message}")
 
@@ -1292,6 +1324,7 @@ def translate_bundle(
         live_scoring = resolve_live_scoring_state(
             current_scoring_period=_int(initial.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1),
             scoring_weeks=all_weeks, games=nfl_games,
+            matchup_period_scoring_weeks=period_map.values(),
             observations=_translate_live_observations(
                 bundle.current_player_pages,
                 season=bundle.season,
@@ -1405,6 +1438,269 @@ def translate_bundle(
     return AdapterResult(snapshot, report, captured)
 
 
+def _retrieve_player_pages(
+    request: Any,
+    *,
+    week: int,
+    role: str,
+    page_size: int,
+    max_retries: int,
+) -> tuple[PlayerPage, ...]:
+    pages: list[PlayerPage] = []
+    offset = 0
+    for _page_number in range(101):
+        filters = {
+            "players": {
+                "filterStatus": {"value": list(POOL_STATUSES)},
+                "limit": page_size,
+                "offset": offset,
+                "sortPercOwned": {"sortPriority": 1, "sortAsc": False},
+            }
+        }
+        params = {"view": PLAYER_VIEW, "scoringPeriodId": week}
+        headers = {"x-fantasy-filter": json.dumps(filters, separators=(",", ":"))}
+        payload = request_with_retries(
+            lambda params=params, headers=headers: request.league_get(
+                params=params, headers=headers
+            ),
+            context=(
+                f"{role} request_type=player_pool scoring_week={week} "
+                f"offset={offset} limit={page_size}"
+            ),
+            max_retries=max_retries,
+        )
+        source_id = f"player-{role}-week-{week}-offset-{offset}"
+        captured = capture_response(
+            payload,
+            source_id=source_id,
+            request_type=f"player_pool_{role}",
+            endpoint=request.LEAGUE_ENDPOINT,
+            view=PLAYER_VIEW,
+            parameters=(("scoringPeriodId", week), ("offset", offset), ("limit", page_size)),
+        )
+        pages.append(PlayerPage(week, offset, page_size, captured))
+        length = len(
+            _list(payload.get("players"), f"{role} week={week} offset={offset}.players")
+        )
+        if length > page_size:
+            raise EspnAdapterError(
+                f"{role} week={week} offset={offset}: received {length} players "
+                f"above limit={page_size}"
+            )
+        if length < page_size:
+            return tuple(pages)
+        offset += page_size
+    raise EspnAdapterError(f"{role} week={week}: pagination exceeded 100 full pages")
+
+
+def build_live_scoring_evidence_report(
+    *,
+    league_id: int,
+    season: int,
+    league_initial: CapturedResponse,
+    current_player_pages: tuple[PlayerPage, ...],
+    pro_schedule: CapturedResponse,
+) -> LiveScoringEvidenceReport:
+    """Build a player-anonymous LW1 evidence report without claiming participation."""
+
+    initial = league_initial.payload
+    current_week = _int(
+        initial.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1
+    )
+    schedule = _settings(initial, "scheduleSettings")
+    raw_period_map = _mapping(
+        schedule.get("matchupPeriods"), "scheduleSettings.matchupPeriods"
+    )
+    raw_weeks = tuple(
+        _int(week, f"matchup period {period_id}", "scoring week", minimum=1)
+        for period_id, period_weeks in raw_period_map.items()
+        for week in _list(period_weeks, f"matchup period {period_id}")
+    )
+    if not raw_weeks:
+        raise EspnAdapterError("scheduleSettings.matchupPeriods contains no scoring weeks")
+    _, _, period_map = _parse_periods(
+        initial, first_week=min(raw_weeks), final_week=max(raw_weeks)
+    )
+    period_rows = tuple(period_map.values())
+    all_weeks = tuple(sorted(week for period in period_rows for week in period))
+
+    pro_settings = _mapping(pro_schedule.payload.get("settings"), "nfl schedule.settings")
+    raw_tokens_by_game: dict[str, str] = {}
+    bye_teams: set[int] = set()
+    for value in _list(pro_settings.get("proTeams"), "nfl schedule.proTeams"):
+        team = _mapping(value, "nfl schedule.proTeam")
+        team_id = _int(team.get("id"), "nfl schedule.proTeam", "id", minimum=0)
+        if team_id == 0:
+            continue
+        if team.get("byeWeek") == current_week:
+            bye_teams.add(team_id)
+        by_week = _mapping(
+            team.get("proGamesByScoringPeriod"),
+            f"nfl team {team_id}.proGamesByScoringPeriod",
+        )
+        for values in by_week.values():
+            for raw_game in _list(values, f"nfl team {team_id}.games"):
+                game = _mapping(raw_game, f"nfl team {team_id}.game")
+                game_id = str(_int(game.get("id"), "nfl schedule game", "id", minimum=1))
+                token_value = game.get("status")
+                token = "<missing>" if token_value is None else str(token_value)
+                previous = raw_tokens_by_game.get(game_id)
+                if previous is not None and previous != token:
+                    raise EspnAdapterError(
+                        f"NFL game {game_id}: duplicate schedule records disagree on status"
+                    )
+                raw_tokens_by_game[game_id] = token
+    token_counts: dict[str, int] = {}
+    for token in raw_tokens_by_game.values():
+        token_counts[token] = token_counts.get(token, 0) + 1
+    unsupported_tokens = tuple(
+        sorted(token for token in token_counts if token not in _GAME_STATUSES)
+    )
+
+    current, _ = _parse_pool_pages(current_player_pages, label="current player pool")
+    actual_count = zero_count = rostered_actual = unrostered_actual = 0
+    rostered_count = bye_count = bye_actual = 0
+    observations = _translate_live_observations(
+        current_player_pages, season=season, current_week=current_week
+    )
+    observation_by_player = {item.player_id: item for item in observations}
+    for player_id, wrapper in current.items():
+        owner = _int(
+            wrapper.get("onTeamId"), f"current player_id={player_id}", "onTeamId", minimum=0
+        )
+        rostered = owner > 0
+        rostered_count += int(rostered)
+        player = _mapping(wrapper.get("player"), f"current player_id={player_id}.player")
+        nfl_team_id = _int(
+            player.get("proTeamId"), f"current player_id={player_id}", "proTeamId", minimum=0
+        )
+        on_bye = nfl_team_id in bye_teams
+        bye_count += int(on_bye)
+        observation = observation_by_player[player_id]
+        has_actual = observation.actual_status is ScoreEvidenceStatus.CONFIRMED
+        actual_count += int(has_actual)
+        zero_count += int(has_actual and observation.actual_points == 0.0)
+        rostered_actual += int(rostered and has_actual)
+        unrostered_actual += int(not rostered and has_actual)
+        bye_actual += int(on_bye and has_actual)
+
+    current_status_counts: dict[str, int] = {}
+    next_unplayed: int | None = None
+    supported_week: int | None = None
+    boundary_rationale = (
+        "Unsupported or missing NFL game-status tokens prevent boundary classification."
+    )
+    unresolved = ["verified_live_game_status_tokens", "actual_score_participation_scope"]
+    if not unsupported_tokens:
+        _, games = _translate_nfl_calendar(
+            pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks)
+        )
+        for game in games:
+            if game.scoring_week == current_week:
+                key = game.status.value
+                current_status_counts[key] = current_status_counts.get(key, 0) + 1
+        state = resolve_live_scoring_state(
+            current_scoring_period=current_week,
+            scoring_weeks=all_weeks,
+            games=games,
+            matchup_period_scoring_weeks=period_rows,
+            observations=observations,
+            source_ids=(league_initial.source_id, pro_schedule.source_id),
+        )
+        next_unplayed = state.next_fully_unplayed_period
+        supported_week = state.supported_simulation_week
+        boundary_rationale = state.boundary_rationale
+        unresolved.extend(state.unresolved_capabilities)
+
+    return LiveScoringEvidenceReport(
+        league_id=league_id,
+        season=season,
+        current_scoring_period=current_week,
+        supported_game_status_tokens=tuple(sorted(_GAME_STATUSES)),
+        observed_game_status_tokens=tuple(sorted(token_counts.items())),
+        unsupported_game_status_tokens=unsupported_tokens,
+        current_week_game_statuses=tuple(sorted(current_status_counts.items())),
+        player_count=len(current),
+        rostered_player_count=rostered_count,
+        unrostered_player_count=len(current) - rostered_count,
+        actual_record_count=actual_count,
+        explicit_zero_actual_count=zero_count,
+        missing_actual_record_count=len(current) - actual_count,
+        rostered_actual_record_count=rostered_actual,
+        unrostered_actual_record_count=unrostered_actual,
+        bye_player_count=bye_count,
+        bye_player_actual_record_count=bye_actual,
+        next_fully_unplayed_period=next_unplayed,
+        supported_simulation_week=supported_week,
+        boundary_rationale=boundary_rationale,
+        unresolved_capabilities=tuple(sorted(set(unresolved))),
+        source_request_count=2 + len(current_player_pages),
+        limitations=(
+            "An actual-score record does not prove lineup participation or active NFL status.",
+            "A missing actual-score record cannot distinguish inactivity from delayed or absent data.",
+            "The diagnostic does not establish official fantasy-matchup or standings settlement.",
+            "Observed status tokens remain unverified until compared with authorized live evidence.",
+        ),
+    )
+
+
+def fetch_live_scoring_evidence_report(
+    settings: Settings, *, page_size: int = 250, max_retries: int = 2,
+) -> LiveScoringEvidenceReport:
+    """Perform the bounded read-only requests required by the sanitized LW1 diagnostic."""
+
+    _int(page_size, "diagnostic input", "page_size", minimum=1)
+    credentials = settings.credentials
+    league = League(
+        league_id=settings.league_id,
+        year=settings.season,
+        espn_s2=credentials.espn_s2 if credentials else None,
+        swid=credentials.swid if credentials else None,
+        fetch_league=False,
+    )
+    request = league.espn_request
+    initial_payload = request_with_retries(
+        request.get_league,
+        context="LW1 diagnostic league initial views=mTeam,mRoster,mMatchup,mSettings,mStandings",
+        max_retries=max_retries,
+    )
+    initial = capture_response(
+        initial_payload,
+        source_id="lw1-diagnostic-league-initial",
+        request_type="league_initial",
+        endpoint=request.LEAGUE_ENDPOINT,
+        view=",".join(LEAGUE_VIEWS),
+        parameters=(),
+    )
+    current_week = _int(
+        initial_payload.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1
+    )
+    current_pages = _retrieve_player_pages(
+        request, week=current_week, role="diagnostic-current",
+        page_size=page_size, max_retries=max_retries,
+    )
+    pro_payload = request_with_retries(
+        request.get_pro_schedule,
+        context="LW1 diagnostic request_type=nfl_schedule view=proTeamSchedules_wl",
+        max_retries=max_retries,
+    )
+    pro_schedule = capture_response(
+        pro_payload,
+        source_id="lw1-diagnostic-nfl-schedule",
+        request_type="nfl_schedule",
+        endpoint=request.ENDPOINT,
+        view=PRO_SCHEDULE_VIEW,
+        parameters=(),
+    )
+    return build_live_scoring_evidence_report(
+        league_id=settings.league_id,
+        season=settings.season,
+        league_initial=initial,
+        current_player_pages=current_pages,
+        pro_schedule=pro_schedule,
+    )
+
+
 def retrieve_bundle(
     settings: Settings,
     *,
@@ -1460,45 +1756,10 @@ def retrieve_bundle(
             f"first_simulation_week={first_simulation_week} exceeds final required scoring week={final_week}"
         )
 
-    def retrieve_week(week: int, *, role: str) -> tuple[PlayerPage, ...]:
-        pages: list[PlayerPage] = []
-        offset = 0
-        for page_number in range(101):
-            filters = {
-                "players": {
-                    "filterStatus": {"value": list(POOL_STATUSES)},
-                    "limit": page_size,
-                    "offset": offset,
-                    "sortPercOwned": {"sortPriority": 1, "sortAsc": False},
-                }
-            }
-            params = {"view": PLAYER_VIEW, "scoringPeriodId": week}
-            headers = {"x-fantasy-filter": json.dumps(filters, separators=(",", ":"))}
-            payload = request_with_retries(
-                lambda: request.league_get(params=params, headers=headers),
-                context=f"{role} request_type=player_pool scoring_week={week} offset={offset} limit={page_size}",
-                max_retries=max_retries,
-            )
-            source_id = f"player-{role}-week-{week}-offset-{offset}"
-            captured = capture_response(
-                payload,
-                source_id=source_id,
-                request_type=f"player_pool_{role}",
-                endpoint=request.LEAGUE_ENDPOINT,
-                view=PLAYER_VIEW,
-                parameters=(("scoringPeriodId", week), ("offset", offset), ("limit", page_size)),
-            )
-            page = PlayerPage(week, offset, page_size, captured)
-            pages.append(page)
-            length = len(_list(payload.get("players"), f"{role} week={week} offset={offset}.players"))
-            if length > page_size:
-                raise EspnAdapterError(f"{role} week={week} offset={offset}: received {length} players above limit={page_size}")
-            if length < page_size:
-                return tuple(pages)
-            offset += page_size
-        raise EspnAdapterError(f"{role} week={week}: pagination exceeded 100 full pages")
-
-    current_pages = retrieve_week(current_week, role="current")
+    current_pages = _retrieve_player_pages(
+        request, week=current_week, role="current",
+        page_size=page_size, max_retries=max_retries,
+    )
     pro_payload = request_with_retries(
         request.get_pro_schedule,
         context="request_type=nfl_schedule view=proTeamSchedules_wl",
@@ -1521,6 +1782,7 @@ def retrieve_bundle(
             current_scoring_period=current_week,
             scoring_weeks=(week for weeks in period_map.values() for week in weeks),
             games=full_games,
+            matchup_period_scoring_weeks=period_map.values(),
             observations=_translate_live_observations(
                 current_pages, season=settings.season, current_week=current_week,
             ),
@@ -1532,7 +1794,10 @@ def retrieve_bundle(
     future_pages = tuple(
         page
         for week in range(first_simulation_week, final_week + 1)
-        for page in retrieve_week(week, role="future")
+        for page in _retrieve_player_pages(
+            request, week=week, role="future",
+            page_size=page_size, max_retries=max_retries,
+        )
     )
     reconciliation_payload = request_with_retries(
         request.get_league,
