@@ -522,13 +522,31 @@ def _enumerate_plans(
     # coverage depends on roster entries, not transaction ledger history.
     # Bound the cache so large searches do not retain every explored roster.
     lineup_vacancies: OrderedDict[tuple, int] = OrderedDict()
+    # Coverage matching depends on candidate projection availability and eligible
+    # starting destinations, not candidate identity. Reuse exact outcomes for
+    # structurally interchangeable candidates within this team search.
+    coverage_cache: dict[tuple[int, tuple[int, ...], bool], bool] = {}
+    starter_ids = frozenset(slot.lineup_slot_id for slot in workspace.slots)
+    week_records = workspace.week_records[state.scoring_week]
     for player_id in available:
         player_had_structural_option = False
         for corrected in corrections:
-            if not _optimistic_coverage_possible(
-                snapshot, corrected, team_id, player_id,
-                baseline.filled_starting_slot_count, workspace,
-            ):
+            candidate_record = week_records.get(player_id)
+            coverage_key = (
+                id(corrected),
+                tuple(sorted(starter_ids.intersection(
+                    workspace.players[player_id].eligible_lineup_slot_ids
+                ))),
+                candidate_record is not None and candidate_record.projected_lineup_available,
+            )
+            coverage_possible = coverage_cache.get(coverage_key)
+            if coverage_possible is None:
+                coverage_possible = _optimistic_coverage_possible(
+                    snapshot, corrected, team_id, player_id,
+                    baseline.filled_starting_slot_count, workspace,
+                )
+                coverage_cache[coverage_key] = coverage_possible
+            if not coverage_possible:
                 reasons["cannot_improve_starter_coverage"] = (
                     reasons.get("cannot_improve_starter_coverage", 0) + 1
                 )
