@@ -8,6 +8,8 @@ M0–M8.3 and the associated consolidation checkpoints are **COMPLETE AND ACCEPT
 
 V1 is a local web application restricted to localhost. The accepted React/TypeScript shell, League Overview, Opportunity Explorer, Trade Lab, and Simulation Center talk to FastAPI, which delegates all league rules and analytics to the accepted Python engine and uses SQLite-backed persistence/results. League Insights remains deferred, and M8 owns installation, real-league workflow validation, and release acceptance; focused CLIs remain developer diagnostics.
 
+M9 simulation scalability is **IN PROGRESS**: architecture review and correctness gates are documented; no faster production engine has been accepted. See [M9 simulation scalability](docs/M9_SIMULATION_SCALABILITY.md).
+
 ## Authoritative documentation
 
 - [Master specification](docs/MASTER_SPEC.md) — the complete approved model specification and governing requirements.
