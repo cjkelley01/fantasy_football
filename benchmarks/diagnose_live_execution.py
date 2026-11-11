@@ -87,13 +87,13 @@ def configured_request(args) -> BaselineAnalysisRequest:
                 update={"snapshot_id": latest.metadata.snapshot_id}
             )
         })
-    if args.one_path:
+    if args.paths is not None:
         request = request.model_copy(update={
-            "simulation": request.simulation.model_copy(update={"path_count": 1}),
+            "simulation": request.simulation.model_copy(update={"path_count": args.paths}),
             "precision": request.precision.model_copy(update={
-                "minimum_paths": 1,
-                "maximum_paths": 1,
-                "evaluation_interval_paths": 1,
+                "minimum_paths": args.paths,
+                "maximum_paths": args.paths,
+                "evaluation_interval_paths": args.paths,
             }),
         })
     if args.allow_incomplete:
@@ -282,10 +282,12 @@ def main() -> int:
     parser.add_argument("--api-terminal", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--latest-snapshot", action="store_true")
-    parser.add_argument("--one-path", action="store_true")
+    parser.add_argument("--paths", type=int, default=None, help="Exact number of Monte Carlo paths; overrides retained request path budget")
     parser.add_argument("--disable-coverage-filter", action="store_true")
     parser.add_argument("--max-team-searches", type=int, default=0)
     args = parser.parse_args()
+    if args.paths is not None and args.paths < 1:
+        parser.error("--paths must be at least 1")
     global TRACE_MEMORY
     TRACE_MEMORY = args.trace_memory
     if TRACE_MEMORY:
@@ -314,6 +316,7 @@ def main() -> int:
             "diagnostic", "completed", overall,
             completed_paths=result.completed_paths,
             incomplete_paths=result.incomplete_paths,
+            requested_paths=request.simulation.path_count,
         )
         return 0
     except Exception as exc:
