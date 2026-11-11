@@ -844,11 +844,31 @@ def add_player(
                 "explicit roster correction is required before acquisition",
                 TransactionErrorCode.IR_CORRECTION_REQUIRED,
             )
-    owners = {item.player_id: item.team_id for item in state.roster_entries}
-    blockers = tuple(
-        player for player in acquisition_blocking_ir_players(state, snapshot)
-        if owners[player] == team_id
-    )
+    # The state was validated at entry. Check only this team's reserve
+    # occupants instead of revalidating the entire league and rebuilding a
+    # league-wide recovered-IR list for every hypothetical acquisition.
+    # Preserve the original ascending player-ID ordering in error evidence.
+    blockers: tuple[int, ...] = ()
+    if state.ir_policy is IRPolicy.PROJECTION_BASED:
+        reserve_ids = {
+            rule.slot_id for rule in snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.RESERVE
+        }
+        team_reserve_ids = {
+            entry.player_id for entry in state.roster_entries
+            if entry.team_id == team_id and entry.lineup_slot_id in reserve_ids
+        }
+        if team_reserve_ids:
+            projections = {
+                record.player_id: record.effective_projection
+                for record in snapshot.player_weeks
+                if record.scoring_week == state.scoring_week
+                and record.player_id in team_reserve_ids
+            }
+            blockers = tuple(sorted(
+                player_id for player_id in team_reserve_ids
+                if projections[player_id] > 0
+            ))
     if blockers:
         _fail(
             f"team {team_id} has projection-based recovered reserve occupant(s) {blockers}; "
