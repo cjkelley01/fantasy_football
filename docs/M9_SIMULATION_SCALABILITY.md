@@ -42,3 +42,13 @@ At 20 paths, weekly transactions took 27.653 s inclusive, team-plan search 15.48
 ## Next execution gate
 
 Run the existing coverage differential tests and full suite on the current branch; capture the immutable reference SHA and compare the same seeds after each change. Begin with internal transaction-search cost attribution, **not** a broad cache. No M9 performance target is currently achieved.
+
+
+## Batch 1 implementation and verification
+
+- Baseline reported by local developer: **954 passed, one dependency deprecation warning, 205.77 s**, commit `cb1205a`.
+- Added full `DeterministicSeasonResult` equality on repeat replay with fixed path and seed, including weekly transitions and postseason.
+- Added positive-acquisition fixture replay, requiring an actual acquisition and a frozen lineup containing the acquired player.
+- Added 14-team whole-batch versus split-batch exact equivalence.
+- Added diagnostic-only operation timings for optimistic coverage matching, ordinary-slot index construction, and team ownership lookup. These are inclusive nested measurements and must not be summed blindly.
+- **Pending**: run new tests and full suite locally. These tests establish replay invariants, not a pinned serialized golden output against the pre-M9 implementation. Pinning an independently recorded baseline is still required before replacing production logic.
