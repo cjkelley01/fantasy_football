@@ -432,3 +432,49 @@ def test_retry_policy_retries_transient_failures_only() -> None:
     with pytest.raises(ValueError, match="bad payload"):
         request_with_retries(malformed, context="week=2 offset=0", sleep=lambda _: None)
     assert malformed_attempts == 1
+
+
+def test_scoreboard_statuses_reconcile_exact_game_and_team_ids() -> None:
+    from fantasy_football.espn_adapter import (
+        _apply_scoreboard_statuses, _translate_nfl_calendar, capture_response,
+    )
+
+    bundle = source_bundle()
+    _, games = _translate_nfl_calendar(bundle.pro_schedule, first_week=2, final_week=3)
+    current = [game for game in games if game.scoring_week == 2]
+    events = [
+        {
+            "id": game.game_id,
+            "status": {"type": {"state": "pre"}},
+            "competitions": [{"competitors": [
+                {"homeAway": "home", "team": {"id": str(game.home_nfl_team_id)}},
+                {"homeAway": "away", "team": {"id": str(game.away_nfl_team_id)}},
+            ]}],
+        }
+        for game in current
+    ]
+    scoreboard = capture_response(
+        {"events": events}, source_id="nfl-scoreboard",
+        request_type="nfl_scoreboard", endpoint="https://example.test/scoreboard",
+        view="scoreboard", parameters=(),
+    )
+    updated = _apply_scoreboard_statuses(games, scoreboard, current_week=2)
+    assert all(
+        game.status is NFLGameStatus.SCHEDULED and game.status_source_id == "nfl-scoreboard"
+        for game in updated if game.scoring_week == 2
+    )
+    assert all(
+        game.status_source_id != "nfl-scoreboard"
+        for game in updated if game.scoring_week != 2
+    )
+
+    invalid = deepcopy(events)
+    invalid[0]["competitions"][0]["competitors"][0]["team"]["id"] = "-999"
+    bad_scoreboard = replace(scoreboard, payload={"events": invalid})
+    with pytest.raises(EspnAdapterError, match="team IDs disagree"):
+        _apply_scoreboard_statuses(games, bad_scoreboard, current_week=2)
+
+    with pytest.raises(EspnAdapterError, match="does not cover"):
+        _apply_scoreboard_statuses(
+            games, replace(scoreboard, payload={"events": events[:-1]}), current_week=2
+        )
