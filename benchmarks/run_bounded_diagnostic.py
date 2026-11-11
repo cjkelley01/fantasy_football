@@ -70,6 +70,7 @@ def main() -> int:
     stage_seconds = Counter()
     weekly_seconds = Counter()
     totals = Counter()
+    reuse_opportunity = None
     completed_paths = None
     incomplete_paths = None
     operations = {}
@@ -91,6 +92,8 @@ def main() -> int:
             if week is not None:
                 weekly_seconds[str(week)] += float(event.get("stage_seconds", 0))
         peak_rss = max(peak_rss, float(event.get("parent_rss_mib", 0)))
+        if stage == "transaction_reuse_opportunity":
+            reuse_opportunity = {key: value for key, value in event.items() if key in ("calls", "identical_state_calls", "distinct_states", "by_week")}
         if stage == "team_transaction_plans":
             for name, profile in event.get("operation_profile", {}).items():
                 entry = operations.setdefault(name, {"calls": 0, "seconds": 0.0})
@@ -115,6 +118,7 @@ def main() -> int:
         ),
         "limit_seconds": args.seconds,
         "requested_paths": args.paths,
+        "transaction_reuse_opportunity": reuse_opportunity,
         "completed_paths_per_second": round(completed_paths / elapsed, 4) if completed_paths is not None and elapsed > 0 else None,
         "elapsed_seconds_per_completed_path": round(elapsed / completed_paths, 4) if completed_paths else None,
         "elapsed_seconds": round(elapsed, 3),
