@@ -893,3 +893,15 @@ def test_reordered_state_is_deterministic_and_no_network(monkeypatch) -> None:
     assert len({entry.player_id for entry in first.state.roster_entries}) == len(
         first.state.roster_entries
     )
+
+
+def test_experimental_compact_acquisitions_match_reference_weekly_result() -> None:
+    """Full weekly search parity, including decisions, ledger, and diagnostics."""
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    policy = _policy(waivers=True)
+    expected = execute_weekly_essential_transactions(snapshot, state, policy)
+    actual = execute_weekly_essential_transactions(
+        snapshot, state, policy, experimental_compact_acquisitions=True,
+    )
+    assert actual == expected
