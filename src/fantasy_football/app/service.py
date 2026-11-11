@@ -47,6 +47,7 @@ from fantasy_football.app.contracts import (
 from fantasy_football.evolving_state import AcquisitionAvailability, IRPolicy, initialize_evolving_state
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.monte_carlo import MonteCarloConfig
+from fantasy_football.live_scoring import BoundaryMethod, has_safe_v1_boundary
 from fantasy_football.monte_carlo_precision import (
     MonteCarloPrecisionResult,
     PrecisionConfiguration,
@@ -266,19 +267,31 @@ class ApplicationService:
             for capability in gap.affected_capabilities
         )
         live = snapshot.live_scoring
+        live_ready = live is not None and has_safe_v1_boundary(live)
         live_summary = None if live is None else LiveScoringSummary(
             current_scoring_period=live.current_scoring_period,
             last_fully_completed_period=live.last_fully_completed_period,
             earliest_unresolved_period=live.earliest_unresolved_period,
             next_fully_unplayed_period=live.next_fully_unplayed_period,
-            supported_simulation_week=live.supported_simulation_week,
+            supported_simulation_week=(
+                live.supported_simulation_week if live_ready else None
+            ),
             partial_week_simulation_required=live.partial_week_simulation_required,
-            boundary_method=live.boundary_method.value,
-            boundary_rationale=live.boundary_rationale,
+            boundary_method=(
+                live.boundary_method.value if live_ready else BoundaryMethod.UNRESOLVED.value
+            ),
+            boundary_rationale=(
+                live.boundary_rationale
+                if live_ready
+                else "Stored live-scoring metadata does not establish a safe V1 boundary; refresh before simulation."
+            ),
             weeks=tuple(ScoringWeekStateSummary(
                 scoring_week=item.scoring_week, status=item.status.value, rationale=item.rationale,
             ) for item in live.weeks),
-            unresolved_capabilities=live.unresolved_capabilities,
+            unresolved_capabilities=tuple(sorted(set(
+                live.unresolved_capabilities
+                + (() if live_ready else ("validated_simulation_boundary",))
+            ))),
         )
         return SnapshotSummary(
             snapshot_id=loaded.metadata.snapshot_id,

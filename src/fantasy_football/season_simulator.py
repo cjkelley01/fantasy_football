@@ -27,6 +27,7 @@ from fantasy_football.lineup_optimizer import (
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
+from fantasy_football.live_scoring import has_safe_v1_boundary
 from fantasy_football.postseason import (
     ConsolationLadderConfiguration,
     MatchupStatus,
@@ -222,6 +223,10 @@ def _preflight(
     consolation_configuration: ConsolationLadderConfiguration | None,
 ) -> dict[tuple[int, int], RealizedPlayerScore]:
     validate_snapshot(snapshot)
+    if snapshot.live_scoring is not None and not has_safe_v1_boundary(snapshot.live_scoring):
+        raise SeasonSimulationError(
+            "snapshot live-scoring evidence does not establish a safe fully unplayed V1 boundary"
+        )
     if snapshot.snapshot_id is None:
         raise SeasonSimulationError(
             "season simulation requires a published snapshot ID"

@@ -1,8 +1,10 @@
-# ESPN-to-Canonical Adapter — Canonical Schema v3
+# ESPN-to-Canonical Adapter — Canonical Schema v4
 
 ## Status
 
-M1.2 is **COMPLETE as of 17 October 2026**. M2.3b advances new adapter output to canonical schema version 3 while retaining the schema-v2 eligibility-slot correction and historical read support.
+M1.2 is **COMPLETE as of 17 October 2026**. M2.3b advanced adapter output to canonical schema version 3 while retaining the schema-v2 eligibility-slot correction and historical read support. LW1 advances new publications to schema version 4.
+
+LW1 retains immutable NFL game-status and current-player actual-score observations. Its read-only diagnostic (`python -m fantasy_football.live_scoring_diagnostic`) reports sanitized aggregate raw-token and actual-record coverage. The parser is verified by tests; live token coverage, player participation semantics, correction finality, and official fantasy-matchup settlement remain unverified or unsupported and therefore fail closed.
 
 On 17 October 2026, a read-only live run used explicit `first_simulation_week=8` because scoring week 7 was already active. The adapter retrieved the current league, current player authority, future week pages, and NFL calendar sequentially. Translation stopped before producing a snapshot because 97 players exposed raw eligible lineup-slot ID `25`, while `settings.rosterSettings.lineupSlotCounts` defined only IDs `0–24`.
 

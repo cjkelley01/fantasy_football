@@ -18,7 +18,10 @@ DTO. See [`M8_2_REAL_LEAGUE_VALIDATION.md`](M8_2_REAL_LEAGUE_VALIDATION.md).
 LW1 makes the refresh start week nullable. Omission requests fail-closed automatic
 detection from canonical NFL game-status evidence; a supplied value is an explicit
 manual override. Snapshot detail additively exposes nullable live-scoring state and
-its rationale. See [`LIVE_WEEK_SCORING.md`](LIVE_WEEK_SCORING.md).
+its rationale. A historical schema-v4 document lacking the matchup-period evidence
+needed by the corrected safety contract remains readable, but the service reports
+its supported week as unavailable and the analytical engine rejects it until a new
+safe snapshot is published. See [`LIVE_WEEK_SCORING.md`](LIVE_WEEK_SCORING.md).
 
 ## Boundaries
 

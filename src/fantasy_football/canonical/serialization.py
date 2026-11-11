@@ -296,6 +296,9 @@ def _live_scoring(value: Any) -> LiveScoringState | None:
         boundary_method=BoundaryMethod(data["boundary_method"]),
         boundary_rationale=data["boundary_rationale"], source_ids=tuple(data["source_ids"]),
         unresolved_capabilities=tuple(data["unresolved_capabilities"]),
+        current_matchup_period_scoring_weeks=tuple(
+            data.get("current_matchup_period_scoring_weeks", ())
+        ),
     )
 
 

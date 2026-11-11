@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import tempfile
+from dataclasses import replace
 from datetime import datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -38,6 +39,7 @@ from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state
 from fantasy_football.espn_adapter import translate_bundle
 from fantasy_football.monte_carlo import MonteCarloConfig
 from fantasy_football.monte_carlo_precision import PrecisionConfiguration, run_monte_carlo_to_precision
+from fantasy_football.live_scoring import BoundaryMethod
 from fantasy_football.player_outcomes import ProvisionalNormalModel
 from fantasy_football.scenario_evaluator import ManualScenario, evaluate_manual_scenario
 from fantasy_football.snapshot_store import LoadedSnapshot, SnapshotListItem, SnapshotMetadata, SnapshotStoreError
@@ -119,6 +121,24 @@ def _selector(snapshot):
         snapshot_id=snapshot.snapshot_id, league_id=snapshot.league_id,
         season=snapshot.season,
     )
+
+
+def test_snapshot_summary_suppresses_legacy_unsafe_live_boundary() -> None:
+    snapshot = translate_bundle(source_bundle()).snapshot
+    assert snapshot.live_scoring is not None
+    legacy_live = replace(
+        snapshot.live_scoring,
+        current_matchup_period_scoring_weeks=(),
+    )
+    snapshot = replace(snapshot, snapshot_id="legacy-live-v4", live_scoring=legacy_live)
+    service = ApplicationService(ApplicationDependencies(FixtureStore(snapshot)))
+
+    summary = service.inspect_snapshot(_selector(snapshot))
+
+    assert summary.live_scoring is not None
+    assert summary.live_scoring.supported_simulation_week is None
+    assert summary.live_scoring.boundary_method == BoundaryMethod.UNRESOLVED.value
+    assert "validated_simulation_boundary" in summary.live_scoring.unresolved_capabilities
 
 
 def _action_request(snapshot, *, execution_mode="bounded_overlap"):

@@ -578,6 +578,80 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
             _nonempty(item.rationale, entity="ScoringWeekState", identifier=item.scoring_week, field="rationale")
         if live.current_scoring_period not in week_ids:
             _fail("LiveScoringState", "current", "current_scoring_period", "is absent from week evidence")
+        stored_by_week = {item.scoring_week: item for item in live.weeks}
+        stored_completed = tuple(
+            week for week, item in stored_by_week.items()
+            if item.status is ScoringPeriodStatus.COMPLETED
+        )
+        stored_unresolved = tuple(
+            week for week, item in stored_by_week.items()
+            if item.status is not ScoringPeriodStatus.COMPLETED
+        )
+        stored_unplayed = tuple(
+            week for week, item in stored_by_week.items()
+            if week >= live.current_scoring_period
+            and item.status is ScoringPeriodStatus.UNPLAYED
+        )
+        expected_last = max(stored_completed) if stored_completed else None
+        expected_earliest = min(stored_unresolved) if stored_unresolved else None
+        expected_next = min(stored_unplayed) if stored_unplayed else None
+        if live.last_fully_completed_period != expected_last:
+            _fail(
+                "LiveScoringState", "current", "last_fully_completed_period",
+                f"must equal stored week classification {expected_last!r}",
+            )
+        if live.earliest_unresolved_period != expected_earliest:
+            _fail(
+                "LiveScoringState", "current", "earliest_unresolved_period",
+                f"must equal stored week classification {expected_earliest!r}",
+            )
+        if live.next_fully_unplayed_period != expected_next:
+            _fail(
+                "LiveScoringState", "current", "next_fully_unplayed_period",
+                f"must equal stored week classification {expected_next!r}",
+            )
+        expected_partial = (
+            expected_earliest is not None
+            and stored_by_week[expected_earliest].status is ScoringPeriodStatus.PARTIAL
+        )
+        if live.partial_week_simulation_required is not expected_partial:
+            _fail(
+                "LiveScoringState", "current", "partial_week_simulation_required",
+                f"must equal {expected_partial!r} from stored week classification",
+            )
+        if (
+            live.boundary_method is BoundaryMethod.UNRESOLVED
+            and live.supported_simulation_week is not None
+        ) or (
+            live.boundary_method is not BoundaryMethod.UNRESOLVED
+            and live.supported_simulation_week is None
+        ):
+            _fail(
+                "LiveScoringState", "current", "boundary_method",
+                "must agree with whether supported_simulation_week is present",
+            )
+        _tuple(
+            live.current_matchup_period_scoring_weeks,
+            entity="LiveScoringState", identifier="current",
+            field="current_matchup_period_scoring_weeks",
+        )
+        if live.current_matchup_period_scoring_weeks:
+            period_weeks = live.current_matchup_period_scoring_weeks
+            if tuple(sorted(set(period_weeks))) != period_weeks:
+                _fail(
+                    "LiveScoringState", "current", "current_matchup_period_scoring_weeks",
+                    "must be unique and increasing",
+                )
+            if live.current_scoring_period not in period_weeks:
+                _fail(
+                    "LiveScoringState", "current", "current_matchup_period_scoring_weeks",
+                    "must contain the current scoring period",
+                )
+            if not set(period_weeks).issubset(week_ids):
+                _fail(
+                    "LiveScoringState", "current", "current_matchup_period_scoring_weeks",
+                    "references a week absent from live scoring evidence",
+                )
         if live.supported_simulation_week is not None and live.supported_simulation_week != snapshot.first_simulation_week:
             _fail("LiveScoringState", "current", "supported_simulation_week", "must equal the canonical first_simulation_week")
         if not isinstance(live.boundary_method, BoundaryMethod):
@@ -603,26 +677,35 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
                 _fail("PlayerScoringObservation", item.player_id, "source_id", f"references unknown source {item.source_id!r}")
             if item.lineup_locked is not None and not isinstance(item.lineup_locked, bool):
                 _fail("PlayerScoringObservation", item.player_id, "lineup_locked", "must be boolean or unresolved")
-        try:
-            resolved_live = resolve_live_scoring_state(
-                current_scoring_period=live.current_scoring_period,
-                scoring_weeks=week_ids,
-                games=snapshot.nfl_games,
-                observations=live.observations,
-                source_ids=live.source_ids,
-                manual_override=(
-                    live.supported_simulation_week
-                    if live.boundary_method is BoundaryMethod.MANUAL_OVERRIDE
-                    else None
-                ),
-            )
-        except LiveScoringError as exc:
-            _fail("LiveScoringState", "current", "evidence", str(exc))
-        if resolved_live != live:
-            _fail(
-                "LiveScoringState", "current", "evidence",
-                "stored classification or boundary is inconsistent with canonical game and score evidence",
-            )
+        if live.current_matchup_period_scoring_weeks:
+            try:
+                reconstructed_periods = (
+                    (live.current_matchup_period_scoring_weeks,)
+                    + tuple(
+                        (week,) for week in sorted(week_ids)
+                        if week not in live.current_matchup_period_scoring_weeks
+                    )
+                )
+                resolved_live = resolve_live_scoring_state(
+                    current_scoring_period=live.current_scoring_period,
+                    scoring_weeks=week_ids,
+                    games=snapshot.nfl_games,
+                    matchup_period_scoring_weeks=reconstructed_periods,
+                    observations=live.observations,
+                    source_ids=live.source_ids,
+                    manual_override=(
+                        live.supported_simulation_week
+                        if live.boundary_method is BoundaryMethod.MANUAL_OVERRIDE
+                        else None
+                    ),
+                )
+            except LiveScoringError as exc:
+                _fail("LiveScoringState", "current", "evidence", str(exc))
+            if resolved_live != live:
+                _fail(
+                    "LiveScoringState", "current", "evidence",
+                    "stored classification or boundary is inconsistent with canonical game and score evidence",
+                )
 
     gap_ids = _unique((gap.gap_id for gap in snapshot.rule_gaps), entity="RuleGap", field="gap_id")
     for gap in snapshot.rule_gaps:
