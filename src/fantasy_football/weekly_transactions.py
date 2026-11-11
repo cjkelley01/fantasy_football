@@ -402,6 +402,61 @@ def _corrections_are_relevant(
     return True
 
 
+def _optimistic_coverage_possible(
+    snapshot: LeagueSnapshot,
+    state: EvolvingLeagueState,
+    team_id: int,
+    candidate_id: int,
+    baseline_filled: int,
+    workspace: LineupOptimizationWorkspace,
+) -> bool:
+    """Necessary (not sufficient) condition for an essential acquisition.
+
+    Ignore roster capacities and potential drops, and allow every currently
+    ordinary owned player plus the candidate to be reassigned to any eligible
+    starting slot. If even this relaxed bipartite matching cannot exceed the
+    original coverage, no legal drop/add outcome from this correction state can.
+    This deliberately does not use projection rankings or fixed candidate caps.
+    """
+    week = workspace.week_records[state.scoring_week]
+    players = workspace.players
+    candidate_week = week.get(candidate_id)
+    if candidate_week is None or not candidate_week.projected_lineup_available:
+        return False
+    starter_slots = tuple(slot.lineup_slot_id for slot in workspace.slots)
+    if not set(players[candidate_id].eligible_lineup_slot_ids).intersection(starter_slots):
+        return False
+    ordinary = (
+        entry.player_id for entry in state.roster_entries
+        if entry.team_id == team_id
+        and entry.lineup_slot_id not in workspace.reserve_slot_ids
+    )
+    eligible_ids = tuple(ordinary) + (candidate_id,)
+    assigned: dict[int, int] = {}
+
+    def assign(player_id: int, visited: set[int]) -> bool:
+        for slot_index, slot_id in enumerate(starter_slots):
+            if slot_index in visited or slot_id not in players[player_id].eligible_lineup_slot_ids:
+                continue
+            visited.add(slot_index)
+            incumbent = assigned.get(slot_index)
+            if incumbent is None or assign(incumbent, visited):
+                assigned[slot_index] = player_id
+                return True
+        return False
+
+    filled = 0
+    for player_id in eligible_ids:
+        record = week.get(player_id)
+        if record is None or not record.projected_lineup_available:
+            continue
+        if assign(player_id, set()):
+            filled += 1
+            if filled > baseline_filled:
+                return True
+    return False
+
+
 def _enumerate_plans(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
@@ -470,6 +525,14 @@ def _enumerate_plans(
     for player_id in available:
         player_had_structural_option = False
         for corrected in corrections:
+            if not _optimistic_coverage_possible(
+                snapshot, corrected, team_id, player_id,
+                baseline.filled_starting_slot_count, workspace,
+            ):
+                reasons["cannot_improve_starter_coverage"] = (
+                    reasons.get("cannot_improve_starter_coverage", 0) + 1
+                )
+                continue
             owned = _team_owned(corrected, team_id)
             for slot_id in _ordinary_slot_ids(snapshot, player_id, slot_index):
                 player_had_structural_option = True
