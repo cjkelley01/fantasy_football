@@ -624,8 +624,14 @@ def _append(
 def _replace_availability(
     state: EvolvingLeagueState, replacement: PlayerAvailability
 ) -> EvolvingLeagueState:
-    items = [replacement if item.player_id == replacement.player_id else item for item in state.availability]
-    return replace(state, availability=_sorted_availability(items))
+    # Availability is maintained in player_id order by the validated state.
+    # Replacing one existing player's status cannot change that order; avoid
+    # sorting the entire free-agent pool for every trial add/drop.
+    items = tuple(
+        replacement if item.player_id == replacement.player_id else item
+        for item in state.availability
+    )
+    return replace(state, availability=items)
 
 
 def _validate_drop_permission(snapshot: LeagueSnapshot, player_id: int) -> str | None:
