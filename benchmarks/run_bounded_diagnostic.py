@@ -20,6 +20,8 @@ def main() -> int:
     parser.add_argument("--seconds", type=float, default=60.0)
     parser.add_argument("--latest-snapshot", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")
+    parser.add_argument("--disable-coverage-filter", action="store_true")
+    parser.add_argument("--max-team-searches", type=int, default=0)
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error("--seconds must be positive")
@@ -29,6 +31,10 @@ def main() -> int:
         str(Path(__file__).with_name("diagnose_live_execution.py")),
         "--one-path",
     ]
+    if args.disable_coverage_filter:
+        command.append("--disable-coverage-filter")
+    if args.max_team_searches:
+        command.extend(["--max-team-searches", str(args.max_team_searches)])
     if args.latest_snapshot:
         command.append("--latest-snapshot")
     if args.allow_incomplete:
