@@ -10,9 +10,9 @@ from dataclasses import dataclass
 
 from fantasy_football.canonical.model import RosterEntry
 from fantasy_football.evolving_state import (
-    EvolvingLeagueState, PlayerAvailability, TransactionRecord,
+    EvolvingLeagueState, PlayerAvailability, TransactionRecord,\n    AcquisitionAvailability, TransactionAction, TransactionPhase,\n    TransactionStateError, TransactionErrorCode,
 )
-from fantasy_football.prepared_season import PreparedSeason
+from fantasy_football.prepared_season import PreparedSeason\nfrom fantasy_football.evolving_state import _validate_drop_permission
 
 
 @dataclass(slots=True)
@@ -114,6 +114,50 @@ class CompactSeasonState:
             ),
             ledger=tuple(self.ledger),
         )
+
+    def drop_player(
+        self, *, team_id: int, player_id: int,
+        phase: TransactionPhase = TransactionPhase.ROSTER_CORRECTION,
+    ) -> None:
+        """Execute a reference-equivalent drop using indexed in-place updates.
+
+        The caller must provide a valid state. This method checks ownership and
+        canonical drop protection before mutation; failures leave state intact.
+        """
+        prepared = self.prepared
+        try:
+            team = prepared.team_index(team_id)
+            player = prepared.player_index(player_id)
+        except ValueError:
+            raise TransactionStateError(
+                f"team {team_id} does not own player {player_id}",
+                TransactionErrorCode.OWNERSHIP,
+            ) from None
+        if self.owner_by_player[player] != team:
+            raise TransactionStateError(
+                f"team {team_id} does not own player {player_id}",
+                TransactionErrorCode.OWNERSHIP,
+            )
+        evidence = _validate_drop_permission(prepared.snapshot, player_id)
+        prior = self.availability_by_player[player]
+        slot = self.slot_by_player[player]
+        held = PlayerAvailability(
+            player_id, AcquisitionAvailability.HOLD, None, None,
+            self.cycle_id, evidence,
+        )
+        priority = tuple(prepared.team_ids[index] for index in self.waiver_priority)
+        record = TransactionRecord(
+            len(self.ledger) + 1, self.scoring_week, self.cycle_id, phase,
+            TransactionAction.DROP, team_id, player_id, None, team_id, None,
+            prepared.slot_ids[slot], None, prior.status, held.status,
+            priority, priority, evidence, None,
+            ("same_cycle_drop_reentry_prohibited_v1",),
+        )
+        self.owner_by_player[player] = -1
+        self.slot_by_player[player] = -1
+        self.raw_owner_by_player[player] = None
+        self.availability_by_player[player] = held
+        self.ledger.append(record)
 
     def apply_reference_transition(self, result: EvolvingLeagueState) -> None:
         """Temporary differential adapter, NOT a fast transaction implementation."""
