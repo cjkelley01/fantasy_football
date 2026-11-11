@@ -479,3 +479,66 @@ def test_runner_does_not_access_network_or_mutate_input(monkeypatch) -> None:
     before = snapshot
     run_monte_carlo_batch(snapshot, _config(0, 2), PrescribedModel())
     assert snapshot == before
+
+
+def test_m9_full_season_replay_preserves_every_transition() -> None:
+    """Reference gate: identical seed/path must reproduce the entire season."""
+    snapshot = _snapshot()
+    config = _config(7, 1)
+    model = ProvisionalNormalModel(2.0, 0.2)
+    first_summary, first_season = run_monte_carlo_path(
+        snapshot, config, model, 7, retain_result=True
+    )
+    second_summary, second_season = run_monte_carlo_path(
+        snapshot, config, model, 7, retain_result=True
+    )
+    assert first_summary == second_summary
+    assert first_season is not None
+    assert first_season == second_season
+    assert first_season.weeks
+    assert first_season.final_postseason_state is not None
+
+
+def test_m9_positive_acquisition_replay_preserves_full_season() -> None:
+    """Protect waiver/roster/lineup effects, not only championship aggregates."""
+    snapshot, scenario = _postseason_shared_player_fixture(consolation_enabled=True)
+
+    @dataclass(frozen=True)
+    class AcquisitionModel:
+        model_id: str = "m9-acquisition-reference-v1"
+        parameters: tuple[tuple[str, str], ...] = ()
+
+        def generate_scenario(self, snapshot, *, master_seed, path_index):
+            return replace(scenario, scenario_id=f"acquisition:{master_seed}:{path_index}")
+
+    config = _config(3, 1)
+    model = AcquisitionModel()
+    first_summary, first_season = run_monte_carlo_path(
+        snapshot, config, model, 3, retain_result=True
+    )
+    second_summary, second_season = run_monte_carlo_path(
+        snapshot, config, model, 3, retain_result=True
+    )
+    assert first_summary == second_summary
+    assert first_season is not None
+    assert first_season == second_season
+    assert any(week.transaction_result.acquisitions for week in first_season.weeks)
+    assert any(
+        assignment.player_id == 30
+        for week in first_season.weeks
+        for team in week.frozen_team_weeks
+        for assignment in team.lineup.assignments
+    )
+
+
+def test_m9_fourteen_team_split_paths_match_whole_batch() -> None:
+    """A parallel/batched execution architecture cannot alter path outcomes."""
+    snapshot = _fourteen_team_postseason_snapshot()
+    model = EffectiveProjectionModel()
+    config = _config(20, 2)
+    whole = run_monte_carlo_batch(snapshot, config, model)
+    left = run_monte_carlo_batch(snapshot, _config(20, 1), model)
+    right = run_monte_carlo_batch(snapshot, _config(21, 1), model)
+    assert combine_monte_carlo_batches(
+        snapshot, config, model, (right, left)
+    ) == whole
