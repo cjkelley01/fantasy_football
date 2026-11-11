@@ -1696,7 +1696,6 @@ def build_live_scoring_evidence_report(
             if game.scoring_week == current_week:
                 key = game.status.value
                 current_status_counts[key] = current_status_counts.get(key, 0) + 1
-        full_games = _apply_scoreboard_statuses(full_games, nfl_scoreboard, current_week=current_week)
         state = resolve_live_scoring_state(
             current_scoring_period=current_week,
             scoring_weeks=all_weeks,
