@@ -542,3 +542,38 @@ def test_m9_fourteen_team_split_paths_match_whole_batch() -> None:
     assert combine_monte_carlo_batches(
         snapshot, config, model, (right, left)
     ) == whole
+
+
+def test_m9_shared_lineup_workspace_preserves_exact_path_results() -> None:
+    """Shared cross-path cache must be observationally identical to fresh solves."""
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+
+    snapshot = _snapshot()
+    config = _config(30, 3)
+    model = ProvisionalNormalModel(2.0, 0.2)
+    workspace = prepare_lineup_optimization(snapshot)
+    fresh = []
+    shared = []
+    for index in config.path_indices:
+        fresh.append(run_monte_carlo_path(snapshot, config, model, index, retain_result=True))
+        shared.append(run_monte_carlo_path(
+            snapshot, config, model, index, retain_result=True,
+            lineup_workspace=workspace,
+        ))
+    assert shared == fresh
+    assert run_monte_carlo_batch(snapshot, config, model).paths == tuple(
+        summary for summary, _ in fresh
+    )
+    assert workspace.starting_hits > 0 or workspace.candidate_hits > 0
+
+
+def test_m9_shared_lineup_workspace_rejects_other_snapshot_identity() -> None:
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+
+    snapshot = _snapshot()
+    other = replace(snapshot, league_name="Different snapshot identity")
+    with pytest.raises(MonteCarloError, match="different snapshot object"):
+        run_monte_carlo_path(
+            other, _config(0, 1), PrescribedModel(), 0,
+            lineup_workspace=prepare_lineup_optimization(snapshot),
+        )
