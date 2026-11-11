@@ -187,6 +187,10 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
     ):
         profile_operation(module, name, label)
 
+    # Season scoring invokes its own imported optimizer reference, separate
+    # from the transaction-search module. Attribute that cost independently.
+    profile_operation(season, "optimize_starting_lineup", "season_lineup_optimization")
+
     original_plans = weekly._enumerate_plans
 
     def measured_plans(*args, **kwargs):
