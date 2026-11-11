@@ -628,13 +628,29 @@ def _enumerate_plans(
                         try:
                             if isinstance(dropped, TransactionStateError):
                                 raise dropped
-                            resulting = acquire(
-                                dropped,
-                                team_id=team_id,
-                                player_id=player_id,
-                                lineup_slot_id=slot_id,
-                                phase=phase,
-                            )
+                            if experimental_prepared is None:
+                                resulting = acquire(
+                                    dropped,
+                                    team_id=team_id,
+                                    player_id=player_id,
+                                    lineup_slot_id=slot_id,
+                                    phase=phase,
+                                )
+                            else:
+                                # Keep both operations indexed; reconstruct only
+                                # the successful resulting state, not each step.
+                                compact = CompactSeasonState.from_reference(
+                                    experimental_prepared, corrected,
+                                )
+                                compact.drop_player(
+                                    team_id=team_id, player_id=drop_id,
+                                    phase=TransactionPhase.ROSTER_CORRECTION,
+                                )
+                                compact.add_player(
+                                    team_id=team_id, player_id=player_id,
+                                    lineup_slot_id=slot_id, phase=phase,
+                                )
+                                resulting = compact.to_reference()
                         except TransactionStateError as exc:
                             record_failure("drop" if isinstance(dropped, TransactionStateError) else "add_after_drop", exc)
                             text = str(exc)
