@@ -73,10 +73,16 @@ class WaiverBoundaryPolicy(StrEnum):
     MODELED_WEEKLY_V1 = "modeled_weekly_v1"
 
 
+class AcquisitionValuationStrategy(StrEnum):
+    CURRENT_WEEK = 'current_week'
+    REST_OF_SEASON = 'rest_of_season'
+
+
 @dataclass(frozen=True, slots=True)
 class WeeklyTransactionPolicy:
     waiver_boundary: WaiverBoundaryPolicy = WaiverBoundaryPolicy.UNRESOLVED
     reject_incomplete_valuations: bool = True
+    acquisition_valuation: AcquisitionValuationStrategy = AcquisitionValuationStrategy.REST_OF_SEASON
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,6 +503,7 @@ def _enumerate_plans(
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] | None = None,
+    acquisition_valuation: AcquisitionValuationStrategy = AcquisitionValuationStrategy.REST_OF_SEASON,
 ) -> tuple[
     tuple[_Plan, ...],
     _PlanDiagnostics,
@@ -792,16 +799,22 @@ def _enumerate_plans(
                     cached_value = values.get(state_key)
                     if cached_value is None:
                         started = time.perf_counter()
-                        value = value_roster(
-                            snapshot,
-                            resulting,
-                            team_id,
-                            lineup_workspace=workspace,
-                        )
+                        if acquisition_valuation is AcquisitionValuationStrategy.CURRENT_WEEK:
+                            lineup = optimize_starting_lineup(
+                                snapshot, team_id, state.scoring_week,
+                                roster_entries=resulting.roster_entries,
+                                workspace=workspace,
+                            )
+                            cached_value = (True, lineup.total_projected_points)
+                        else:
+                            value = value_roster(
+                                snapshot, resulting, team_id,
+                                lineup_workspace=workspace,
+                            )
+                            cached_value = (value.is_complete, value.total_value)
                         elapsed = time.perf_counter() - started
                         evaluations += 1
                         valuation_seconds += elapsed
-                        cached_value = (value.is_complete, value.total_value)
                         values[state_key] = cached_value
                         values.move_to_end(state_key)
                         # A single candidate sweep can revisit the same effect
@@ -939,6 +952,8 @@ def execute_weekly_essential_transactions(
         raise WeeklyTransactionError(
             f"unsupported waiver boundary policy {policy.waiver_boundary!r}"
         )
+    if not isinstance(policy.acquisition_valuation, AcquisitionValuationStrategy):
+        raise WeeklyTransactionError('unsupported acquisition valuation strategy')
     if not policy.reject_incomplete_valuations:
         raise WeeklyTransactionError(
             "ranking incomplete roster valuations has no approved capability policy"
@@ -1026,6 +1041,7 @@ def execute_weekly_essential_transactions(
                         experimental_indexed_coverage=experimental_indexed_coverage,
                         experimental_compact_corrections=experimental_compact_corrections,
                         valuation_cache=valuation_cache,
+                        acquisition_valuation=policy.acquisition_valuation,
                     )
                 )
                 total_candidates += diagnostic.candidate_players
