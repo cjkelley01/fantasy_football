@@ -900,6 +900,20 @@ def _enumerate_plans(
             reasons["ineligible_for_configured_slots"] = (
                 reasons.get("ineligible_for_configured_slots", 0) + 1
             )
+    # If the bounded shortlist cannot produce an essential legal acquisition,
+    # retry the authoritative full pool. This preserves the existing fallback
+    # for teams whose best projected players cannot actually be acquired.
+    if not plans_by_state and acquisition_search is AcquisitionSearchStrategy.PROJECTION_RANKED:
+        return _enumerate_plans(
+            snapshot, state, team_id=team_id, phase=phase,
+            lineup_workspace=workspace,
+            experimental_prepared=experimental_prepared,
+            experimental_indexed_coverage=experimental_indexed_coverage,
+            experimental_compact_corrections=experimental_compact_corrections,
+            valuation_cache=values,
+            acquisition_valuation=acquisition_valuation,
+            acquisition_search=AcquisitionSearchStrategy.EXHAUSTIVE,
+        )
     plans = tuple(plans_by_state[key] for key in sorted(plans_by_state, key=repr))
     return (
         plans,
