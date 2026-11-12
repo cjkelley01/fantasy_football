@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+from contextvars import ContextVar
+from functools import wraps
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
@@ -23,6 +25,26 @@ from fantasy_football.lineup_optimizer import (
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
+
+
+# Exact opponent-lineup outcomes reused only within one transaction plan search.
+# No cross-snapshot, cross-week, or cross-simulation cache survives the scope.
+_OPPONENT_OUTCOME_CACHE: ContextVar[dict[tuple[object, ...], tuple[int, Decimal]] | None] = ContextVar(
+    "opponent_outcome_cache", default=None
+)
+
+
+def opponent_valuation_cache_scope(function):
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        if _OPPONENT_OUTCOME_CACHE.get() is not None:
+            return function(*args, **kwargs)
+        token = _OPPONENT_OUTCOME_CACHE.set({})
+        try:
+            return function(*args, **kwargs)
+        finally:
+            _OPPONENT_OUTCOME_CACHE.reset(token)
+    return wrapped
 
 
 class RosterValuationError(ValueError):
@@ -226,21 +248,34 @@ def _allocate_opponents(
         for team_id, lineup in opponent_lineups.items()
     }
     cache: dict[tuple[int, tuple[int, ...]], tuple[int, Decimal]] = {}
+    shared_cache = _OPPONENT_OUTCOME_CACHE.get()
 
     def team_outcome(team_id: int, assigned: tuple[int, ...]) -> tuple[int, Decimal]:
         key = (team_id, assigned)
         if key not in cache:
-            combined = optimize_candidate_lineup(
-                snapshot, week, tuple(sorted(owned_by_team[team_id] + assigned)),
-                limited_player_ids=frozenset(assigned),
-                maximum_limited_players=len(assigned),
-                workspace=workspace,
+            # Include every input affecting the exact lineup result. The
+            # per-search scope also prevents stale results after waiver changes.
+            shared_key = (
+                id(snapshot), week, team_id, owned_by_team[team_id],
+                assigned, opponent_lineups[team_id].vacancy_count,
+                base_exact[team_id],
             )
-            base = opponent_lineups[team_id]
-            cache[key] = (
-                base.vacancy_count - len(combined.vacant_slots),
-                _exact_total(combined.assignments) - base_exact[team_id],
-            )
+            cached = None if shared_cache is None else shared_cache.get(shared_key)
+            if cached is None:
+                combined = optimize_candidate_lineup(
+                    snapshot, week, tuple(sorted(owned_by_team[team_id] + assigned)),
+                    limited_player_ids=frozenset(assigned),
+                    maximum_limited_players=len(assigned),
+                    workspace=workspace,
+                )
+                base = opponent_lineups[team_id]
+                cached = (
+                    base.vacancy_count - len(combined.vacant_slots),
+                    _exact_total(combined.assignments) - base_exact[team_id],
+                )
+                if shared_cache is not None:
+                    shared_cache[shared_key] = cached
+            cache[key] = cached
         return cache[key]
 
     states: dict[tuple[int, tuple[tuple[int, int], ...]], _OpponentState] = {
