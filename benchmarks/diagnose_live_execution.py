@@ -101,6 +101,12 @@ def configured_request(args) -> BaselineAnalysisRequest:
                 "evaluation_interval_paths": args.paths,
             }),
         })
+    if args.acquisition_search is not None:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(update={
+                "acquisition_search": args.acquisition_search
+            })
+        })
     if args.acquisition_valuation is not None:
         request = request.model_copy(update={
             "simulation": request.simulation.model_copy(update={
@@ -398,6 +404,7 @@ def main() -> int:
     parser.add_argument("--disable-coverage-filter", action="store_true")
     parser.add_argument("--max-team-searches", type=int, default=0)
     parser.add_argument("--acquisition-valuation", choices=("current_week", "rest_of_season"), default=None)
+    parser.add_argument("--acquisition-search", choices=("exhaustive", "projection_ranked"), default=None)
     parser.add_argument("--shadow-bounds", action="store_true")
     parser.add_argument("--disable-opponent-search-cache", action="store_true")
     args = parser.parse_args()
