@@ -23,6 +23,7 @@ def main() -> int:
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--disable-coverage-filter", action="store_true")
     parser.add_argument("--max-team-searches", type=int, default=0)
+    parser.add_argument("--disable-opponent-search-cache", action="store_true")
     args = parser.parse_args()
     if args.seconds <= 0:
         parser.error("--seconds must be positive")
@@ -36,6 +37,8 @@ def main() -> int:
     ]
     if args.disable_coverage_filter:
         command.append("--disable-coverage-filter")
+    if args.disable_opponent_search_cache:
+        command.append("--disable-opponent-search-cache")
     if args.max_team_searches:
         command.extend(["--max-team-searches", str(args.max_team_searches)])
     if args.latest_snapshot:
@@ -75,6 +78,7 @@ def main() -> int:
     transaction_rejections = Counter()
     transaction_failures_by_week = {}
     reuse_opportunity = None
+    opponent_search_cache = None
     season_lineup_profile = None
     completed_paths = None
     incomplete_paths = None
@@ -99,6 +103,8 @@ def main() -> int:
         peak_rss = max(peak_rss, float(event.get("parent_rss_mib", 0)))
         if stage == "season_lineup_profile":
             season_lineup_profile = {"calls": event.get("calls", 0), "seconds": event.get("seconds", 0.0)}
+        if stage == "opponent_search_cache":
+            opponent_search_cache = {key: event[key] for key in ("cache_enabled", "hits", "misses", "actual_allocation_states") if key in event}
         if stage == "transaction_reuse_opportunity":
             reuse_opportunity = {key: value for key, value in event.items() if key in ("calls", "identical_state_calls", "distinct_states", "by_week")}
         if stage == "transaction_acquisitions":
@@ -139,6 +145,7 @@ def main() -> int:
         "limit_seconds": args.seconds,
         "requested_paths": args.paths,
         "transaction_reuse_opportunity": reuse_opportunity,
+        "opponent_search_cache": opponent_search_cache,
         "executed_acquisitions": dict(sorted(executed_acquisitions.items())),
         "transaction_failure_codes": dict(sorted(transaction_failure_codes.items())),
         "transaction_rejections": dict(sorted(transaction_rejections.items())),
