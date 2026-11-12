@@ -34,16 +34,17 @@ def run(repeats: int) -> None:
     policy = WeeklyTransactionPolicy(
         waiver_boundary=WaiverBoundaryPolicy.MODELED_WEEKLY_V1,
     )
-    measurements: dict[str, list[float]] = {"reference": [], "compact": []}
+    measurements: dict[str, list[float]] = {mode: [] for mode in ("reference", "compact_acquisitions", "compact_corrections", "combined")}
     expected = None
     for repeat in range(repeats):
         # Alternate run order to reduce systematic warm-cache / thermal bias.
-        modes = ("reference", "compact") if repeat % 2 == 0 else ("compact", "reference")
+        modes = tuple(measurements) if repeat % 2 == 0 else tuple(reversed(tuple(measurements)))
         for mode in modes:
             start = perf_counter()
             result = execute_weekly_essential_transactions(
                 snapshot, state, policy,
-                experimental_compact_acquisitions=(mode == "compact"),
+                experimental_compact_acquisitions=(mode in {"compact_acquisitions", "combined"}),
+                experimental_compact_corrections=(mode in {"compact_corrections", "combined"}),
             )
             measurements[mode].append(perf_counter() - start)
             deterministic = replace(result, valuation_seconds=0.0)
@@ -54,12 +55,11 @@ def run(repeats: int) -> None:
                     f"{mode} weekly result differs from reference deterministic result"
                 )
     reference = statistics.median(measurements["reference"])
-    compact = statistics.median(measurements["compact"])
     print(f"Weekly fixture: _valuation_snapshot; repetitions per mode: {repeats}")
-    print(f"Reference weekly median: {reference:.6f} s")
-    print(f"Experimental compact weekly median: {compact:.6f} s")
-    print(f"Reference / compact: {reference / compact:.2f}x")
-    print("Deterministic weekly result parity: PASS")
+    for mode, times in measurements.items():
+        median = statistics.median(times)
+        print(f"{mode:>21}: {median:.6f} s  ({reference / median:.2f}x vs reference)")
+    print("Deterministic weekly result parity across all modes: PASS")
 
 
 if __name__ == "__main__":
