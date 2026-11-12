@@ -71,6 +71,7 @@ def main() -> int:
     weekly_seconds = Counter()
     totals = Counter()
     transaction_failure_codes = Counter()
+    executed_acquisitions = Counter()
     transaction_rejections = Counter()
     transaction_failures_by_week = {}
     reuse_opportunity = None
@@ -100,6 +101,9 @@ def main() -> int:
             season_lineup_profile = {"calls": event.get("calls", 0), "seconds": event.get("seconds", 0.0)}
         if stage == "transaction_reuse_opportunity":
             reuse_opportunity = {key: value for key, value in event.items() if key in ("calls", "identical_state_calls", "distinct_states", "by_week")}
+        if stage == "transaction_acquisitions":
+            for key in ("waiver_acquisitions", "free_agent_acquisitions", "selected_acquisitions"):
+                executed_acquisitions[key] += event.get(key, 0)
         if stage == "team_transaction_plans":
             week = str(event.get("relative_scoring_week", "unknown"))
             week_totals = transaction_failures_by_week.setdefault(week, {"failure_codes": Counter(), "rejections": Counter(), "sequences_attempted": 0, "unique_legal_states": 0})
@@ -135,6 +139,7 @@ def main() -> int:
         "limit_seconds": args.seconds,
         "requested_paths": args.paths,
         "transaction_reuse_opportunity": reuse_opportunity,
+        "executed_acquisitions": dict(sorted(executed_acquisitions.items())),
         "transaction_failure_codes": dict(sorted(transaction_failure_codes.items())),
         "transaction_rejections": dict(sorted(transaction_rejections.items())),
         "transaction_failures_by_week": {
