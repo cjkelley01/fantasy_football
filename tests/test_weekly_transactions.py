@@ -1023,4 +1023,4 @@ def test_compact_correction_executor_matches_reference(snapshot_factory) -> None
     actual = execute_weekly_essential_transactions(
         snapshot, state, _policy(), experimental_compact_corrections=True,
     )
-    assert actual == expected
+    assert replace(actual, valuation_seconds=0.0) == replace(expected, valuation_seconds=0.0)
