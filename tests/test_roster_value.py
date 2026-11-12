@@ -819,3 +819,19 @@ def test_starting_lineup_reuses_exact_result_when_only_opponents_change() -> Non
     )
     assert reused == original
     assert workspace.starting_hits == 1
+
+
+@pytest.mark.parametrize("competing_teams", [0, 1, 2, 3])
+@pytest.mark.parametrize("pool_values", [(8.0, 6.0), (0.0, 6.0), (12.0, 4.0)])
+def test_optimistic_roster_bound_never_understates_reference_points(
+    competing_teams, pool_values
+) -> None:
+    from fantasy_football.transaction_value_bound import optimistic_roster_value_bound
+
+    snapshot = _valuation_snapshot(
+        competing_teams=competing_teams, pool_values=pool_values
+    )
+    state = _state(snapshot)
+    actual = value_roster(snapshot, state, 1)
+    upper = optimistic_roster_value_bound(snapshot, state, 1)
+    assert upper >= actual.total_value
