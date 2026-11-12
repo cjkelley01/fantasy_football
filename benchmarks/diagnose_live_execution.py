@@ -237,6 +237,29 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
 
     weekly._enumerate_plans = measured_plans
 
+    # Instrument the actual valuation internals, without changing search behavior.
+    from fantasy_football import roster_value as roster_value_module
+
+    for name in ("_available_pool", "_allocate_opponents",
+                 "exhaustive_allocation_oracle", "_materially_unresolved_players",
+                 "optimize_starting_lineup", "optimize_candidate_lineup"):
+        profile_operation(roster_value_module, name, "valuation_" + name)
+
+    original_weekly_executor = weekly.execute_weekly_essential_transactions
+
+    def measured_weekly_acquisitions(*args, **kwargs):
+        result = original_weekly_executor(*args, **kwargs)
+        emit(
+            "transaction_acquisitions", "finished", overall,
+            relative_scoring_week=args[1].scoring_week,
+            waiver_acquisitions=result.waiver_acquisitions,
+            free_agent_acquisitions=result.free_agent_acquisitions,
+            selected_acquisitions=len(result.acquisitions),
+        )
+        return result
+
+    weekly.execute_weekly_essential_transactions = measured_weekly_acquisitions
+
     original_value = weekly.value_roster
 
     def measured_value(*args, **kwargs):
