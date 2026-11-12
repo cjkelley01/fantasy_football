@@ -575,10 +575,6 @@ def _enumerate_plans(
     # coverage depends on roster entries, not transaction ledger history.
     # Bound the cache so large searches do not retain every explored roster.
     lineup_vacancies: OrderedDict[tuple, int] = OrderedDict()
-    # Coverage matching depends on candidate projection availability and eligible
-    # starting destinations, not candidate identity. Reuse exact outcomes for
-    # structurally interchangeable candidates within this team search.
-    coverage_cache: dict[tuple[int, tuple[int, ...], bool], bool] = {}
     starter_ids = frozenset(slot.lineup_slot_id for slot in workspace.slots)
     week_records = workspace.week_records[state.scoring_week]
     projected_available = frozenset(
