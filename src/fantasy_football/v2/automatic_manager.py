@@ -56,9 +56,10 @@ class AutomaticManager:
             values[week] = {}
         for pid, projections in by_player.items():
             by_week = {week: value for week, value in projections}
-            future_sum = 0.0
-            future_count = 0
-            future_positive = False
+            beyond_horizon = [value for week, value in projections if week > last]
+            future_sum = sum(beyond_horizon)
+            future_count = len(beyond_horizon)
+            future_positive = any(value > 0 for value in beyond_horizon)
             for week in range(last, first - 1, -1):
                 current = by_week.get(week, 0.0)
                 values[week][pid] = PlayerValue(
