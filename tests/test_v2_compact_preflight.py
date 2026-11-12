@@ -12,6 +12,12 @@ from test_v2_transaction_state import fixture
 
 def setup():
     snapshot, evolving = fixture()
+    snapshot.players = tuple(
+        NS(player_id=p.player_id,
+           eligible_lineup_slot_ids=p.eligible_lineup_slot_ids + ((20,) if p.player_id == 20 else ()),
+           is_undroppable=p.is_undroppable)
+        for p in snapshot.players
+    )
     snapshot.rules = NS(
         lineup_slots=(NS(slot_id=20, capacity=1, kind=SlotKind.BENCH),),
         acquisition=NS(season_limit=3, matchup_limit=4),
