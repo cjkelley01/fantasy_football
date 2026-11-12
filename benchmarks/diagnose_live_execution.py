@@ -157,6 +157,10 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
         ("resolve_regular_season_week", "regular_matchup_transition"),
         ("initialize_postseason", "postseason_initialization"),
         ("score_frozen_postseason_week", "postseason_transition"),
+        ("advance_cycle", "weekly_state_advance"),
+        ("reset_waiver_priority", "waiver_priority_reset"),
+        ("rank_standings", "standings_ranking"),
+        ("prepare_lineup_optimization", "lineup_workspace_preparation"),
     ):
         wrap(name, stage)
 
