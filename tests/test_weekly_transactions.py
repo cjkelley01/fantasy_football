@@ -1064,3 +1064,59 @@ def test_opponent_search_cache_preserves_weekly_decisions_and_records_real_work(
     assert uncached_metrics["misses"] > 0
     assert cached_metrics["misses"] > 0
     assert cached_metrics["actual_allocation_states"] <= uncached_metrics["actual_allocation_states"]
+
+
+@pytest.mark.parametrize("waivers", [False, True])
+def test_current_week_strategy_uses_exact_weekly_lineup_without_season_valuation(
+    monkeypatch, waivers
+) -> None:
+    import fantasy_football.weekly_transactions as weekly
+
+    snapshot = _valuation_snapshot(pool_values=(8.0, 6.0))
+    state = _state(snapshot)
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("current-week strategy invoked season valuation")
+
+    monkeypatch.setattr(weekly, "value_roster", forbidden)
+    policy = replace(
+        _policy(waivers=waivers),
+        acquisition_valuation=weekly.AcquisitionValuationStrategy.CURRENT_WEEK,
+    )
+    result = execute_weekly_essential_transactions(snapshot, state, policy)
+    assert result.acquisitions
+    assert result.acquisitions[0].acquired_player_id == -300
+    assert result.acquisitions[0].resulting_roster_value == pytest.approx(
+        optimize_starting_lineup(
+            snapshot, 1, state.scoring_week,
+            roster_entries=result.state.roster_entries,
+        ).total_projected_points
+    )
+
+
+def test_current_week_does_not_make_speculative_upgrades() -> None:
+    import fantasy_football.weekly_transactions as weekly
+
+    snapshot = _staff_team_one(_valuation_snapshot(pool_values=(20.0,)))
+    policy = replace(
+        _policy(),
+        acquisition_valuation=weekly.AcquisitionValuationStrategy.CURRENT_WEEK,
+    )
+    result = execute_weekly_essential_transactions(snapshot, _state(snapshot), policy)
+    assert result.free_agent_acquisitions == 0
+
+
+def test_current_week_overlapping_slots_are_optimized_together() -> None:
+    import fantasy_football.weekly_transactions as weekly
+
+    snapshot = _overlap_snapshot()
+    policy = replace(
+        _policy(),
+        acquisition_valuation=weekly.AcquisitionValuationStrategy.CURRENT_WEEK,
+    )
+    result = execute_weekly_essential_transactions(snapshot, _state(snapshot), policy)
+    team_two = tuple(item for item in result.acquisitions if item.team_id == 2)
+    assert {item.acquired_player_id for item in team_two} == {200, 300}
+    assert optimize_starting_lineup(
+        snapshot, 2, 15, roster_entries=result.state.roster_entries
+    ).is_complete
