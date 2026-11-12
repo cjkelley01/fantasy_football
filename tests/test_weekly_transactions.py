@@ -520,6 +520,7 @@ def test_necessary_ir_placement_creates_capacity_without_unrelated_reshuffling()
         ),
     )
     _assert_compact_correction_effect_parity(snapshot, 1)
+    _assert_compact_executor_result_parity(snapshot)
     result = execute_weekly_essential_transactions(
         snapshot, _state(snapshot), _policy()
     )
@@ -650,6 +651,7 @@ def test_ir_placement_can_enable_activation_outside_acquisition_slot_namespace()
     assert max(len(item.ledger) for item in oracle_states) >= 2
     assert diagnostic.correction_states >= 3
     _assert_compact_correction_effect_parity(snapshot, 1)
+    _assert_compact_executor_result_parity(snapshot)
     result = execute_weekly_essential_transactions(snapshot, state, _policy())
     team_acquisitions = tuple(item for item in result.acquisitions if item.team_id == 1)
     assert team_acquisitions, tuple(
@@ -1024,3 +1026,18 @@ def test_compact_correction_executor_matches_reference(snapshot_factory) -> None
         snapshot, state, _policy(), experimental_compact_corrections=True,
     )
     assert replace(actual, valuation_seconds=0.0) == replace(expected, valuation_seconds=0.0)
+
+
+def _assert_compact_executor_result_parity(snapshot) -> None:
+    """Compare integrated transaction outcomes, excluding wall-clock timing."""
+    state = _state(snapshot)
+    reference = execute_weekly_essential_transactions(
+        snapshot, state, _policy(),
+    )
+    experimental = execute_weekly_essential_transactions(
+        snapshot, state, _policy(),
+        experimental_compact_corrections=True,
+    )
+    assert replace(experimental, valuation_seconds=0.0) == replace(
+        reference, valuation_seconds=0.0
+    )
