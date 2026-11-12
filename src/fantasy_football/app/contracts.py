@@ -156,6 +156,7 @@ class SimulationConfiguration(ContractModel):
     ir_policy: Literal["projection_based", "strict"]
     waiver_boundary: Literal["unresolved", "modeled_weekly_v1"]
     reject_incomplete_valuations: bool = True
+    acquisition_valuation: Literal["current_week", "rest_of_season"] = "rest_of_season"
     require_complete: bool = True
 
 
