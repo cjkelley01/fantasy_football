@@ -107,11 +107,19 @@ class AutomaticManager:
             # A drop from a bench slot can create room. The planner's
             # least-damaging drop may be elsewhere; reject that mismatch.
             destination = self.bench_slot_ids[0]
+        # When every bench slot is full, only dropping a bench occupant
+        # creates a legal destination. Exclude other drops before ranking,
+        # rather than rejecting the planner's cheapest invalid choice.
+        forbidden_drops = frozenset(
+            entry.player_id for entry in entries
+            if entry.lineup_slot_id not in self.bench_slot_ids
+        ) if destination is None else frozenset()
         proposal = propose_acquisition(
             compact, team_id=team_id, need_slot_ids=need_slots,
             values=self.week_values[compact.scoring_week],
             roster_capacity=self.roster_capacity,
             policy=self.policy, protected_player_ids=protected,
+            forbidden_drop_ids=forbidden_drops,
             allowed_availability=frozenset({phase}),
         )
         if proposal is None:
