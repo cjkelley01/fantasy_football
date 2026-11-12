@@ -1010,3 +1010,17 @@ def _assert_compact_correction_effect_parity(snapshot, team_id: int) -> None:
         _state_effect_key(item.to_reference()) for item in compact
     }
 
+
+
+@pytest.mark.parametrize("snapshot_factory", [
+    lambda: _valuation_snapshot(),
+    lambda: _overlap_snapshot(),
+])
+def test_compact_correction_executor_matches_reference(snapshot_factory) -> None:
+    snapshot = snapshot_factory()
+    state = _state(snapshot)
+    expected = execute_weekly_essential_transactions(snapshot, state, _policy())
+    actual = execute_weekly_essential_transactions(
+        snapshot, state, _policy(), experimental_compact_corrections=True,
+    )
+    assert actual == expected
