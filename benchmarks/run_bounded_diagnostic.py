@@ -83,6 +83,7 @@ def main() -> int:
     completed_paths = None
     incomplete_paths = None
     operations = {}
+    bound_totals = Counter()
     peak_rss = 0.0
     last_stage = None
     for event in events:
@@ -121,6 +122,7 @@ def main() -> int:
             for reason, count in event.get("rejections", {}).items():
                 transaction_rejections[reason] += count
                 week_totals["rejections"][reason] += count
+            bound_totals.update(event.get("optimistic_bound_profile", {}))
             for name, profile in event.get("operation_profile", {}).items():
                 entry = operations.setdefault(name, {"calls": 0, "seconds": 0.0})
                 entry["calls"] += profile["calls"]
@@ -159,6 +161,7 @@ def main() -> int:
             for week, data in sorted(transaction_failures_by_week.items(), key=lambda item: int(item[0]) if item[0].isdigit() else -1)
         },
         "season_lineup_profile": season_lineup_profile,
+        "optimistic_bound_profile": dict(bound_totals),
         "completed_paths_per_second": round(completed_paths / elapsed, 4) if completed_paths is not None and elapsed > 0 else None,
         "elapsed_seconds_per_completed_path": round(elapsed / completed_paths, 4) if completed_paths else None,
         "elapsed_seconds": round(elapsed, 3),
