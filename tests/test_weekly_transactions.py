@@ -967,3 +967,25 @@ def test_experimental_indexed_coverage_matches_complete_weekly_result(
     assert replace(actual, valuation_seconds=0.0) == replace(
         expected, valuation_seconds=0.0,
     )
+
+
+def test_compact_correction_graph_matches_reference_without_ir_moves() -> None:
+    from fantasy_football.compact_season_state import CompactSeasonState
+    from fantasy_football.compact_weekly_search import compact_correction_states
+    from fantasy_football.prepared_season import prepare_season
+    from fantasy_football.weekly_transactions import _correction_states, _state_effect_key
+
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    prepared = prepare_season(snapshot)
+    for team in snapshot.teams:
+        reference = _correction_states(snapshot, state, team.team_id)
+        compact = compact_correction_states(
+            prepared, CompactSeasonState.from_reference(prepared, state),
+            team.team_id,
+        )
+        assert {
+            _state_effect_key(item) for item in reference
+        } == {
+            _state_effect_key(item.to_reference()) for item in compact
+        }
