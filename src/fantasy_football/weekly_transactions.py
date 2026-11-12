@@ -633,7 +633,7 @@ def _enumerate_plans(
             ranked_available.update(sorted(
                 player_ids,
                 key=lambda player_id: (
-                    -week_records[player_id].projected_points,
+                    -week_records[player_id].effective_projection,
                     player_id,
                 ),
             )[:3])
