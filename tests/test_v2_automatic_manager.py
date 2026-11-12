@@ -36,7 +36,7 @@ def test_manager_fills_qb_gap_by_dropping_expendable_rb():
     )
     compact = CompactTransactionState.from_evolving(snapshot, evolving)
     manager = AutomaticManager(
-        snapshot, ManagerPolicy(), NS(), (20,), 6,
+        snapshot, ManagerPolicy(), NS(), (20,), 3,
         {10: {10: PlayerValue(0, 22, True), 20: PlayerValue(2, 3),
               30: PlayerValue(16, 5), 50: PlayerValue(18, 16)}},
     )
@@ -46,7 +46,7 @@ def test_manager_fills_qb_gap_by_dropping_expendable_rb():
         decision = manager(1, A.FREE_AGENT, compact)
     assert decision is not None
     assert decision.proposal.add_player_id == 30
-    assert decision.proposal.drop_player_id is None
+    assert decision.proposal.drop_player_id == 20
     assert decision.destination_slot_id == 20
 
 
