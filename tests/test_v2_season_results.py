@@ -21,10 +21,11 @@ def test_regular_season_seeds_feed_playoff_bracket():
 
 def test_regular_season_points_for_breaks_equal_records():
     teams, games, scores = fixture()
-    scores[1][8] = 500.0
+    # Team 1 and team 2 both win every game; PF breaks their tie.
+    scores[1][2] = 150.0
     result = resolve_season(teams, games, scores, first_week=1)
-    assert result.standings[0].team_id == 8
-    assert result.standings[0].wins == 1
+    assert result.standings[0].team_id == 2
+    assert result.standings[0].wins == 14
 
 
 def test_missing_regular_season_schedule_fails_closed():
