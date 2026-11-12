@@ -1,4 +1,5 @@
 from types import SimpleNamespace as NS
+from dataclasses import replace
 
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.evolving_state import AcquisitionAvailability as A
@@ -17,6 +18,7 @@ def setup():
     )
     evolving.roster_entries = (NS(player_id=10, team_id=2, lineup_slot_id=20),)
     state = CompactTransactionState.from_evolving(snapshot, evolving)
+    state.definition = replace(state.definition, undroppable=(False, False, None))
     proposal = AcquisitionProposal(2, 20, 10, 2, 5.0, A.WAIVERS)
     return state, proposal
 
@@ -52,6 +54,7 @@ def test_preflight_rejects_acquisition_limit():
 
 def test_preflight_rejects_protected_drop():
     state, proposal = setup()
+    state.definition = replace(state.definition, undroppable=(True, False, None))
     assert preflight_acquisition(state, proposal, 20) == "drop permission is unresolved or player is protected"
 
 
