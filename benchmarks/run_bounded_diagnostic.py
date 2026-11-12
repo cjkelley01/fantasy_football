@@ -23,6 +23,8 @@ def main() -> int:
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--disable-coverage-filter", action="store_true")
     parser.add_argument("--max-team-searches", type=int, default=0)
+    parser.add_argument("--acquisition-valuation", choices=("current_week", "rest_of_season"), default=None)
+    parser.add_argument("--shadow-bounds", action="store_true")
     parser.add_argument("--disable-opponent-search-cache", action="store_true")
     args = parser.parse_args()
     if args.seconds <= 0:
@@ -35,6 +37,10 @@ def main() -> int:
         str(Path(__file__).with_name("diagnose_live_execution.py")),
         "--paths", str(args.paths),
     ]
+    if args.acquisition_valuation:
+        command.extend(["--acquisition-valuation", args.acquisition_valuation])
+    if args.shadow_bounds:
+        command.append("--shadow-bounds")
     if args.disable_coverage_filter:
         command.append("--disable-coverage-filter")
     if args.disable_opponent_search_cache:
@@ -146,6 +152,7 @@ def main() -> int:
         ),
         "limit_seconds": args.seconds,
         "requested_paths": args.paths,
+        "acquisition_valuation": args.acquisition_valuation or "retained_request_default",
         "transaction_reuse_opportunity": reuse_opportunity,
         "opponent_search_cache": opponent_search_cache,
         "executed_acquisitions": dict(sorted(executed_acquisitions.items())),
