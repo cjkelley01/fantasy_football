@@ -660,12 +660,27 @@ def _enumerate_plans(
                 except TransactionStateError as exc:
                     record_failure("direct_add", exc)
                     direct_error = str(exc)
+                    direct_exception = exc
                 else:
                     direct_error = None
+                    direct_exception = None
                     operations.append((None, direct))
                 if direct_error is not None:
                     # Drops are reactive only when the no-drop add is illegal.
                     for drop_id in owned:
+                        # A drop in a different slot cannot resolve a full
+                        # destination slot. Avoid constructing a doomed state;
+                        # all other failure types still use the authoritative
+                        # transaction engine.
+                        if (
+                            isinstance(direct_exception, TransactionStateError)
+                            and direct_exception.code is TransactionErrorCode.SLOT_CAPACITY
+                            and next(
+                                entry.lineup_slot_id for entry in corrected.roster_entries
+                                if entry.team_id == team_id and entry.player_id == drop_id
+                            ) != slot_id
+                        ):
+                            continue
                         attempted += 1
                         drop_key = (id(corrected), drop_id)
                         dropped = dropped_states.get(drop_key)
