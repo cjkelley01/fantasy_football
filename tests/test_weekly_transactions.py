@@ -1041,3 +1041,22 @@ def _assert_compact_executor_result_parity(snapshot) -> None:
     assert replace(experimental, valuation_seconds=0.0) == replace(
         reference, valuation_seconds=0.0
     )
+
+
+def test_opponent_search_cache_preserves_weekly_decisions_and_records_real_work() -> None:
+    """Compare complete operational outcomes with full-search reuse on and off."""
+    from fantasy_football.roster_value import opponent_search_diagnostics
+
+    snapshot = _valuation_snapshot(competing_teams=1, pool_values=(8.0, 6.0))
+    state = _state(snapshot)
+    policy = _policy(waivers=True)
+    with opponent_search_diagnostics(cache_enabled=False) as uncached_metrics:
+        uncached = execute_weekly_essential_transactions(snapshot, state, policy)
+    with opponent_search_diagnostics(cache_enabled=True) as cached_metrics:
+        cached = execute_weekly_essential_transactions(snapshot, state, policy)
+
+    assert cached == uncached
+    assert uncached_metrics["hits"] == 0
+    assert uncached_metrics["misses"] > 0
+    assert cached_metrics["misses"] > 0
+    assert cached_metrics["actual_allocation_states"] <= uncached_metrics["actual_allocation_states"]
