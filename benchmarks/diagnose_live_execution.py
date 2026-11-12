@@ -30,6 +30,8 @@ OPERATION_SUMMARY = {}
 SEASON_LINEUP_SUMMARY = {"calls": 0, "seconds": 0.0}
 REUSE_SUMMARY = {"calls": 0, "identical_state_calls": 0, "distinct_states": 0, "by_week": {}}
 VALUATION_SUMMARY = {"calls": 0, "seconds": 0.0, "replacement_candidates": 0, "allocation_states": 0}
+BOUND_SUMMARY = {"calls": 0, "seconds": 0.0, "exact_seconds": 0.0, "below_best": 0, "complete": 0, "incomplete": 0, "violations": 0, "failures": 0, "potential_saved_seconds": 0.0}
+BOUND_BEST = None
 
 try:
     import psutil
@@ -210,6 +212,9 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
 
     def measured_plans(*args, **kwargs):
         nonlocal completed_team_searches
+        global BOUND_BEST
+        BOUND_BEST = None
+        BOUND_SUMMARY.update(dict.fromkeys(BOUND_SUMMARY, 0))
         OPERATION_SUMMARY.clear()
         started = time.perf_counter()
         result = original_plans(*args, **kwargs)
@@ -231,6 +236,7 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
             rejections={item.reason: item.count for item in diagnostic.rejections},
             # Aggregate error codes only: no player, team, or roster identifiers.
             failure_codes={item.reason: item.count for item in diagnostic.failure_codes},
+            optimistic_bound_profile={key: round(value, 6) if isinstance(value, float) else value for key, value in BOUND_SUMMARY.items()},
             operation_profile={key: {"calls": item[0], "seconds": round(item[1], 6)}
                                for key, item in sorted(OPERATION_SUMMARY.items())},
         )
@@ -267,13 +273,37 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
 
     original_value = weekly.value_roster
 
+    from fantasy_football.transaction_value_bound import optimistic_roster_value_bound
+
     def measured_value(*args, **kwargs):
+        global BOUND_BEST
+        bound_started = time.perf_counter()
+        try:
+            bound = optimistic_roster_value_bound(*args, **kwargs)
+        except Exception:
+            BOUND_SUMMARY["failures"] += 1
+            bound = None
+        BOUND_SUMMARY["seconds"] += time.perf_counter() - bound_started
+        BOUND_SUMMARY["calls"] += 1
         started = time.perf_counter()
         try:
             result = original_value(*args, **kwargs)
         finally:
+            duration = time.perf_counter() - started
             VALUATION_SUMMARY["calls"] += 1
-            VALUATION_SUMMARY["seconds"] += time.perf_counter() - started
+            VALUATION_SUMMARY["seconds"] += duration
+            BOUND_SUMMARY["exact_seconds"] += duration
+        if bound is not None:
+            if bound + 1e-9 < result.total_value:
+                BOUND_SUMMARY["violations"] += 1
+            if result.is_complete:
+                BOUND_SUMMARY["complete"] += 1
+                if BOUND_BEST is not None and bound < BOUND_BEST:
+                    BOUND_SUMMARY["below_best"] += 1
+                    BOUND_SUMMARY["potential_saved_seconds"] += duration
+                BOUND_BEST = result.total_value if BOUND_BEST is None else max(BOUND_BEST, result.total_value)
+            else:
+                BOUND_SUMMARY["incomplete"] += 1
         VALUATION_SUMMARY["replacement_candidates"] += sum(
             week.replacement_candidate_count for week in result.weeks
         )
