@@ -519,6 +519,7 @@ def test_necessary_ir_placement_creates_capacity_without_unrelated_reshuffling()
             )
         ),
     )
+    _assert_compact_correction_effect_parity(snapshot, 1)
     result = execute_weekly_essential_transactions(
         snapshot, _state(snapshot), _policy()
     )
@@ -648,6 +649,7 @@ def test_ir_placement_can_enable_activation_outside_acquisition_slot_namespace()
     assert production_values == oracle
     assert max(len(item.ledger) for item in oracle_states) >= 2
     assert diagnostic.correction_states >= 3
+    _assert_compact_correction_effect_parity(snapshot, 1)
     result = execute_weekly_essential_transactions(snapshot, state, _policy())
     team_acquisitions = tuple(item for item in result.acquisitions if item.team_id == 1)
     assert team_acquisitions, tuple(
@@ -989,3 +991,22 @@ def test_compact_correction_graph_matches_reference_without_ir_moves() -> None:
         } == {
             _state_effect_key(item.to_reference()) for item in compact
         }
+
+
+def _assert_compact_correction_effect_parity(snapshot, team_id: int) -> None:
+    """Compare complete IR correction effect sets, including reactive drops."""
+    from fantasy_football.compact_season_state import CompactSeasonState
+    from fantasy_football.compact_weekly_search import compact_correction_states
+    from fantasy_football.prepared_season import prepare_season
+    from fantasy_football.weekly_transactions import _correction_states, _state_effect_key
+
+    state = _state(snapshot)
+    prepared = prepare_season(snapshot)
+    reference = _correction_states(snapshot, state, team_id)
+    compact = compact_correction_states(
+        prepared, CompactSeasonState.from_reference(prepared, state), team_id,
+    )
+    assert {_state_effect_key(item) for item in reference} == {
+        _state_effect_key(item.to_reference()) for item in compact
+    }
+
