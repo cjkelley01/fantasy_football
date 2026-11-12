@@ -781,8 +781,8 @@ def test_opponent_search_cache_reuses_exact_allocations_without_changing_values(
     )
 
     snapshot = _valuation_snapshot(competing_teams=1, pool_values=(8.0, 6.0))
-    state = initialize_evolving_state(snapshot)
-    target = snapshot.teams[0].team_id
+    state = _state(snapshot)
+    target = 1
 
     @opponent_valuation_cache_scope
     def evaluate_twice():
