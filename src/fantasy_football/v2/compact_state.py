@@ -79,3 +79,26 @@ class CompactLeagueState:
 
     def waiver_priority_ids(self) -> tuple[int, ...]:
         return tuple(self.definition.team_ids[index] for index in self.waiver_order)
+
+
+def from_evolving_state(snapshot, state) -> CompactLeagueState:
+    """Project authoritative V1 ownership and waiver order into V2 indexes.
+
+    This is intentionally a *projection*, not a full transaction-state adapter:
+    lineup slots, acquisition status, IR evidence, and transaction limits remain
+    in V1 until represented explicitly by later V2 milestones.
+    """
+    if state.source_snapshot_id != snapshot.snapshot_id:
+        raise ValueError("state and snapshot IDs differ")
+    definition = CompactLeagueDefinition(
+        tuple(sorted(player.player_id for player in snapshot.players)),
+        tuple(sorted(team.team_id for team in snapshot.teams)),
+    )
+    ownership: dict[int, int] = {}
+    for entry in state.roster_entries:
+        if entry.player_id in ownership:
+            raise ValueError("duplicate roster ownership")
+        ownership[entry.player_id] = entry.team_id
+    return CompactLeagueState.from_ids(
+        definition, ownership, state.current_waiver_priority
+    )
