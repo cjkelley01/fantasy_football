@@ -5,10 +5,11 @@ from __future__ import annotations
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, replace
+from functools import wraps
 from enum import StrEnum
 
 from fantasy_football.canonical.model import LeagueSnapshot, SlotKind
-from fantasy_football.canonical.validation import validate_snapshot
+from fantasy_football.canonical.validation import validate_snapshot, validated_snapshot
 from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     EvolvingLeagueState,
@@ -860,6 +861,16 @@ def _choose(plans: tuple[_Plan, ...]) -> _Plan | None:
     return min(plans, key=lambda item: (-item.value, item.tie_key))
 
 
+def _validated_weekly_snapshot(function):
+    """Validate one immutable snapshot for the duration of a weekly search."""
+    @wraps(function)
+    def wrapped(snapshot, *args, **kwargs):
+        with validated_snapshot(snapshot):
+            return function(snapshot, *args, **kwargs)
+    return wrapped
+
+
+@_validated_weekly_snapshot
 @evolving_state_validation_scope
 def execute_weekly_essential_transactions(
     snapshot: LeagueSnapshot,
