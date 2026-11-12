@@ -6,7 +6,7 @@ Callers must not treat this executor as a replacement for V1 authorization.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from fantasy_football.evolving_state import (
     AcquisitionAvailability as A, PlayerAvailability, IRPolicy,
@@ -56,7 +56,7 @@ def execute_compact_proposal(
     if state.ir_policy not in (IRPolicy.STRICT, IRPolicy.PROJECTION_BASED):
         return CompactExecutionResult(state, False, "unrecognized IR policy")
     players = getattr(d, "default_positions", None)
-    if rules.position_limits and players is None:
+    if rules.position_limits and (players is None or any(pos is None for pos in players)):
         return CompactExecutionResult(state, False, "position limits require indexed player positions")
     if rules.position_limits:
         positions = players
