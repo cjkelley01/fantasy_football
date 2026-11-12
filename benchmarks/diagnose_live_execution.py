@@ -221,6 +221,10 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
             complete_plans=diagnostic.complete_plans,
             valuation_evaluations=diagnostic.evaluations,
             valuation_seconds=round(diagnostic.valuation_seconds, 6),
+            # Scoring week is needed to localize the expensive rejection paths.
+            # No team, player, roster, or credential identifiers are emitted.
+            relative_scoring_week=args[1].scoring_week,
+            rejections={item.reason: item.count for item in diagnostic.rejections},
             # Aggregate error codes only: no player, team, or roster identifiers.
             failure_codes={item.reason: item.count for item in diagnostic.failure_codes},
             operation_profile={key: {"calls": item[0], "seconds": round(item[1], 6)}
