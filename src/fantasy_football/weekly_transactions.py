@@ -595,38 +595,59 @@ def _enumerate_plans(
         if prepared_coverage is not None else {}
     )
     starter_slot_ids = tuple(slot.lineup_slot_id for slot in workspace.slots)
+    # Vacancy-first candidate discovery: group available players by their
+    # starting-slot eligibility and projection availability. Coverage feasibility
+    # depends on this signature and the corrected roster, not player identity.
+    # Resolve the matching problem once per signature/correction, then visit
+    # only feasible candidates in the original player-ID order. The existing
+    # transaction/waiver executor remains authoritative and sequential.
+    signature_players: dict[tuple[tuple[int, ...], bool], list[int]] = {}
     for player_id in available:
-        player_had_structural_option = False
-        for corrected in corrections:
-            candidate_record = week_records.get(player_id)
-            coverage_key = (
-                id(corrected),
-                tuple(sorted(starter_ids.intersection(
-                    workspace.players[player_id].eligible_lineup_slot_ids
-                ))),
-                candidate_record is not None and candidate_record.projected_lineup_available,
-            )
-            coverage_possible = coverage_cache.get(coverage_key)
-            if coverage_possible is None:
-                if prepared_coverage is not None:
-                    coverage_possible = optimistic_coverage_possible(
-                        prepared_coverage, compact_corrections[id(corrected)],
-                        team_id=team_id, candidate_id=player_id,
-                        baseline_filled=baseline.filled_starting_slot_count,
-                        starting_slot_ids=starter_slot_ids,
-                        projected_available=projected_available,
-                    )
-                else:
-                    coverage_possible = _optimistic_coverage_possible(
-                        snapshot, corrected, team_id, player_id,
-                        baseline.filled_starting_slot_count, workspace,
-                    )
-                coverage_cache[coverage_key] = coverage_possible
-            if not coverage_possible:
-                reasons["cannot_improve_starter_coverage"] = (
-                    reasons.get("cannot_improve_starter_coverage", 0) + 1
+        record = week_records.get(player_id)
+        signature = (
+            tuple(sorted(starter_ids.intersection(
+                workspace.players[player_id].eligible_lineup_slot_ids
+            ))),
+            record is not None and record.projected_lineup_available,
+        )
+        signature_players.setdefault(signature, []).append(player_id)
+    feasible_by_player: dict[int, list[EvolvingLeagueState]] = {}
+    rejected_coverage = 0
+    for corrected in corrections:
+        for signature, players in signature_players.items():
+            representative = players[0]
+            if prepared_coverage is not None:
+                possible = optimistic_coverage_possible(
+                    prepared_coverage, compact_corrections[id(corrected)],
+                    team_id=team_id, candidate_id=representative,
+                    baseline_filled=baseline.filled_starting_slot_count,
+                    starting_slot_ids=starter_slot_ids,
+                    projected_available=projected_available,
                 )
-                continue
+            else:
+                possible = _optimistic_coverage_possible(
+                    snapshot, corrected, team_id, representative,
+                    baseline.filled_starting_slot_count, workspace,
+                )
+            if possible:
+                for player_id in players:
+                    feasible_by_player.setdefault(player_id, []).append(corrected)
+            else:
+                rejected_coverage += len(players)
+    if rejected_coverage:
+        reasons["cannot_improve_starter_coverage"] = rejected_coverage
+    # Preserve the reference rejection accounting for candidates with no
+    # feasible correction, without entering the expensive transaction search.
+    reasons["ineligible_for_configured_slots"] = sum(
+        player_id not in feasible_by_player for player_id in available
+    )
+    if not reasons["ineligible_for_configured_slots"]:
+        del reasons["ineligible_for_configured_slots"]
+    for player_id in available:
+        if player_id not in feasible_by_player:
+            continue
+        player_had_structural_option = False
+        for corrected in feasible_by_player[player_id]:
             owned = _team_owned(corrected, team_id)
             for slot_id in _ordinary_slot_ids(snapshot, player_id, slot_index):
                 player_had_structural_option = True
