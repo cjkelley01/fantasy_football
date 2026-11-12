@@ -230,7 +230,7 @@ def _allocate_opponents(
         tuple(sorted((entry.team_id, entry.player_id, entry.lineup_slot_id)
                      for entry in state.roster_entries if entry.team_id != target_team_id)),
         use_exact_candidate_dominance,
-        state.waiver_priority_order,
+        state.current_waiver_priority,
     )
     cached_search = None if search_cache is None else search_cache.get(search_key)
     if cached_search is not None:
