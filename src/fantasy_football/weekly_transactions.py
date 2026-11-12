@@ -33,7 +33,7 @@ from fantasy_football.lineup_optimizer import (
 )
 from fantasy_football.roster_value import value_roster
 from fantasy_football.compact_season_state import CompactSeasonState
-from fantasy_football.compact_weekly_search import optimistic_coverage_possible
+from fantasy_football.compact_weekly_search import optimistic_coverage_possible, compact_correction_states
 from fantasy_football.prepared_season import PreparedSeason, prepare_season
 
 
@@ -491,6 +491,7 @@ def _enumerate_plans(
     lineup_workspace: LineupOptimizationWorkspace | None = None,
     experimental_prepared: PreparedSeason | None = None,
     experimental_indexed_coverage: bool = False,
+    experimental_compact_corrections: bool = False,
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] | None = None,
@@ -554,7 +555,19 @@ def _enumerate_plans(
     # policy—not on the eventual acquisition identity. Explore this exact graph
     # once and reuse its immutable states for every declared pool candidate.
     slot_index = _ordinary_slot_index(snapshot)
-    corrections = _correction_states(snapshot, state, team_id, slot_index)
+    if experimental_compact_corrections:
+        correction_prepared = experimental_prepared or prepare_season(snapshot)
+        compact_states = compact_correction_states(
+            correction_prepared,
+            CompactSeasonState.from_reference(correction_prepared, state),
+            team_id,
+        )
+        corrections = tuple(sorted(
+            (candidate.to_reference() for candidate in compact_states),
+            key=lambda candidate: repr(_state_effect_key(candidate)),
+        ))
+    else:
+        corrections = _correction_states(snapshot, state, team_id, slot_index)
     correction_count = len(corrections)
     dropped_states: dict[tuple[int, int], EvolvingLeagueState | TransactionStateError] = {}
     # Multiple legal transaction paths can yield the same roster. Lineup
@@ -856,6 +869,7 @@ def execute_weekly_essential_transactions(
     eligible_team_ids: tuple[int, ...] | None = None,
     experimental_compact_acquisitions: bool = False,
     experimental_indexed_coverage: bool = False,
+    experimental_compact_corrections: bool = False,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> WeeklyTransactionResult:
     """Execute one immutable sequential weekly waiver/free-agent window.
@@ -966,6 +980,7 @@ def execute_weekly_essential_transactions(
                         lineup_workspace=lineup_workspace,
                         experimental_prepared=experimental_prepared,
                         experimental_indexed_coverage=experimental_indexed_coverage,
+                        experimental_compact_corrections=experimental_compact_corrections,
                         valuation_cache=valuation_cache,
                     )
                 )
