@@ -101,6 +101,12 @@ def configured_request(args) -> BaselineAnalysisRequest:
                 "evaluation_interval_paths": args.paths,
             }),
         })
+    if args.acquisition_valuation is not None:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(update={
+                "acquisition_valuation": args.acquisition_valuation
+            })
+        })
     if args.allow_incomplete:
         request = request.model_copy(update={
             "simulation": request.simulation.model_copy(
@@ -110,7 +116,7 @@ def configured_request(args) -> BaselineAnalysisRequest:
     return request
 
 
-def instrument(overall: float, *, max_team_searches: int = 0) -> None:
+def instrument(overall: float, *, max_team_searches: int = 0, shadow_bounds: bool = False) -> None:
     completed_team_searches = 0
     def wrap(name: str, stage: str):
         original = getattr(season, name)
@@ -312,7 +318,8 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
         )
         return result
 
-    weekly.value_roster = measured_value
+    if shadow_bounds:
+        weekly.value_roster = measured_value
 
 
 def run_api_terminal(args, overall: float) -> int:
@@ -390,6 +397,8 @@ def main() -> int:
     parser.add_argument("--paths", type=int, default=None, help="Exact number of Monte Carlo paths; overrides retained request path budget")
     parser.add_argument("--disable-coverage-filter", action="store_true")
     parser.add_argument("--max-team-searches", type=int, default=0)
+    parser.add_argument("--acquisition-valuation", choices=("current_week", "rest_of_season"), default=None)
+    parser.add_argument("--shadow-bounds", action="store_true")
     parser.add_argument("--disable-opponent-search-cache", action="store_true")
     args = parser.parse_args()
     if args.paths is not None and args.paths < 1:
@@ -415,7 +424,7 @@ def main() -> int:
             # Exact original candidate enumeration; retain all legality and
             # valuation logic. Only disable the optimistic coverage prefilter.
             weekly._optimistic_coverage_possible = lambda *args: True
-        instrument(overall, max_team_searches=args.max_team_searches)
+        instrument(overall, max_team_searches=args.max_team_searches, shadow_bounds=args.shadow_bounds)
         from fantasy_football.roster_value import opponent_search_diagnostics
         with opponent_search_diagnostics(cache_enabled=not args.disable_opponent_search_cache) as cache_metrics:
             try:
