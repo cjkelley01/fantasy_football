@@ -291,3 +291,20 @@ def test_native_ir_placement_wrong_owner_is_atomic() -> None:
             team_id=other, player_id=entry.player_id, reserve_slot_id=-999,
         )
     assert compact.to_reference() == reference
+
+
+def test_compact_fork_isolates_candidate_mutations() -> None:
+    from tests.canonical_fixtures import canonical_snapshot
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    compact = CompactSeasonState.from_reference(prepare_season(snapshot), initial)
+    fork = compact.fork()
+    assert fork.to_reference() == initial
+    assert fork.prepared is compact.prepared
+    fork.add_player(team_id=1, player_id=3, lineup_slot_id=20)
+    assert compact.to_reference() == initial
+    assert fork.to_reference() != initial
+    assert len(fork.ledger) == len(compact.ledger) + 1
