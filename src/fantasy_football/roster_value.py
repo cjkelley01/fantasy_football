@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from contextvars import ContextVar
+from contextlib import contextmanager
 from functools import wraps
 from dataclasses import dataclass
 from decimal import Decimal
@@ -35,6 +36,31 @@ _OPPONENT_OUTCOME_CACHE: ContextVar[dict[tuple[object, ...], tuple[int, Decimal]
 
 
 _OPPONENT_SEARCH_CACHE: ContextVar[dict | None] = ContextVar('opponent_search_cache', default=None)
+
+
+_OPPONENT_SEARCH_METRICS: ContextVar[dict[str, int] | None] = ContextVar(
+    "opponent_search_metrics", default=None
+)
+_OPPONENT_SEARCH_DISABLED: ContextVar[bool] = ContextVar(
+    "opponent_search_disabled", default=False
+)
+
+
+@contextmanager
+def opponent_search_diagnostics(*, cache_enabled: bool = True):
+    """Collect actual allocation-search work; optionally bypass full-search reuse.
+
+    The metrics dict is updated in place and remains readable after the scope.
+    Nested transaction searches share the same counters.
+    """
+    metrics = {"hits": 0, "misses": 0, "actual_allocation_states": 0}
+    metrics_token = _OPPONENT_SEARCH_METRICS.set(metrics)
+    disabled_token = _OPPONENT_SEARCH_DISABLED.set(not cache_enabled)
+    try:
+        yield metrics
+    finally:
+        _OPPONENT_SEARCH_DISABLED.reset(disabled_token)
+        _OPPONENT_SEARCH_METRICS.reset(metrics_token)
 
 
 def opponent_valuation_cache_scope(function):
@@ -223,7 +249,8 @@ def _allocate_opponents(
     workspace: LineupOptimizationWorkspace | None = None,
     use_exact_candidate_dominance: bool = True,
 ) -> tuple[_OpponentState, tuple[VacancyIdentity, ...], dict[int, object], int]:
-    search_cache = _OPPONENT_SEARCH_CACHE.get()
+    search_cache = None if _OPPONENT_SEARCH_DISABLED.get() else _OPPONENT_SEARCH_CACHE.get()
+    search_metrics = _OPPONENT_SEARCH_METRICS.get()
     search_key = (
         id(snapshot), week, target_team_id, context, tuple(pool),
         tuple(sorted(statuses.items())),
@@ -231,8 +258,11 @@ def _allocate_opponents(
                      for entry in state.roster_entries if entry.team_id != target_team_id)),
         use_exact_candidate_dominance,
         state.current_waiver_priority,
+        state.ir_policy, state.ir_eligibility_evidence,
     )
     cached_search = None if search_cache is None else search_cache.get(search_key)
+    if search_metrics is not None:
+        search_metrics['hits' if cached_search is not None else 'misses'] += 1
     if cached_search is not None:
         finalists, vacancies, opponent_lineups, explored_states = cached_search
         workspace = workspace or prepare_lineup_optimization(snapshot)
@@ -448,6 +478,8 @@ def _allocate_opponents(
     max_points = max(item.exact_improvement for item in finalists)
     finalists = [item for item in finalists if item.exact_improvement == max_points]
 
+    if search_metrics is not None:
+        search_metrics['actual_allocation_states'] += explored_states
     if search_cache is not None:
         search_cache[search_key] = (tuple(finalists), vacancies, opponent_lineups, explored_states)
 
