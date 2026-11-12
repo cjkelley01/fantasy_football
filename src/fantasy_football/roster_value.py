@@ -34,15 +34,20 @@ _OPPONENT_OUTCOME_CACHE: ContextVar[dict[tuple[object, ...], tuple[int, Decimal]
 )
 
 
+_OPPONENT_SEARCH_CACHE: ContextVar[dict | None] = ContextVar('opponent_search_cache', default=None)
+
+
 def opponent_valuation_cache_scope(function):
     @wraps(function)
     def wrapped(*args, **kwargs):
         if _OPPONENT_OUTCOME_CACHE.get() is not None:
             return function(*args, **kwargs)
         token = _OPPONENT_OUTCOME_CACHE.set({})
+        search_token = _OPPONENT_SEARCH_CACHE.set({})
         try:
             return function(*args, **kwargs)
         finally:
+            _OPPONENT_SEARCH_CACHE.reset(search_token)
             _OPPONENT_OUTCOME_CACHE.reset(token)
     return wrapped
 
@@ -218,6 +223,31 @@ def _allocate_opponents(
     workspace: LineupOptimizationWorkspace | None = None,
     use_exact_candidate_dominance: bool = True,
 ) -> tuple[_OpponentState, tuple[VacancyIdentity, ...], dict[int, object], int]:
+    search_cache = _OPPONENT_SEARCH_CACHE.get()
+    search_key = (
+        id(snapshot), week, target_team_id, context, tuple(pool),
+        tuple(sorted(statuses.items())),
+        tuple(sorted((entry.team_id, entry.player_id, entry.lineup_slot_id)
+                     for entry in state.roster_entries if entry.team_id != target_team_id)),
+        use_exact_candidate_dominance,
+        state.waiver_priority_order,
+    )
+    cached_search = None if search_cache is None else search_cache.get(search_key)
+    if cached_search is not None:
+        finalists, vacancies, opponent_lineups, explored_states = cached_search
+        workspace = workspace or prepare_lineup_optimization(snapshot)
+        def cached_target_outcome(item):
+            consumed = {player_id for _, player_id in item.assignments}
+            remaining = tuple(player_id for player_id in pool if player_id not in consumed)
+            combined = optimize_candidate_lineup(
+                snapshot, week, tuple(sorted(target_owned_ids + remaining)),
+                limited_player_ids=frozenset(remaining),
+                maximum_limited_players=target_vacancy_count,
+                workspace=workspace,
+            )
+            return (_exact_total(combined.assignments), item.assignments)
+        return min(finalists, key=cached_target_outcome), vacancies, opponent_lineups, explored_states
+
     workspace = workspace or prepare_lineup_optimization(snapshot)
     opponent_lineups = {
         team.team_id: optimize_starting_lineup(
@@ -417,6 +447,9 @@ def _allocate_opponents(
     finalists = [item for item in states.values() if item.mask.bit_count() == max_filled]
     max_points = max(item.exact_improvement for item in finalists)
     finalists = [item for item in finalists if item.exact_improvement == max_points]
+
+    if search_cache is not None:
+        search_cache[search_key] = (tuple(finalists), vacancies, opponent_lineups, explored_states)
 
     def target_outcome(item: _OpponentState):
         consumed = {player_id for _, player_id in item.assignments}
