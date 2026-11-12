@@ -6,7 +6,8 @@ from test_v2_compact_preflight import setup
 
 def test_same_matchup_period_preserves_acquisitions_and_copies_priority():
     state, _ = setup()
-    state.waiver_order.reverse()
+    state.waiver_order = list(reversed(state.initial_waiver_order))
+    assert state.waiver_order != state.initial_waiver_order
     next_state = advance_compact_cycle(
         state, cycle_id=state.cycle_id + 1,
         scoring_week=state.scoring_week + 1,
