@@ -47,8 +47,8 @@ def execute_compact_proposal(
     add = pi[proposal.add_player_id]
     drop = pi[proposal.drop_player_id] if proposal.drop_player_id is not None else None
     rules = d.rules
-    if drop is not None:
-        return CompactExecutionResult(state, False, "drop transaction requires canonical V1 authorization and ledger")
+    if rules.undroppable_list_enabled is not False and drop is not None:
+        return CompactExecutionResult(state, False, "drop authorization requires canonical evidence")
     reserve_slots = {s.slot_id for s in rules.lineup_slots if s.kind is SlotKind.RESERVE}
     if any(owner == team and state.slot_by_player[i] in reserve_slots
            for i, owner in enumerate(state.owner_by_player)):
