@@ -62,7 +62,7 @@ def test_no_vacancy_means_no_transaction():
 def test_full_bench_chooses_legal_bench_drop_instead_of_cheaper_starter():
     players = tuple(
         NS(player_id=pid, eligible_lineup_slot_ids=slots, is_undroppable=False)
-        for pid, slots in ((10, (0,)), (20, (2,)), (30, (0,)), (50, (4,)))
+        for pid, slots in ((10, (0,)), (20, (2,)), (30, (2,)), (50, (4,)))
     )
     snapshot = NS(
         snapshot_id="s", schema_version=3, season=2026, players=players,
