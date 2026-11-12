@@ -12,7 +12,7 @@ from fantasy_football.canonical.model import RosterEntry, SlotKind
 from fantasy_football.evolving_state import (
     EvolvingLeagueState, PlayerAvailability, TransactionRecord,
     AcquisitionAvailability, TransactionAction, TransactionPhase,
-    TransactionStateError, TransactionErrorCode, IRPolicy, IREligibility,
+    TransactionStateError, TransactionErrorCode, IRPolicy, IREligibility, EvidenceBasis,
 )
 from fantasy_football.prepared_season import PreparedSeason
 from fantasy_football.evolving_state import _validate_drop_permission
@@ -390,6 +390,74 @@ class CompactSeasonState:
         )
         self.slot_by_player[player] = slot
         self.ledger.append(record)
+
+    def activate_from_ir(
+        self, *, team_id: int, player_id: int, ordinary_slot_id: int,
+        drop_player_id: int | None = None,
+    ) -> None:
+        """Native reserve activation; all checks occur on an isolated branch."""
+        prepared = self.prepared
+        def fail(message: str) -> None:
+            raise TransactionStateError(message, TransactionErrorCode.OTHER)
+        try:
+            team = prepared.team_index(team_id)
+            player = prepared.player_index(player_id)
+        except ValueError:
+            fail(f"team {team_id} does not own player {player_id}")
+        if self.owner_by_player[player] != team:
+            fail(f"team {team_id} does not own player {player_id}")
+        prior_slot_index = self.slot_by_player[player]
+        if prepared.slot_kinds[prior_slot_index] != SlotKind.RESERVE.value:
+            fail(f"player {player_id} is not currently in reserve")
+        evidence = None
+        if self.source.ir_policy is IRPolicy.PROJECTION_BASED:
+            projection = prepared.projections[prepared.weeks.index(self.scoring_week)][player]
+            if projection is None or projection <= 0:
+                fail(f"player {player_id} lacks the positive projection required by projection_based activation")
+        else:
+            evidence = next(
+                (item for item in self.source.ir_eligibility_evidence
+                 if item.player_id == player_id and item.scoring_week == self.scoring_week),
+                None,
+            )
+            if evidence is None or evidence.eligibility is IREligibility.UNKNOWN:
+                fail(f"strict IR activation eligibility is unresolved for player={player_id}, week={self.scoring_week}")
+            if evidence.eligibility is IREligibility.ELIGIBLE:
+                fail(f"strict IR evidence says player={player_id} remains IR-eligible in week={self.scoring_week}")
+        candidate = self.fork()
+        if drop_player_id is not None:
+            candidate.drop_player(team_id=team_id, player_id=drop_player_id)
+        try:
+            slot = prepared.slot_index(ordinary_slot_id)
+        except ValueError:
+            slot = -1
+        if slot < 0 or prepared.slot_kinds[slot] == SlotKind.RESERVE.value or prepared.slot_capacities[slot] <= 0:
+            fail(f"slot {ordinary_slot_id} is not ordinary configured capacity")
+        if not prepared.player_eligible_slot_masks[player] & (1 << slot):
+            fail(f"player {player_id} is ineligible for slot {ordinary_slot_id}")
+        occupancy = sum(
+            owner == team and candidate.slot_by_player[i] == slot
+            for i, owner in enumerate(candidate.owner_by_player)
+        )
+        if occupancy >= prepared.slot_capacities[slot]:
+            fail(f"team {team_id} slot {ordinary_slot_id} occupancy {occupancy + 1} exceeds capacity {prepared.slot_capacities[slot]}")
+        prior_slot = prepared.slot_ids[prior_slot_index]
+        priority = tuple(prepared.team_ids[i] for i in candidate.waiver_priority)
+        record = TransactionRecord(
+            len(candidate.ledger) + 1, self.scoring_week, self.cycle_id,
+            TransactionPhase.IR, TransactionAction.IR_ACTIVATE,
+            team_id, player_id, drop_player_id, team_id, team_id,
+            prior_slot, ordinary_slot_id, None, None,
+            priority, priority,
+            evidence.source_id if evidence is not None else None,
+            evidence.evidence_basis if evidence is not None else EvidenceBasis.APPROVED_ASSUMPTION,
+            (f"ir_policy:{self.source.ir_policy.value}",),
+        )
+        candidate.slot_by_player[player] = slot
+        candidate.ledger.append(record)
+        for field in ("owner_by_player", "slot_by_player", "raw_owner_by_player",
+                      "availability_by_player", "ledger"):
+            setattr(self, field, getattr(candidate, field))
 
     def apply_reference_transition(self, result: EvolvingLeagueState) -> None:
         """Temporary differential adapter, NOT a fast transaction implementation."""
