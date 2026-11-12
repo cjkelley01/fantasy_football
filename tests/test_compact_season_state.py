@@ -236,37 +236,43 @@ def test_native_acquisition_rejections_match_reference_across_slots_and_players(
 
 
 def test_native_ir_placement_matches_reference_when_legal() -> None:
-    from fantasy_football.evolving_state import place_on_ir, TransactionStateError
+    from dataclasses import replace
+    from fantasy_football.evolving_state import place_on_ir
     from tests.test_roster_value import _valuation_snapshot
+
     snapshot = _valuation_snapshot()
+    entry = next(item for item in snapshot.roster_entries if item.team_id == 1)
+    reserve = next(
+        slot for slot in snapshot.rules.lineup_slots
+        if slot.kind.value == "reserve" and slot.capacity > 0
+    )
+    snapshot = replace(
+        snapshot,
+        players=tuple(
+            replace(
+                player, injury_status="OUT",
+                eligible_lineup_slot_ids=tuple(sorted(set(
+                    player.eligible_lineup_slot_ids + (reserve.slot_id,)
+                ))),
+            ) if player.player_id == entry.player_id else player
+            for player in snapshot.players
+        ),
+    )
     reference = initialize_evolving_state(
         snapshot, scoring_week=snapshot.first_simulation_week,
         ir_policy=IRPolicy.PROJECTION_BASED,
     )
-    reserve_ids = [
-        slot.slot_id for slot in snapshot.rules.lineup_slots
-        if slot.kind.value == "reserve" and slot.capacity > 0
-    ]
-    checked = 0
-    for entry in reference.roster_entries:
-        for reserve_id in reserve_ids:
-            try:
-                expected = place_on_ir(
-                    reference, snapshot, team_id=entry.team_id,
-                    player_id=entry.player_id, reserve_slot_id=reserve_id,
-                )
-            except TransactionStateError:
-                continue
-            compact = CompactSeasonState.from_reference(prepare_season(snapshot), reference)
-            compact.place_on_ir(
-                team_id=entry.team_id, player_id=entry.player_id,
-                reserve_slot_id=reserve_id,
-            )
-            assert compact.to_reference() == expected
-            checked += 1
-    if not checked:
-        import pytest
-        pytest.skip("fixture has no legal IR placements")
+    expected = place_on_ir(
+        reference, snapshot, team_id=entry.team_id,
+        player_id=entry.player_id, reserve_slot_id=reserve.slot_id,
+    )
+    compact = CompactSeasonState.from_reference(prepare_season(snapshot), reference)
+    compact.place_on_ir(
+        team_id=entry.team_id, player_id=entry.player_id,
+        reserve_slot_id=reserve.slot_id,
+    )
+    assert compact.to_reference() == expected
+    validate_evolving_state(compact.to_reference(), snapshot)
 
 
 def test_native_ir_placement_wrong_owner_is_atomic() -> None:
