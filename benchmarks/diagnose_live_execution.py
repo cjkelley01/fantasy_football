@@ -356,6 +356,7 @@ def main() -> int:
     parser.add_argument("--paths", type=int, default=None, help="Exact number of Monte Carlo paths; overrides retained request path budget")
     parser.add_argument("--disable-coverage-filter", action="store_true")
     parser.add_argument("--max-team-searches", type=int, default=0)
+    parser.add_argument("--disable-opponent-search-cache", action="store_true")
     args = parser.parse_args()
     if args.paths is not None and args.paths < 1:
         parser.error("--paths must be at least 1")
@@ -381,8 +382,15 @@ def main() -> int:
             # valuation logic. Only disable the optimistic coverage prefilter.
             weekly._optimistic_coverage_possible = lambda *args: True
         instrument(overall, max_team_searches=args.max_team_searches)
-        with timed("baseline_service", overall):
-            result = service.run_baseline(request)
+        from fantasy_football.roster_value import opponent_search_diagnostics
+        with opponent_search_diagnostics(cache_enabled=not args.disable_opponent_search_cache) as cache_metrics:
+            try:
+                with timed("baseline_service", overall):
+                    result = service.run_baseline(request)
+            finally:
+                emit("opponent_search_cache", "finished", overall,
+                     cache_enabled=not args.disable_opponent_search_cache,
+                     **cache_metrics)
         emit(
             "diagnostic", "completed", overall,
             completed_paths=result.completed_paths,
