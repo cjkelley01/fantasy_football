@@ -25,7 +25,6 @@ class ProjectedScoreProvider:
     seed: int = 0
     coefficient_of_variation: float = 0.35
     _rngs: dict[int, Random] = field(default_factory=dict)
-    _draws: dict[tuple[int, int, int], float] = field(default_factory=dict)
 
     @classmethod
     def prepare(
@@ -61,17 +60,10 @@ class ProjectedScoreProvider:
             )
             total = 0.0
             for assignment in lineup.assignments:
-                key = (path, week, assignment.player_id)
-                if key not in self._draws:
-                    expected = max(0.0, assignment.effective_projection)
-                    sampled = rng.gauss(expected, expected * self.coefficient_of_variation)
-                    self._draws[key] = max(0.0, sampled)
-                total += self._draws[key]
+                expected = max(0.0, assignment.effective_projection)
+                sampled = rng.gauss(expected, expected * self.coefficient_of_variation)
+                total += max(0.0, sampled)
             scores[team_id] = total
-        # Do not accumulate a full-season draw cache over 20,000 paths.
-        for key in tuple(self._draws):
-            if key[0] == path and key[1] == week:
-                del self._draws[key]
         if len(self._rngs) > 1:
             self._rngs = {path: rng}
         return scores
