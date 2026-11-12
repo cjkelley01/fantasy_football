@@ -259,6 +259,7 @@ def instrument(overall: float, *, max_team_searches: int = 0) -> None:
         return result
 
     weekly.execute_weekly_essential_transactions = measured_weekly_acquisitions
+    season.execute_weekly_essential_transactions = measured_weekly_acquisitions
 
     original_value = weekly.value_roster
 
