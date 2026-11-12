@@ -582,7 +582,7 @@ def _enumerate_plans(
     # Multiple legal transaction paths can yield the same roster. Lineup
     # coverage depends on roster entries, not transaction ledger history.
     # Bound the cache so large searches do not retain every explored roster.
-    lineup_vacancies: OrderedDict[tuple, int] = OrderedDict()
+    lineup_vacancies: OrderedDict[tuple, tuple[int, float]] = OrderedDict()
     starter_ids = frozenset(slot.lineup_slot_id for slot in workspace.slots)
     week_records = workspace.week_records[state.scoring_week]
     projected_available = frozenset(
@@ -773,20 +773,22 @@ def _enumerate_plans(
                         )
                         continue
                     roster_key = resulting.roster_entries
-                    after_vacancies = lineup_vacancies.get(roster_key)
-                    if after_vacancies is None:
-                        after_vacancies = optimize_starting_lineup(
+                    lineup_result = lineup_vacancies.get(roster_key)
+                    if lineup_result is None:
+                        optimized = optimize_starting_lineup(
                             snapshot,
                             team_id,
                             state.scoring_week,
                             roster_entries=roster_key,
                             workspace=workspace,
-                        ).vacancy_count
-                        lineup_vacancies[roster_key] = after_vacancies
+                        )
+                        lineup_result = (optimized.vacancy_count, optimized.total_projected_points)
+                        lineup_vacancies[roster_key] = lineup_result
                         if len(lineup_vacancies) > 1024:
                             lineup_vacancies.popitem(last=False)
                     else:
                         lineup_vacancies.move_to_end(roster_key)
+                    after_vacancies, current_week_points = lineup_result
                     if after_vacancies >= baseline.vacancy_count:
                         reasons["no_coverage_improvement"] = (
                             reasons.get("no_coverage_improvement", 0) + 1
@@ -800,12 +802,7 @@ def _enumerate_plans(
                     if cached_value is None:
                         started = time.perf_counter()
                         if acquisition_valuation is AcquisitionValuationStrategy.CURRENT_WEEK:
-                            lineup = optimize_starting_lineup(
-                                snapshot, team_id, state.scoring_week,
-                                roster_entries=resulting.roster_entries,
-                                workspace=workspace,
-                            )
-                            cached_value = (True, lineup.total_projected_points)
+                            cached_value = (True, current_week_points)
                         else:
                             value = value_roster(
                                 snapshot, resulting, team_id,
