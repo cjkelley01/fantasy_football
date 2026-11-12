@@ -68,3 +68,134 @@ def optimistic_coverage_possible(
             if filled > baseline_filled:
                 return True
     return False
+
+
+def compact_correction_states(
+    prepared: PreparedSeason,
+    initial: CompactSeasonState,
+    team_id: int,
+) -> tuple[CompactSeasonState, ...]:
+    """Explore IR correction branches entirely in indexed mutable states.
+
+    Mirrors reference search's reactive-drop rule: attempt an activation
+    without a drop first; only explore drops if that activation is illegal.
+    Returned states remain compact; no canonical reconstruction is required.
+    """
+    from fantasy_football.evolving_state import (
+        IREligibility, IRPolicy, TransactionStateError,
+    )
+
+    team = prepared.team_index(team_id)
+    reserve = tuple(
+        i for i, kind in enumerate(prepared.slot_kinds)
+        if kind == "reserve" and prepared.slot_capacities[i] > 0
+    )
+    ordinary = tuple(
+        i for i, kind in enumerate(prepared.slot_kinds)
+        if kind != "reserve" and prepared.slot_capacities[i] > 0
+    )
+    injury = {
+        player.player_id: player.injury_status
+        for player in prepared.snapshot.players
+    }
+
+    def effect_key(state: CompactSeasonState):
+        return (
+            tuple(state.owner_by_player),
+            tuple(state.slot_by_player),
+            tuple(state.availability_by_player),
+            tuple(state.season_acquisitions),
+            tuple(state.matchup_acquisitions),
+        )
+
+    frontier = [(initial, frozenset(), frozenset())]
+    discovered = {effect_key(initial): initial}
+    visited = {(effect_key(initial), frozenset(), frozenset())}
+    cursor = 0
+    while cursor < len(frontier):
+        state, activated, placed = frontier[cursor]
+        cursor += 1
+        transitions = []
+        for i, owner in enumerate(state.owner_by_player):
+            if owner != team or state.slot_by_player[i] not in reserve:
+                continue
+            player_id = prepared.player_ids[i]
+            if player_id in placed:
+                continue
+            if state.source.ir_policy is IRPolicy.PROJECTION_BASED:
+                projection = prepared.projections[prepared.weeks.index(state.scoring_week)][i]
+                required = projection is not None and projection > 0
+            else:
+                required = any(
+                    evidence.player_id == player_id
+                    and evidence.scoring_week == state.scoring_week
+                    and evidence.eligibility is IREligibility.INELIGIBLE
+                    for evidence in state.source.ir_eligibility_evidence
+                )
+            if not required:
+                continue
+            for slot in ordinary:
+                if not prepared.player_eligible_slot_masks[i] & (1 << slot):
+                    continue
+                destination = prepared.slot_ids[slot]
+                branch = state.fork()
+                try:
+                    branch.activate_from_ir(
+                        team_id=team_id, player_id=player_id,
+                        ordinary_slot_id=destination,
+                    )
+                except TransactionStateError:
+                    pass
+                else:
+                    transitions.append((branch, activated | {player_id}, placed))
+                    continue
+                for drop_i, drop_owner in enumerate(state.owner_by_player):
+                    if drop_owner != team or drop_i == i:
+                        continue
+                    branch = state.fork()
+                    try:
+                        branch.activate_from_ir(
+                            team_id=team_id, player_id=player_id,
+                            ordinary_slot_id=destination,
+                            drop_player_id=prepared.player_ids[drop_i],
+                        )
+                    except TransactionStateError:
+                        continue
+                    transitions.append((branch, activated | {player_id}, placed))
+
+        for i, owner in enumerate(state.owner_by_player):
+            if owner != team or state.slot_by_player[i] in reserve:
+                continue
+            player_id = prepared.player_ids[i]
+            if player_id in activated or player_id in placed:
+                continue
+            if injury[player_id] not in {"OUT", "IR"}:
+                continue
+            for slot in reserve:
+                branch = state.fork()
+                try:
+                    branch.place_on_ir(
+                        team_id=team_id, player_id=player_id,
+                        reserve_slot_id=prepared.slot_ids[slot],
+                    )
+                except TransactionStateError:
+                    continue
+                transitions.append((branch, activated, placed | {player_id}))
+
+        for branch, next_activated, next_placed in sorted(
+            transitions,
+            key=lambda item: (
+                tuple(item[0].owner_by_player),
+                tuple(item[0].slot_by_player),
+                tuple(sorted(item[1])),
+                tuple(sorted(item[2])),
+            ),
+        ):
+            key = effect_key(branch)
+            search_key = (key, next_activated, next_placed)
+            if search_key in visited:
+                continue
+            visited.add(search_key)
+            discovered.setdefault(key, branch)
+            frontier.append((branch, next_activated, next_placed))
+    return tuple(discovered.values())
