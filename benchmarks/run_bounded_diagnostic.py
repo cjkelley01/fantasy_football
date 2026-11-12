@@ -70,6 +70,9 @@ def main() -> int:
     stage_seconds = Counter()
     weekly_seconds = Counter()
     totals = Counter()
+    transaction_failure_codes = Counter()
+    transaction_rejections = Counter()
+    transaction_failures_by_week = {}
     reuse_opportunity = None
     season_lineup_profile = None
     completed_paths = None
@@ -98,6 +101,16 @@ def main() -> int:
         if stage == "transaction_reuse_opportunity":
             reuse_opportunity = {key: value for key, value in event.items() if key in ("calls", "identical_state_calls", "distinct_states", "by_week")}
         if stage == "team_transaction_plans":
+            week = str(event.get("relative_scoring_week", "unknown"))
+            week_totals = transaction_failures_by_week.setdefault(week, {"failure_codes": Counter(), "rejections": Counter(), "sequences_attempted": 0, "unique_legal_states": 0})
+            week_totals["sequences_attempted"] += event.get("sequences_attempted", 0)
+            week_totals["unique_legal_states"] += event.get("unique_legal_states", 0)
+            for code, count in event.get("failure_codes", {}).items():
+                transaction_failure_codes[code] += count
+                week_totals["failure_codes"][code] += count
+            for reason, count in event.get("rejections", {}).items():
+                transaction_rejections[reason] += count
+                week_totals["rejections"][reason] += count
             for name, profile in event.get("operation_profile", {}).items():
                 entry = operations.setdefault(name, {"calls": 0, "seconds": 0.0})
                 entry["calls"] += profile["calls"]
@@ -122,6 +135,17 @@ def main() -> int:
         "limit_seconds": args.seconds,
         "requested_paths": args.paths,
         "transaction_reuse_opportunity": reuse_opportunity,
+        "transaction_failure_codes": dict(sorted(transaction_failure_codes.items())),
+        "transaction_rejections": dict(sorted(transaction_rejections.items())),
+        "transaction_failures_by_week": {
+            week: {
+                "failure_codes": dict(sorted(data["failure_codes"].items())),
+                "rejections": dict(sorted(data["rejections"].items())),
+                "sequences_attempted": data["sequences_attempted"],
+                "unique_legal_states": data["unique_legal_states"],
+            }
+            for week, data in sorted(transaction_failures_by_week.items(), key=lambda item: int(item[0]) if item[0].isdigit() else -1)
+        },
         "season_lineup_profile": season_lineup_profile,
         "completed_paths_per_second": round(completed_paths / elapsed, 4) if completed_paths is not None and elapsed > 0 else None,
         "elapsed_seconds_per_completed_path": round(elapsed / completed_paths, 4) if completed_paths else None,
