@@ -76,6 +76,22 @@ class CompactSeasonState:
             state.current_matchup_period_id,
         )
 
+    def fork(self) -> "CompactSeasonState":
+        """Isolated compact branch for candidate exploration.
+
+        Copy only mutable per-path arrays. Immutable prepared data and the
+        canonical source metadata are shared; neither is modified by a fork.
+        """
+        return type(self)(
+            self.prepared, self.source,
+            self.owner_by_player.copy(), self.slot_by_player.copy(),
+            self.raw_owner_by_player.copy(), self.availability_by_player.copy(),
+            self.waiver_priority.copy(), self.initial_waiver_priority.copy(),
+            self.season_acquisitions.copy(), self.matchup_acquisitions.copy(),
+            self.ledger.copy(), self.scoring_week, self.cycle_id,
+            self.matchup_period_id,
+        )
+
     def to_reference(self) -> EvolvingLeagueState:
         """Reconstruct every reference field, preserving provenance and ledger."""
         from dataclasses import replace
