@@ -442,7 +442,9 @@ def main() -> int:
         )
         return 0
     except Exception as exc:
-        # Only the exception class is emitted; messages can contain private IDs.
+        # Local diagnostic only: traceback may include private league identifiers.
+        import traceback
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
         emit("diagnostic", "failed", overall, exception_type=type(exc).__name__)
         return 1
     finally:
