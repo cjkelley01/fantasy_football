@@ -73,6 +73,11 @@ class WaiverBoundaryPolicy(StrEnum):
     MODELED_WEEKLY_V1 = "modeled_weekly_v1"
 
 
+class AcquisitionSearchStrategy(StrEnum):
+    EXHAUSTIVE = "exhaustive"
+    PROJECTION_RANKED = "projection_ranked"
+
+
 class AcquisitionValuationStrategy(StrEnum):
     CURRENT_WEEK = 'current_week'
     REST_OF_SEASON = 'rest_of_season'
@@ -83,6 +88,7 @@ class WeeklyTransactionPolicy:
     waiver_boundary: WaiverBoundaryPolicy = WaiverBoundaryPolicy.UNRESOLVED
     reject_incomplete_valuations: bool = True
     acquisition_valuation: AcquisitionValuationStrategy = AcquisitionValuationStrategy.REST_OF_SEASON
+    acquisition_search: AcquisitionSearchStrategy = AcquisitionSearchStrategy.EXHAUSTIVE
 
 
 @dataclass(frozen=True, slots=True)
@@ -504,6 +510,7 @@ def _enumerate_plans(
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] | None = None,
     acquisition_valuation: AcquisitionValuationStrategy = AcquisitionValuationStrategy.REST_OF_SEASON,
+    acquisition_search: AcquisitionSearchStrategy = AcquisitionSearchStrategy.EXHAUSTIVE,
 ) -> tuple[
     tuple[_Plan, ...],
     _PlanDiagnostics,
@@ -615,6 +622,27 @@ def _enumerate_plans(
             record is not None and record.projected_lineup_available,
         )
         signature_players.setdefault(signature, []).append(player_id)
+    if acquisition_search is AcquisitionSearchStrategy.PROJECTION_RANKED:
+        # Keep the three strongest projected options for every distinct starter
+        # eligibility signature. A single global top three would exclude valid
+        # candidates for less common positions (e.g. TE or QB).
+        ranked_available: set[int] = set()
+        for signature, player_ids in signature_players.items():
+            if not signature[0] or not signature[1]:
+                continue
+            ranked_available.update(sorted(
+                player_ids,
+                key=lambda player_id: (
+                    -week_records[player_id].projected_points,
+                    player_id,
+                ),
+            )[:3])
+        signature_players = {
+            signature: [player_id for player_id in player_ids if player_id in ranked_available]
+            for signature, player_ids in signature_players.items()
+        }
+        signature_players = {key: ids for key, ids in signature_players.items() if ids}
+        available = tuple(player_id for player_id in available if player_id in ranked_available)
     feasible_by_player: dict[int, list[EvolvingLeagueState]] = {}
     rejected_coverage = 0
     for corrected in corrections:
@@ -949,6 +977,8 @@ def execute_weekly_essential_transactions(
         raise WeeklyTransactionError(
             f"unsupported waiver boundary policy {policy.waiver_boundary!r}"
         )
+    if not isinstance(policy.acquisition_search, AcquisitionSearchStrategy):
+        raise WeeklyTransactionError("unsupported acquisition search strategy")
     if not isinstance(policy.acquisition_valuation, AcquisitionValuationStrategy):
         raise WeeklyTransactionError('unsupported acquisition valuation strategy')
     if not policy.reject_incomplete_valuations:
@@ -1039,6 +1069,7 @@ def execute_weekly_essential_transactions(
                         experimental_compact_corrections=experimental_compact_corrections,
                         valuation_cache=valuation_cache,
                         acquisition_valuation=policy.acquisition_valuation,
+                        acquisition_search=policy.acquisition_search,
                     )
                 )
                 total_candidates += diagnostic.candidate_players
