@@ -32,7 +32,7 @@ from fantasy_football.lineup_optimizer import (
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
-from fantasy_football.roster_value import value_roster
+from fantasy_football.roster_value import value_roster, opponent_valuation_cache_scope
 from fantasy_football.compact_season_state import CompactSeasonState
 from fantasy_football.compact_weekly_search import optimistic_coverage_possible, compact_correction_states
 from fantasy_football.prepared_season import PreparedSeason, prepare_season
@@ -483,6 +483,7 @@ def _experimental_compact_add(
     return compact.to_reference()
 
 
+@opponent_valuation_cache_scope
 def _enumerate_plans(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
