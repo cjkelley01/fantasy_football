@@ -438,7 +438,12 @@ def optimize_starting_lineup(
 
     modeled_roster = snapshot.roster_entries if roster_entries is None else roster_entries
     validate_roster_state(snapshot, modeled_roster)
-    cache_key = (team_id, scoring_week, modeled_roster)
+    # A team's exact starting lineup is unaffected by other teams' rosters.
+    team_entries = tuple(sorted(
+        (entry for entry in modeled_roster if entry.team_id == team_id),
+        key=lambda item: item.player_id,
+    ))
+    cache_key = (team_id, scoring_week, team_entries)
     cached = prepared._get(prepared.starting_cache, cache_key)
     if cached is not None:
         prepared.starting_hits += 1
@@ -447,7 +452,6 @@ def optimize_starting_lineup(
     week_records = prepared.week_records[scoring_week]
     slots = prepared.slots
     reserve_slot_ids = prepared.reserve_slot_ids
-    team_entries = tuple(sorted((entry for entry in modeled_roster if entry.team_id == team_id), key=lambda item: item.player_id))
     projections = {entry.player_id: week_records[entry.player_id].effective_projection for entry in team_entries}
 
     candidate_ids = tuple(
