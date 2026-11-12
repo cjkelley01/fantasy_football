@@ -308,3 +308,47 @@ def test_compact_fork_isolates_candidate_mutations() -> None:
     assert compact.to_reference() == initial
     assert fork.to_reference() != initial
     assert len(fork.ledger) == len(compact.ledger) + 1
+
+
+def test_native_ir_activation_matches_reference_after_placement() -> None:
+    from dataclasses import replace
+    from fantasy_football.evolving_state import activate_from_ir, place_on_ir
+    from tests.test_roster_value import _valuation_snapshot
+
+    snapshot = _valuation_snapshot()
+    entry = next(item for item in snapshot.roster_entries if item.team_id == 1)
+    reserve = next(
+        slot for slot in snapshot.rules.lineup_slots
+        if slot.kind.value == "reserve" and slot.capacity > 0
+    )
+    snapshot = replace(
+        snapshot,
+        players=tuple(
+            replace(
+                player, injury_status="OUT",
+                eligible_lineup_slot_ids=tuple(sorted(set(
+                    player.eligible_lineup_slot_ids + (reserve.slot_id,)
+                ))),
+            ) if player.player_id == entry.player_id else player
+            for player in snapshot.players
+        ),
+    )
+    initial = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    placed = place_on_ir(
+        initial, snapshot, team_id=entry.team_id,
+        player_id=entry.player_id, reserve_slot_id=reserve.slot_id,
+    )
+    expected = activate_from_ir(
+        placed, snapshot, team_id=entry.team_id,
+        player_id=entry.player_id, ordinary_slot_id=entry.lineup_slot_id,
+    )
+    compact = CompactSeasonState.from_reference(prepare_season(snapshot), placed)
+    compact.activate_from_ir(
+        team_id=entry.team_id, player_id=entry.player_id,
+        ordinary_slot_id=entry.lineup_slot_id,
+    )
+    assert compact.to_reference() == expected
+    validate_evolving_state(compact.to_reference(), snapshot)
