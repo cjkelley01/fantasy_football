@@ -797,3 +797,25 @@ def test_opponent_search_cache_reuses_exact_allocations_without_changing_values(
     assert cached == uncached
     assert cached_metrics["hits"] > 0
     assert cached_metrics["actual_allocation_states"] < uncached_metrics["actual_allocation_states"]
+
+
+def test_starting_lineup_reuses_exact_result_when_only_opponents_change() -> None:
+    """An unrelated roster edit cannot change a team's optimized starters."""
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+
+    snapshot = _valuation_snapshot(competing_teams=1)
+    workspace = prepare_lineup_optimization(snapshot)
+    original = optimize_starting_lineup(
+        snapshot, 1, snapshot.first_simulation_week,
+        roster_entries=snapshot.roster_entries, workspace=workspace,
+    )
+    # A distinct tuple of the same canonical entries models a fresh league-state
+    # container without altering this team's roster.
+    reordered = tuple(reversed(snapshot.roster_entries))
+    assert reordered != snapshot.roster_entries
+    reused = optimize_starting_lineup(
+        snapshot, 1, snapshot.first_simulation_week,
+        roster_entries=reordered, workspace=workspace,
+    )
+    assert reused == original
+    assert workspace.starting_hits == 1
