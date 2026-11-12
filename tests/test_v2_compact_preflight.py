@@ -24,6 +24,7 @@ def setup():
     )
     evolving.roster_entries = (NS(player_id=10, team_id=2, lineup_slot_id=20),)
     state = CompactTransactionState.from_evolving(snapshot, evolving)
+    state.season_acquisition_counts[state.definition.indexes.team_index[2]] = 0
     state.definition = replace(state.definition, undroppable=(False, False, None))
     proposal = AcquisitionProposal(2, 20, 10, 2, 5.0, A.WAIVERS)
     return state, proposal
