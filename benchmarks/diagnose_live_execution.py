@@ -419,7 +419,20 @@ def main() -> int:
         store = SnapshotStore(args.database)
         service = ApplicationService(ApplicationDependencies(store))
         with timed("canonical_load", overall):
-            service._load(request.snapshot)
+            loaded = service._load(request.snapshot)
+            consolation = loaded.snapshot.rules.consolation
+            if consolation.enabled is True and not any(
+                item.round_number == 1 for item in consolation.rounds
+            ):
+                raise RuntimeError(
+                    "Selected snapshot has no approved consolation first-round period. "
+                    "Publish a new snapshot with "
+                    "'python -m fantasy_football.snapshot_store "
+                    "--first-simulation-week 10 "
+                    "--manual-config config/league_rules.local.yaml', "
+                    "then rerun with --latest-snapshot. "
+                    "Do not patch an immutable published snapshot."
+                )
         if args.disable_coverage_filter:
             # Exact original candidate enumeration; retain all legality and
             # valuation logic. Only disable the optimistic coverage prefilter.
