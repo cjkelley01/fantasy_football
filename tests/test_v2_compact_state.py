@@ -33,3 +33,35 @@ def test_rejects_invalid_ownership_and_waiver_priority():
         CompactLeagueState.from_ids(definition, {10: 3}, (1, 2))
     with pytest.raises(ValueError):
         CompactLeagueState.from_ids(definition, {}, (1, 1))
+
+
+def test_projection_from_authoritative_state():
+    from types import SimpleNamespace
+
+    from fantasy_football.v2.compact_state import from_evolving_state
+
+    snapshot = SimpleNamespace(
+        snapshot_id="snapshot-1",
+        players=(SimpleNamespace(player_id=30), SimpleNamespace(player_id=10)),
+        teams=(SimpleNamespace(team_id=2), SimpleNamespace(team_id=1)),
+    )
+    state = SimpleNamespace(
+        source_snapshot_id="snapshot-1",
+        roster_entries=(SimpleNamespace(player_id=30, team_id=2),),
+        current_waiver_priority=(2, 1),
+    )
+    compact = from_evolving_state(snapshot, state)
+    assert compact.definition.player_ids == (10, 30)
+    assert compact.ownership_ids() == {30: 2}
+    assert compact.waiver_priority_ids() == (2, 1)
+
+
+def test_projection_rejects_snapshot_mismatch():
+    from types import SimpleNamespace
+
+    from fantasy_football.v2.compact_state import from_evolving_state
+
+    snapshot = SimpleNamespace(snapshot_id="first")
+    state = SimpleNamespace(source_snapshot_id="second")
+    with pytest.raises(ValueError, match="IDs differ"):
+        from_evolving_state(snapshot, state)
