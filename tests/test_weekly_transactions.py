@@ -1055,7 +1055,11 @@ def test_opponent_search_cache_preserves_weekly_decisions_and_records_real_work(
     with opponent_search_diagnostics(cache_enabled=True) as cached_metrics:
         cached = execute_weekly_essential_transactions(snapshot, state, policy)
 
-    assert cached == uncached
+    from dataclasses import replace
+
+    # Wall-clock measurements are intentionally non-deterministic; all other
+    # fields, including decisions, state, ledger and diagnostics, must agree.
+    assert replace(cached, valuation_seconds=0.0) == replace(uncached, valuation_seconds=0.0)
     assert uncached_metrics["hits"] == 0
     assert uncached_metrics["misses"] > 0
     assert cached_metrics["misses"] > 0
