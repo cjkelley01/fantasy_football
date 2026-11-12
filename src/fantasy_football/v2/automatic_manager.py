@@ -48,17 +48,28 @@ class AutomaticManager:
             by_player.setdefault(record.player_id, []).append(
                 (record.scoring_week, record.effective_projection)
             )
-        for week in range(snapshot.first_simulation_week, snapshot.final_simulation_week + 1):
-            week_values = {}
-            for pid, projections in by_player.items():
-                current = next((value for w, value in projections if w == week), 0.0)
-                future = [value for w, value in projections if w > week]
-                week_values[pid] = PlayerValue(
+        # Precompute suffix totals once per player instead of rescanning all
+        # future projections for every simulated week.
+        first = snapshot.first_simulation_week
+        last = snapshot.final_simulation_week
+        for week in range(first, last + 1):
+            values[week] = {}
+        for pid, projections in by_player.items():
+            by_week = {week: value for week, value in projections}
+            future_sum = 0.0
+            future_count = 0
+            future_positive = False
+            for week in range(last, first - 1, -1):
+                current = by_week.get(week, 0.0)
+                values[week][pid] = PlayerValue(
                     current=current,
-                    future=sum(future) / len(future) if future else 0.0,
-                    temporarily_unavailable=current <= 0 and any(v > 0 for v in future),
+                    future=future_sum / future_count if future_count else 0.0,
+                    temporarily_unavailable=current <= 0 and future_positive,
                 )
-            values[week] = week_values
+                if week in by_week:
+                    future_sum += current
+                    future_count += 1
+                    future_positive = future_positive or current > 0
         return cls(snapshot, policy, workspace, bench, capacity, values)
 
     def __call__(
