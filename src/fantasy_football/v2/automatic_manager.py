@@ -103,6 +103,7 @@ class AutomaticManager:
             (slot for slot in self.bench_slot_ids if occupancy[slot] < bench_capacity[slot]),
             None,
         )
+        bench_is_full = destination is None
         if destination is None:
             # A drop from a bench slot can create room. The planner's
             # least-damaging drop may be elsewhere; reject that mismatch.
@@ -113,7 +114,7 @@ class AutomaticManager:
         forbidden_drops = frozenset(
             entry.player_id for entry in entries
             if entry.lineup_slot_id not in self.bench_slot_ids
-        ) if destination is None else frozenset()
+        ) if bench_is_full else frozenset()
         proposal = propose_acquisition(
             compact, team_id=team_id, need_slot_ids=need_slots,
             values=self.week_values[compact.scoring_week],
