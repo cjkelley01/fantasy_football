@@ -72,7 +72,7 @@ from fantasy_football.snapshot_store import LoadedSnapshot, SnapshotStore, Snaps
 from fantasy_football.trade_candidates import TradeShape
 from fantasy_football.trade_search import ProgressiveSamplingConfiguration
 from fantasy_football.unified_actions import ActionFamily, ActionOrdering, UnifiedActionSearchConfiguration
-from fantasy_football.weekly_transactions import WaiverBoundaryPolicy, WeeklyTransactionPolicy
+from fantasy_football.weekly_transactions import WaiverBoundaryPolicy, WeeklyTransactionPolicy, AcquisitionValuationStrategy
 
 
 class ApplicationServiceError(ValueError):
@@ -412,6 +412,7 @@ class ApplicationService:
             transaction_policy=WeeklyTransactionPolicy(
                 WaiverBoundaryPolicy(configuration.waiver_boundary),
                 configuration.reject_incomplete_valuations,
+                AcquisitionValuationStrategy(configuration.acquisition_valuation),
             ),
             require_complete=configuration.require_complete,
             initial_evolving_state=initial_state,
