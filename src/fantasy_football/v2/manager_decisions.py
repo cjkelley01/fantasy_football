@@ -60,6 +60,7 @@ def propose_acquisition(
     policy: ManagerPolicy = ManagerPolicy(),
     protected_player_ids: frozenset[int] = frozenset(),
     forbidden_drop_ids: frozenset[int] = frozenset(),
+    allowed_availability: frozenset[AcquisitionAvailability] = frozenset({AcquisitionAvailability.FREE_AGENT, AcquisitionAvailability.WAIVERS}),
 ) -> AcquisitionProposal | None:
     """Find a sensible acquisition for an unmet lineup need.
 
@@ -108,9 +109,7 @@ def propose_acquisition(
     proposals = []
     for i, pid in enumerate(ids):
         status = state.availability_by_player[i]
-        if state.owner_by_player[i] != -1 or status not in (
-            AcquisitionAvailability.FREE_AGENT, AcquisitionAvailability.WAIVERS
-        ):
+        if state.owner_by_player[i] != -1 or status not in allowed_availability:
             continue
         eligible = state.definition.eligible_slots[i]
         slots = [slot for slot in need_slot_ids if slot in eligible]
