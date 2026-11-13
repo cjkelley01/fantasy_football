@@ -26,6 +26,7 @@ from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state
 from fantasy_football.snapshot_store import SnapshotStore
 from fantasy_football.config import load_settings, SettingsError
 from fantasy_football.v2.projected_scoring import ProjectedScoreProvider
+from fantasy_football.v2.snapshot_decisions import SnapshotDecisionProvider
 from fantasy_football.v2.season_results import TeamStanding
 from fantasy_football.v2.simulation_batch import simulate_paths
 from fantasy_football.v2.transaction_state import CompactTransactionState
@@ -111,7 +112,7 @@ def locate_database(explicit, snapshot_id):
                      + "\nPass --db PATH to select the correct snapshot database.")
 
 
-def run(db, snapshot_id, paths, repeats, seed, cv):
+def run(db, snapshot_id, paths, repeats, seed, cv, transactions=False):
     resolved_db = locate_database(db, snapshot_id)
     print(f'Using canonical snapshot database: {resolved_db}', flush=True)
     loaded = SnapshotStore(resolved_db).load(snapshot_id)
@@ -138,10 +139,13 @@ def run(db, snapshot_id, paths, repeats, seed, cv):
         scorer = ProjectedScoreProvider.prepare(
             snapshot, seed=seed, coefficient_of_variation=cv
         )
+        decisions = SnapshotDecisionProvider.prepare(snapshot) if transactions else None
+        diagnostics = {} if transactions else None
         started = perf_counter()
         batch = simulate_paths(
             state, schedule, scorer, paths=paths, first_week=first,
             matchup_periods=periods, initial_standings=standings,
+            decision_provider=decisions, acquisition_diagnostics=diagnostics,
         )
         elapsed = perf_counter() - started
         signature = (batch.champions, batch.playoff_appearances)
@@ -153,6 +157,10 @@ def run(db, snapshot_id, paths, repeats, seed, cv):
         if sum(batch.playoff_appearances.values()) != 8 * paths:
             raise AssertionError("playoff field count mismatch")
         timings.append(elapsed)
+        if transactions:
+            print(f"  Decisions: calls={decisions.calls}, proposals={decisions.proposals}; "
+                  f"transaction counts={diagnostics.get('counts', {})}; "
+                  f"IR={diagnostics.get('ir_corrections', {})}", flush=True)
         print(f"Run {repeat + 1}: {elapsed:.3f}s; {paths/elapsed:.1f} paths/s; "
               f"lineup hits={scorer.cache_hits}, misses={scorer.cache_misses}; "
               f"replay/invariants PASS", flush=True)
@@ -160,7 +168,9 @@ def run(db, snapshot_id, paths, repeats, seed, cv):
     print(f"Median {median:.3f}s; projected 20k runtime {median * 20000 / paths:.1f}s "
           "(linear extrapolation only)")
     print("SCOPE: real snapshot, lineups, player draws, standings and playoffs.")
-    print("EXCLUDED: manager decisions, waivers, free agents, IR transactions, calibration.")
+    print("TRANSACTIONS: conservative vacant-starter acquisitions enabled." if transactions
+          else "EXCLUDED: manager decisions, waivers, free agents, IR transactions.")
+    print("EXCLUDED: empirical manager behavior, full V1 ledger parity, calibration.")
     print("DO NOT interpret champion counts as production-calibrated odds.")
 
 
@@ -172,7 +182,9 @@ if __name__ == "__main__":
     parser.add_argument("--repeats", type=int, default=2)
     parser.add_argument("--seed", type=int, default=41)
     parser.add_argument("--cv", type=float, default=0.35)
+    parser.add_argument("--transactions", action="store_true",
+                        help="Enable conservative snapshot-backed waiver/free-agent decisions")
     args = parser.parse_args()
     if args.paths < 1 or args.repeats < 1:
         parser.error("paths and repeats must be positive")
-    run(args.db, args.snapshot_id, args.paths, args.repeats, args.seed, args.cv)
+    run(args.db, args.snapshot_id, args.paths, args.repeats, args.seed, args.cv, args.transactions)
