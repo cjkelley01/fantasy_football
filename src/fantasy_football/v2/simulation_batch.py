@@ -165,6 +165,7 @@ def simulate_paths(
                             acquisition_counts[f"{phase.value}_proposals"] += 1
                         return decision
                     counted_decision.skip_decision = getattr(decision_provider, 'skip_decision', None)
+                    counted_decision.skip_is_phase_independent = getattr(decision_provider, 'skip_is_phase_independent', False)
                     decide = counted_decision
                 else:
                     decide = decision_provider
