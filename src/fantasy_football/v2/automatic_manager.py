@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from fantasy_football.canonical.model import LeagueSnapshot, RosterEntry, SlotKind
 from fantasy_football.evolving_state import AcquisitionAvailability
 from fantasy_football.lineup_optimizer import (
-    LineupOptimizationWorkspace, optimize_starting_lineup, prepare_lineup_optimization,
+    LineupOptimizationWorkspace, optimize_candidate_lineup, prepare_lineup_optimization,
 )
 from fantasy_football.v2.manager_decisions import ManagerPolicy, PlayerValue, propose_acquisition
 from fantasy_football.v2.transaction_state import CompactTransactionState
@@ -85,22 +85,23 @@ class AutomaticManager:
             if compact.owner_by_player[i] == team_index
             and compact.slot_by_player[i] is not None
         )
-        # V1 validates complete league roster overrides. Rebuild all teams.
-        all_entries = tuple(
-            RosterEntry(pid, compact.definition.indexes.team_ids[owner],
-                        compact.slot_by_player[i], compact.definition.indexes.team_ids[owner])
-            for i, pid in enumerate(ids)
-            for owner in (compact.owner_by_player[i],)
-            if owner >= 0 and compact.slot_by_player[i] is not None
+        # Compact state was validated at initialization and every acquisition
+        # passes the compact executor. Avoid reconstructing and revalidating
+        # the entire league for every team/phase/week.
+        reserve = frozenset(
+            rule.slot_id for rule in self.snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.RESERVE
         )
-        lineup = optimize_starting_lineup(
-            self.snapshot, team_id, compact.scoring_week,
-            roster_entries=all_entries, workspace=self.workspace,
+        candidate = optimize_candidate_lineup(
+            self.snapshot, compact.scoring_week,
+            tuple(entry.player_id for entry in entries
+                  if entry.lineup_slot_id not in reserve),
+            workspace=self.workspace,
         )
-        if not lineup.vacancies:
+        if not candidate.vacant_slots:
             return None
-        protected = frozenset(a.player_id for a in lineup.assignments)
-        need_slots = tuple(v.slot.lineup_slot_id for v in lineup.vacancies)
+        protected = frozenset(a.player_id for a in candidate.assignments)
+        need_slots = tuple(v.lineup_slot_id for v in candidate.vacant_slots)
         # A bench slot must have room after a proposed drop, otherwise the
         # executor will reject the proposal without mutating state.
         occupancy = {
