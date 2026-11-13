@@ -27,6 +27,8 @@ class AutomaticManager:
     week_values: dict[int, dict[int, PlayerValue]]
     cache_hits: int = 0
     cache_misses: int = 0
+    _indexed_state: CompactTransactionState | None = field(default=None, init=False, repr=False)
+    _team_entries: tuple[tuple[tuple[int, int, int], ...], ...] = field(default=(), init=False, repr=False)
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
 
     @classmethod
@@ -84,12 +86,20 @@ class AutomaticManager:
         team_index = compact.definition.indexes.team_index[team_id]
         # Compact state already carries player indexes and slots. Avoid
         # allocating RosterEntry objects on every manager decision.
-        entries = tuple(
-            (i, pid, compact.slot_by_player[i])
-            for i, pid in enumerate(ids)
-            if compact.owner_by_player[i] == team_index
-            and compact.slot_by_player[i] is not None
-        )
+        # Rebuild only when a transaction/cycle produces a new state object.
+        # Never mutate cached entries: a successful claim returns a cloned state.
+        if compact is not self._indexed_state:
+            grouped: list[list[tuple[int, int, int]]] = [
+                [] for _ in compact.definition.indexes.team_ids
+            ]
+            for i, owner in enumerate(compact.owner_by_player):
+                if owner >= 0:
+                    slot = compact.slot_by_player[i]
+                    if slot is not None:
+                        grouped[owner].append((i, ids[i], slot))
+            self._team_entries = tuple(tuple(group) for group in grouped)
+            self._indexed_state = compact
+        entries = self._team_entries[team_index]
         # Compact state was validated at initialization and every acquisition
         # passes the compact executor. Avoid reconstructing and revalidating
         # the entire league for every team/phase/week.
