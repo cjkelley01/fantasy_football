@@ -7,9 +7,10 @@ milestone is lossless ownership/waiver-state representation and isolation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True)
 class CompactLeagueDefinition:
     player_ids: tuple[int, ...]
     team_ids: tuple[int, ...]
@@ -20,11 +21,11 @@ class CompactLeagueDefinition:
         if len(set(self.team_ids)) != len(self.team_ids):
             raise ValueError("duplicate team IDs")
 
-    @property
+    @cached_property
     def player_index(self) -> dict[int, int]:
         return {player_id: index for index, player_id in enumerate(self.player_ids)}
 
-    @property
+    @cached_property
     def team_index(self) -> dict[int, int]:
         return {team_id: index for index, team_id in enumerate(self.team_ids)}
 
