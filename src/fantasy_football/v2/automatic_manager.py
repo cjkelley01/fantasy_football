@@ -133,6 +133,10 @@ class AutomaticManager:
             roster_capacity=self.roster_capacity,
             policy=self.policy, protected_player_ids=protected,
             forbidden_drop_ids=forbidden_drops,
+            excluded_capacity_slot_ids=frozenset(
+                rule.slot_id for rule in self.snapshot.rules.lineup_slots
+                if rule.kind is SlotKind.RESERVE
+            ),
             allowed_availability=frozenset({phase}),
         )
         if proposal is None:
