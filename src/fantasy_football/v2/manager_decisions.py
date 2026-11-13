@@ -60,6 +60,7 @@ def propose_acquisition(
     policy: ManagerPolicy = ManagerPolicy(),
     protected_player_ids: frozenset[int] = frozenset(),
     forbidden_drop_ids: frozenset[int] = frozenset(),
+    excluded_capacity_slot_ids: frozenset[int] = frozenset(),
     allowed_availability: frozenset[AcquisitionAvailability] = frozenset({AcquisitionAvailability.FREE_AGENT, AcquisitionAvailability.WAIVERS}),
 ) -> AcquisitionProposal | None:
     """Find a sensible acquisition for an unmet lineup need.
@@ -82,7 +83,8 @@ def propose_acquisition(
         raise ValueError("unknown player valuation")
     if not need_slot_ids:
         return None
-    owned = [i for i, owner in enumerate(state.owner_by_player) if owner == team_index]
+    owned = [i for i, owner in enumerate(state.owner_by_player)
+             if owner == team_index and state.slot_by_player[i] not in excluded_capacity_slot_ids]
     if len(owned) > roster_capacity:
         raise ValueError("roster exceeds provided capacity")
     if len(owned) == roster_capacity:
