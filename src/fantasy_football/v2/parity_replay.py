@@ -43,7 +43,7 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None):
                                            ir_policy=IRPolicy.PROJECTION_BASED)
     compact = CompactTransactionState.from_evolving(snapshot, canonical)
     manager = AutomaticManager.prepare(snapshot, ManagerPolicy(essential_vacancy_bonus=vacancy_bonus))
-    examined = accepted = ir_activated = 0
+    examined = accepted = ir_activated = ir_with_drop = 0
     discrepancies = []
     weekly = []
     end = min(last_week or snapshot.final_simulation_week, snapshot.final_simulation_week)
@@ -74,6 +74,8 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None):
                     'transaction': transaction, 'canonical_error': str(exc)})
                 break
             ir_activated += 1
+            if transaction['dropped_player_id'] is not None:
+                ir_with_drop += 1
         if discrepancies:
             break
         compact = correction.state
@@ -123,7 +125,8 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None):
     return {'snapshot_id': snapshot.snapshot_id, 'first_week': snapshot.first_simulation_week,
             'last_week_requested': end, 'weeks_completed': len(weekly),
             'weekly': weekly, 'proposals_examined': examined, 'accepted': accepted,
-            'ir_activated': ir_activated, 'discrepancies': discrepancies,
+            'ir_activated': ir_activated, 'ir_activations_requiring_drop': ir_with_drop,
+            'discrepancies': discrepancies,
             'parity_passed': not discrepancies,
             'scope': 'multiweek_sequential_single_acquisition_per_team_per_phase',
             'limitations': ['no standings-driven waiver priority resets',
