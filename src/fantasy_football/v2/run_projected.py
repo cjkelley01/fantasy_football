@@ -24,7 +24,7 @@ def run_projected_seasons(
     coefficient_of_variation: float = 0.35,
     manage_rosters: bool = True,
     policy: ManagerPolicy = ManagerPolicy(),
-    diagnostics: dict[str, int] | None = None,
+    diagnostics: dict[str, object] | None = None,
 ) -> SimulationBatch:
     """Run seeded stochastic paths using canonical projected lineup scores.
 
@@ -42,6 +42,7 @@ def run_projected_seasons(
         snapshot, seed=seed, coefficient_of_variation=coefficient_of_variation,
     )
     manager = AutomaticManager.prepare(snapshot, policy) if manage_rosters else None
+    acquisition_stats: dict[str, object] | None = {} if diagnostics is not None else None
     batch = simulate_paths(
         compact, matchups, scoring,
         paths=paths,
@@ -49,8 +50,10 @@ def run_projected_seasons(
         matchup_periods=matchup_periods,
         decision_provider=manager,
         initial_standings=historical,
+        acquisition_diagnostics=acquisition_stats,
     )
     if diagnostics is not None:
+        diagnostics["acquisitions"] = acquisition_stats
         diagnostics.update({
             "scoring_cache_hits": scoring.cache_hits,
             "scoring_cache_misses": scoring.cache_misses,
