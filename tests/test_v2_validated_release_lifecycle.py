@@ -11,7 +11,7 @@ import pytest
 
 from fantasy_football.canonical.model import SourceReference
 from fantasy_football.evolving_state import (
-    AcquisitionAvailability as A, EvidenceBasis, ReleaseAuthorization,
+    AcquisitionAvailability as A, EvidenceBasis, IRPolicy, ReleaseAuthorization,
     TransactionStateError, initialize_evolving_state, drop_player, advance_cycle,
     release_held_player, validate_eligibility_evidence_artifact,
 )
@@ -44,7 +44,7 @@ def _fixture(status="waivers", clearance=None):
     authorization = validate_eligibility_evidence_artifact(
         snapshot, source_id=source.source_id, payload=payload
     ).release_authorizations[0]
-    initial = initialize_evolving_state(snapshot, scoring_week=15)
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
     held = drop_player(initial, snapshot, team_id=1, player_id=-101)
     return snapshot, held, authorization
 
