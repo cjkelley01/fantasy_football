@@ -144,3 +144,15 @@ def test_eligibility_diagnostic_distinguishes_available_pool_from_canonical_play
     )
     assert result is None
     assert reasons == {"no_eligible_player_in_available_pool": 1}
+
+
+def test_vacancy_bonus_calibration_boundary():
+    state, values = setup_state()
+    values = dict(values)
+    values[30] = PlayerValue(1, 0)
+    values[40] = PlayerValue(1, 0)
+    base = dict(team_id=1, need_slot_ids=(0,), values=values,
+                roster_capacity=3, protected_player_ids=frozenset({10, 50}))
+    assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=0), **base) is None
+    assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=4), **base) is None
+    assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=8), **base) is not None
