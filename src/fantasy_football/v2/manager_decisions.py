@@ -117,7 +117,11 @@ def propose_acquisition(
         if state.owner_by_player[i] != -1 or status not in allowed_availability:
             continue
         eligible = state.definition.eligible_slots[i]
-        slot = next((slot for slot in need_slot_ids if slot in eligible), None)
+        slot = None
+        for needed_slot in need_slot_ids:
+            if needed_slot in eligible:
+                slot = needed_slot
+                break
         if slot is None:
             continue
         value = values.get(pid)
