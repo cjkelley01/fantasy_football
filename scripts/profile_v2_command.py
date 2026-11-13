@@ -50,7 +50,7 @@ def main() -> int:
         sys.argv = original_argv
     report = io.StringIO()
     for sort, label in (("cumulative", "CUMULATIVE"), ("tottime", "SELF TIME")):
-        report.write(f"\\n=== TOP {args.top} BY {label} ===\\n")
+        report.write(f"\n=== TOP {args.top} BY {label} ===\n")
         pstats.Stats(profiler, stream=report).strip_dirs().sort_stats(sort).print_stats(args.top)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
