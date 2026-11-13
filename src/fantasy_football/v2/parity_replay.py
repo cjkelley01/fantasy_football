@@ -131,3 +131,29 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None):
                             'canonical ledger not compared'],
             'ledger_compared': False}
 
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--db', type=Path, required=True)
+    parser.add_argument('--league-id', type=int, default=1877457250)
+    parser.add_argument('--season', type=int, default=2026)
+    parser.add_argument('--snapshot-id')
+    parser.add_argument('--vacancy-bonus', type=float, default=4.0)
+    parser.add_argument('--last-week', type=int)
+    args = parser.parse_args(argv)
+    store = SnapshotStore(args.db)
+    metadata = store.newest_metadata(args.league_id, args.season) if not args.snapshot_id else None
+    snapshot_id = args.snapshot_id or (metadata.snapshot_id if metadata else None)
+    if snapshot_id is None:
+        parser.error('no matching snapshot')
+    snapshot = store.load(snapshot_id, verify_sources=False).snapshot
+    if snapshot.league_id != args.league_id or snapshot.season != args.season:
+        parser.error('snapshot does not match league/season')
+    result = replay(snapshot, vacancy_bonus=args.vacancy_bonus, last_week=args.last_week)
+    print(json.dumps(result, indent=2))
+    return 0 if result['parity_passed'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
