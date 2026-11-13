@@ -40,9 +40,9 @@ def test_manager_fills_qb_gap_by_dropping_expendable_rb():
         {10: {10: PlayerValue(0, 22, True), 20: PlayerValue(2, 3),
               30: PlayerValue(16, 5), 50: PlayerValue(18, 16)}},
     )
-    vacancy = NS(slot=NS(lineup_slot_id=0))
-    lineup = NS(vacancies=(vacancy,), assignments=(NS(player_id=50),))
-    with patch("fantasy_football.v2.automatic_manager.optimize_starting_lineup", return_value=lineup):
+    vacancy = NS(lineup_slot_id=0)
+    lineup = NS(vacant_slots=(vacancy,), assignments=(NS(player_id=50),))
+    with patch("fantasy_football.v2.automatic_manager.optimize_candidate_lineup", return_value=lineup):
         decision = manager(1, A.FREE_AGENT, compact)
     assert decision is not None
     assert decision.proposal.add_player_id == 30
@@ -51,12 +51,12 @@ def test_manager_fills_qb_gap_by_dropping_expendable_rb():
 
 
 def test_no_vacancy_means_no_transaction():
-    snapshot = NS()
+    snapshot = NS(rules=NS(lineup_slots=()))
     compact = NS(definition=NS(indexes=NS(player_ids=(), team_index={1: 0}, team_ids=(1,))),
                  owner_by_player=[], slot_by_player=[], scoring_week=10)
     manager = AutomaticManager(snapshot, ManagerPolicy(), NS(), (20,), 5, {10: {}})
-    with patch("fantasy_football.v2.automatic_manager.optimize_starting_lineup",
-               return_value=NS(vacancies=(), assignments=())):
+    with patch("fantasy_football.v2.automatic_manager.optimize_candidate_lineup",
+               return_value=NS(vacant_slots=(), assignments=())):
         assert manager(1, A.FREE_AGENT, compact) is None
 
 def test_full_bench_chooses_legal_bench_drop_instead_of_cheaper_starter():
@@ -90,9 +90,9 @@ def test_full_bench_chooses_legal_bench_drop_instead_of_cheaper_starter():
         {10: {10: PlayerValue(0, 0), 20: PlayerValue(2, 3),
               30: PlayerValue(16, 5), 50: PlayerValue(18, 16)}},
     )
-    vacancy = NS(slot=NS(lineup_slot_id=2))
-    lineup = NS(vacancies=(vacancy,), assignments=(NS(player_id=50),))
-    with patch("fantasy_football.v2.automatic_manager.optimize_starting_lineup", return_value=lineup):
+    vacancy = NS(lineup_slot_id=2)
+    lineup = NS(vacant_slots=(vacancy,), assignments=(NS(player_id=50),))
+    with patch("fantasy_football.v2.automatic_manager.optimize_candidate_lineup", return_value=lineup):
         decision = manager(1, A.FREE_AGENT, compact)
     assert decision is not None
     assert decision.proposal.add_player_id == 30
