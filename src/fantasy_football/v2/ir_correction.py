@@ -60,22 +60,33 @@ def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
                 continue
             destination = None
             drop = None
+            # Prefer vacant capacity over discarding an existing player.
             for slot in ordinary:
                 if slot.slot_id not in d.eligible_slots[ir]:
                     continue
-                occupied = [
-                    j for j, owner in enumerate(current.owner_by_player)
-                    if owner == team and current.slot_by_player[j] == slot.slot_id
-                ]
-                if len(occupied) < slot.capacity:
+                count = sum(
+                    owner == team and current.slot_by_player[j] == slot.slot_id
+                    for j, owner in enumerate(current.owner_by_player)
+                )
+                if count < slot.capacity:
                     destination = slot.slot_id
                     break
-                # Only explicitly droppable bench players can be removed.
-                choices = [j for j in occupied if d.undroppable[j] is False]
-                if choices:
-                    destination = slot.slot_id
-                    drop = min(choices, key=lambda j: d.indexes.player_ids[j])
-                    break
+            if destination is None:
+                for slot in ordinary:
+                    if slot.slot_id not in d.eligible_slots[ir]:
+                        continue
+                    choices = [
+                        j for j, owner in enumerate(current.owner_by_player)
+                        if owner == team and current.slot_by_player[j] == slot.slot_id
+                        and d.undroppable[j] is False
+                        # A same-position swap preserves position limits.
+                        and (not rules.position_limits or
+                             d.default_positions[j] == d.default_positions[ir])
+                    ]
+                    if choices:
+                        destination = slot.slot_id
+                        drop = min(choices, key=lambda j: d.indexes.player_ids[j])
+                        break
             if destination is None:
                 blocked.append((pid, "no_authorized_bench_destination"))
                 continue
