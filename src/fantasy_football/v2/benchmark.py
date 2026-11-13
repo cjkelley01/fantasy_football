@@ -17,6 +17,7 @@ from pathlib import Path
 from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state
 from fantasy_football.snapshot_store import SnapshotStore
 from fantasy_football.v2.run_projected import run_projected_seasons
+from fantasy_football.v2.manager_decisions import ManagerPolicy
 
 
 def canonical_schedule(snapshot):
@@ -52,11 +53,14 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cv", type=float, default=0.35)
     parser.add_argument("--no-management", action="store_true")
+    parser.add_argument("--vacancy-bonus", type=float, default=8.0, help="Essential starter vacancy premium in points; compare 0, 4, and 8")
     parser.add_argument("--cache-stats", action="store_true", help="Print lineup-cache hit and miss counts")
     parser.add_argument("--acquisition-stats", action="store_true", help="Print per-phase acquisition attempts, outcomes, and rejection reasons")
     parser.add_argument("--profile", action="store_true", help="Print cumulative CPU hotspots after the benchmark")
     parser.add_argument("--profile-limit", type=int, default=25, help="Number of profiling rows")
     args = parser.parse_args(argv)
+    if not 0 <= args.vacancy_bonus < float("inf"):
+        parser.error("--vacancy-bonus must be finite and nonnegative")
 
     store = SnapshotStore(args.db)
     metadata = (
@@ -85,6 +89,7 @@ def main(argv=None):
         paths=args.paths, seed=args.seed,
         coefficient_of_variation=args.cv,
         manage_rosters=not args.no_management,
+        policy=ManagerPolicy(essential_vacancy_bonus=args.vacancy_bonus),
         diagnostics=diagnostics,
     )
     if profiler is not None:
@@ -98,6 +103,7 @@ def main(argv=None):
         "champions": batch.champions,
         "playoff_appearances": batch.playoff_appearances,
         "experimental": True,
+        "vacancy_bonus": args.vacancy_bonus,
         **({"cache_stats": {k: v for k, v in diagnostics.items() if k not in ("acquisitions", "manager_needs")}} if args.cache_stats else {}),
         **({"acquisition_stats": diagnostics["acquisitions"], "manager_needs": diagnostics["manager_needs"]} if args.acquisition_stats else {}),
     }, indent=2))
