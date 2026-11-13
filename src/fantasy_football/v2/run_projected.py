@@ -54,6 +54,13 @@ def run_projected_seasons(
     )
     if diagnostics is not None:
         diagnostics["acquisitions"] = acquisition_stats
+        diagnostics["manager_needs"] = ({
+            "no_need_decisions": manager.no_need_seen,
+            "decisions_with_needs": manager.needs_seen,
+            "decisions_with_multiple_needs": manager.multiple_needs_seen,
+            "needs_without_proposal": manager.no_proposal_with_need,
+            "proposals_returned": manager.proposals_returned,
+        } if manager else {})
         diagnostics.update({
             "scoring_cache_hits": scoring.cache_hits,
             "scoring_cache_misses": scoring.cache_misses,
