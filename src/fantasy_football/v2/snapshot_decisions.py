@@ -27,6 +27,8 @@ class SnapshotDecisionProvider:
     week_values: dict[int, dict[int, PlayerValue]] = field(default_factory=dict)
     proposals: int = 0
     calls: int = 0
+    skipped_unchanged: int = 0
+    _no_decision: set[tuple[object, ...]] = field(default_factory=set)
 
     @classmethod
     def prepare(cls, snapshot: LeagueSnapshot) -> "SnapshotDecisionProvider":
@@ -58,8 +60,15 @@ class SnapshotDecisionProvider:
         owned = [(d.indexes.player_ids[i], state.slot_by_player[i])
                  for i, owner in enumerate(state.owner_by_player) if owner == ti]
         active = tuple(pid for pid, sid in owned if sid not in reserve)
+        pool = tuple(d.indexes.player_ids[i] for i, owner in enumerate(state.owner_by_player)
+                     if owner == -1 and state.availability_by_player[i] is phase)
+        key = (state.scoring_week, team_id, phase, active, pool)
+        if key in self._no_decision:
+            self.skipped_unchanged += 1
+            return None
         lineup = optimize_candidate_lineup(self.snapshot, state.scoring_week, active, workspace=self.workspace)
         if not lineup.vacant_slots:
+            self._no_decision.add(key)
             return None
         need = tuple(dict.fromkeys(slot.lineup_slot_id for slot in lineup.vacant_slots))
         # Only target an actually open configured bench/starter destination.
@@ -67,13 +76,9 @@ class SnapshotDecisionProvider:
         destinations = [sid for sid, rule in slots.items()
                         if rule.kind in (SlotKind.BENCH, SlotKind.STARTER)
                         and occupied[sid] < rule.capacity]
-        if not destinations:
-            return None
         # Avoid uncertain drop legality and disruption of protected starters.
         roster_capacity = sum(rule.capacity for rule in slots.values()
                               if rule.kind is not SlotKind.RESERVE)
-        if len(active) >= roster_capacity:
-            return None
         values = self.week_values.get(state.scoring_week, {})
         proposal = propose_acquisition(
             state, team_id=team_id, need_slot_ids=need, values=values,
@@ -82,11 +87,17 @@ class SnapshotDecisionProvider:
             excluded_capacity_slot_ids=frozenset(reserve),
             allowed_availability=frozenset({phase}),
         )
-        if proposal is None or proposal.drop_player_id is not None:
+        if proposal is None:
+            self._no_decision.add(key)
             return None
         eligible = d.eligible_slots[d.indexes.player_index[proposal.add_player_id]]
+        if proposal.drop_player_id is not None:
+            dropped_slot = next((sid for pid, sid in owned if pid == proposal.drop_player_id), None)
+            if dropped_slot in eligible and dropped_slot not in reserve:
+                destinations.insert(0, dropped_slot)
         destination = next((sid for sid in destinations if sid in eligible), None)
         if destination is None:
+            self._no_decision.add(key)
             return None
         self.proposals += 1
         return WindowDecision(proposal, destination)
