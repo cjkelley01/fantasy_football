@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from fantasy_football.canonical.model import LeagueSnapshot, RosterEntry, SlotKind
+from fantasy_football.canonical.model import LeagueSnapshot, SlotKind
 from fantasy_football.evolving_state import AcquisitionAvailability
 from fantasy_football.lineup_optimizer import (
     LineupOptimizationWorkspace, optimize_candidate_lineup, prepare_lineup_optimization,
@@ -82,8 +82,10 @@ class AutomaticManager:
     ) -> WindowDecision | None:
         ids = compact.definition.indexes.player_ids
         team_index = compact.definition.indexes.team_index[team_id]
+        # Compact state already carries player indexes and slots. Avoid
+        # allocating RosterEntry objects on every manager decision.
         entries = tuple(
-            RosterEntry(pid, team_id, compact.slot_by_player[i], team_id)
+            (i, pid, compact.slot_by_player[i])
             for i, pid in enumerate(ids)
             if compact.owner_by_player[i] == team_index
             and compact.slot_by_player[i] is not None
@@ -95,8 +97,7 @@ class AutomaticManager:
             rule.slot_id for rule in self.snapshot.rules.lineup_slots
             if rule.kind is SlotKind.RESERVE
         )
-        roster = tuple(entry.player_id for entry in entries
-                       if entry.lineup_slot_id not in reserve)
+        roster = tuple(pid for _, pid, slot in entries if slot not in reserve)
         cache_key = (compact.scoring_week, roster)
         lineup_info = self._lineup_cache.get(cache_key)
         if lineup_info is None:
@@ -118,7 +119,7 @@ class AutomaticManager:
         # A bench slot must have room after a proposed drop, otherwise the
         # executor will reject the proposal without mutating state.
         occupancy = {
-            slot: sum(entry.lineup_slot_id == slot for entry in entries)
+            slot: sum(entry_slot == slot for _, _, entry_slot in entries)
             for slot in self.bench_slot_ids
         }
         bench_capacity = {
@@ -138,8 +139,8 @@ class AutomaticManager:
         # creates a legal destination. Exclude other drops before ranking,
         # rather than rejecting the planner's cheapest invalid choice.
         forbidden_drops = frozenset(
-            entry.player_id for entry in entries
-            if entry.lineup_slot_id not in self.bench_slot_ids
+            pid for _, pid, slot in entries
+            if slot not in self.bench_slot_ids
         ) if bench_is_full else frozenset()
         proposal = propose_acquisition(
             compact, team_id=team_id, need_slot_ids=need_slots,
