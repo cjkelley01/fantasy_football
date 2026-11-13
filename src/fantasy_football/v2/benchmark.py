@@ -1,0 +1,92 @@
+"""Run the V2 projected-season integration benchmark against a local snapshot.
+
+Example:
+  python -m fantasy_football.v2.benchmark --db outputs/fantasy_football.runs.sqlite3 --paths 1
+
+This is an experimental model, not a calibrated production forecast.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state
+from fantasy_football.snapshot_store import SnapshotStore
+from fantasy_football.v2.run_projected import run_projected_seasons
+
+
+def canonical_schedule(snapshot):
+    periods = {}
+    for period in snapshot.matchup_periods:
+        for week in period.scoring_weeks:
+            if week in periods:
+                raise ValueError(f"duplicate matchup period for week {week}")
+            periods[week] = period.matchup_period_id
+    games = {}
+    for week in range(snapshot.first_simulation_week, 15):
+        period_id = periods.get(week)
+        if period_id is None:
+            raise ValueError(f"missing canonical matchup period for week {week}")
+        scheduled = [
+            matchup for matchup in snapshot.fantasy_matchups
+            if matchup.matchup_period_id == period_id
+            and matchup.home_team_id is not None
+            and matchup.away_team_id is not None
+            and (matchup.bracket_type is None or matchup.bracket_type.lower() in ("regular", "regular_season"))
+        ]
+        games[week] = [(m.home_team_id, m.away_team_id) for m in scheduled]
+    return games, periods
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--db", type=Path, required=True, help="Local canonical snapshot SQLite database")
+    parser.add_argument("--league-id", type=int, default=1877457250)
+    parser.add_argument("--season", type=int, default=2026)
+    parser.add_argument("--snapshot-id", default=None)
+    parser.add_argument("--paths", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--cv", type=float, default=0.35)
+    parser.add_argument("--no-management", action="store_true")
+    args = parser.parse_args(argv)
+
+    store = SnapshotStore(args.db)
+    metadata = (
+        store.newest_metadata(args.league_id, args.season)
+        if args.snapshot_id is None else None
+    )
+    snapshot_id = args.snapshot_id or (metadata.snapshot_id if metadata else None)
+    if snapshot_id is None:
+        parser.error("no matching published canonical snapshot in database")
+    snapshot = store.load(snapshot_id, verify_sources=False).snapshot
+    if snapshot.league_id != args.league_id or snapshot.season != args.season:
+        parser.error("snapshot does not match requested league and season")
+    if snapshot.final_simulation_week < 18:
+        parser.error("snapshot does not cover championship week 18")
+    schedule, periods = canonical_schedule(snapshot)
+    initial = initialize_evolving_state(
+        snapshot, scoring_week=snapshot.first_simulation_week,
+        ir_policy=IRPolicy.PROJECTION_BASED,
+    )
+    batch = run_projected_seasons(
+        snapshot, initial, schedule, periods,
+        paths=args.paths, seed=args.seed,
+        coefficient_of_variation=args.cv,
+        manage_rosters=not args.no_management,
+    )
+    print(json.dumps({
+        "snapshot_id": snapshot_id,
+        "paths": batch.paths,
+        "elapsed_seconds": round(batch.elapsed_seconds, 3),
+        "paths_per_second": round(batch.paths / batch.elapsed_seconds, 3) if batch.elapsed_seconds else None,
+        "estimated_seconds_for_20000": round(batch.elapsed_seconds * 20000 / batch.paths, 1),
+        "champions": batch.champions,
+        "playoff_appearances": batch.playoff_appearances,
+        "experimental": True,
+    }, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
