@@ -52,6 +52,7 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cv", type=float, default=0.35)
     parser.add_argument("--no-management", action="store_true")
+    parser.add_argument("--cache-stats", action="store_true", help="Print lineup-cache hit and miss counts")
     parser.add_argument("--profile", action="store_true", help="Print cumulative CPU hotspots after the benchmark")
     parser.add_argument("--profile-limit", type=int, default=25, help="Number of profiling rows")
     args = parser.parse_args(argv)
@@ -77,11 +78,13 @@ def main(argv=None):
     profiler = cProfile.Profile() if args.profile else None
     if profiler is not None:
         profiler.enable()
+    diagnostics = {} if args.cache_stats else None
     batch = run_projected_seasons(
         snapshot, initial, schedule, periods,
         paths=args.paths, seed=args.seed,
         coefficient_of_variation=args.cv,
         manage_rosters=not args.no_management,
+        diagnostics=diagnostics,
     )
     if profiler is not None:
         profiler.disable()
@@ -94,11 +97,12 @@ def main(argv=None):
         "champions": batch.champions,
         "playoff_appearances": batch.playoff_appearances,
         "experimental": True,
+        **({"cache_stats": diagnostics} if diagnostics is not None else {}),
     }, indent=2))
     if profiler is not None:
         output = io.StringIO()
         pstats.Stats(profiler, stream=output).strip_dirs().sort_stats("cumulative").print_stats(args.profile_limit)
-        print("\\nPROFILE (cumulative CPU time):")
+        print("\nPROFILE (cumulative CPU time):")
         print(output.getvalue())
     return 0
 
