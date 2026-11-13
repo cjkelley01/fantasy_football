@@ -16,11 +16,12 @@ def audit(snapshot):
     negative = [p for p in snapshot.players if p.player_id < 0]
     negative_rostered = {r.player_id for r in snapshot.roster_entries if r.player_id < 0}
     sample = [{'player_id': p.player_id,
-               'name': getattr(p, 'full_name', getattr(p, 'name', None)),
+               'name': p.display_name,
                'default_position_id': getattr(p, 'default_position_id', None),
                'rostered': p.player_id in negative_rostered}
               for p in sorted(negative, key=lambda p: p.player_id)[:40]]
     records = list(snapshot.player_weeks)
+    # Canonical PlayerWeek currently stores projections only; inspect fields rather than guessing.
     actual_fields = ('actual_points', 'actual_score', 'points_scored')
     actual_field = next((field for field in actual_fields if records and hasattr(records[0], field)), None)
     paired = []
@@ -35,7 +36,9 @@ def audit(snapshot):
               'negative_rostered_count': len(negative_rostered),
               'negative_by_default_position': {str(k): v for k, v in sorted(by_position.items(), key=lambda x: str(x[0]))},
               'negative_examples': sample,
-              'player_week_records': len(records), 'actual_field_detected': actual_field,
+              'player_week_records': len(records),
+              'player_week_schema_fields': list(getattr(type(records[0]), '__dataclass_fields__', {})) if records else [],
+              'actual_field_detected': actual_field,
               'positive_projection_actual_pairs': len(paired)}
     if paired:
         errors = [(actual - proj) / proj for proj, actual in paired]
