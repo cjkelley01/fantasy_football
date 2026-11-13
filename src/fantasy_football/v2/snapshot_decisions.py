@@ -31,6 +31,8 @@ class SnapshotDecisionProvider:
     _no_decision: set[tuple[object, ...]] = field(default_factory=set)
     _complete_lineups: set[tuple[int, tuple[int, ...]]] = field(default_factory=set)
     skipped_complete: int = 0
+    _lineup_vacancies: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
+    lineup_cache_hits: int = 0
 
     @classmethod
     def prepare(cls, snapshot: LeagueSnapshot) -> "SnapshotDecisionProvider":
@@ -69,8 +71,18 @@ class SnapshotDecisionProvider:
         if lineup_key in self._complete_lineups:
             self.skipped_complete += 1
             return None
-        lineup = optimize_candidate_lineup(self.snapshot, state.scoring_week, active, workspace=self.workspace)
-        if not lineup.vacant_slots:
+        cached = self._lineup_vacancies.get(lineup_key)
+        if cached is None:
+            lineup = optimize_candidate_lineup(self.snapshot, state.scoring_week, active, workspace=self.workspace)
+            cached = (
+                tuple(dict.fromkeys(slot.lineup_slot_id for slot in lineup.vacant_slots)),
+                frozenset(a.player_id for a in lineup.assignments),
+            )
+            self._lineup_vacancies[lineup_key] = cached
+        else:
+            self.lineup_cache_hits += 1
+        need, protected = cached
+        if not need:
             self._complete_lineups.add(lineup_key)
             return None
         pool = tuple(d.indexes.player_ids[i] for i, owner in enumerate(state.owner_by_player)
@@ -82,7 +94,6 @@ class SnapshotDecisionProvider:
         if key in self._no_decision:
             self.skipped_unchanged += 1
             return None
-        need = tuple(dict.fromkeys(slot.lineup_slot_id for slot in lineup.vacant_slots))
         # Only target an actually open configured bench/starter destination.
         occupied = {sid: sum(s == sid for _, s in owned) for sid in slots}
         destinations = [sid for sid, rule in slots.items()
@@ -95,7 +106,7 @@ class SnapshotDecisionProvider:
         proposal = propose_acquisition(
             state, team_id=team_id, need_slot_ids=need, values=values,
             roster_capacity=roster_capacity, policy=self.policy,
-            protected_player_ids=frozenset(a.player_id for a in lineup.assignments),
+            protected_player_ids=protected,
             excluded_capacity_slot_ids=frozenset(reserve),
             allowed_availability=frozenset({phase}),
         )
