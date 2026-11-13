@@ -158,7 +158,7 @@ def run(db, snapshot_id, paths, repeats, seed, cv, transactions=False):
             raise AssertionError("playoff field count mismatch")
         timings.append(elapsed)
         if transactions:
-            print(f"  Decisions: calls={decisions.calls}, proposals={decisions.proposals}; "
+            print(f"  Decisions: calls={decisions.calls}, proposals={decisions.proposals}, skipped_unchanged={decisions.skipped_unchanged}; "
                   f"transaction counts={diagnostics.get('counts', {})}; "
                   f"IR={diagnostics.get('ir_corrections', {})}", flush=True)
         print(f"Run {repeat + 1}: {elapsed:.3f}s; {paths/elapsed:.1f} paths/s; "
