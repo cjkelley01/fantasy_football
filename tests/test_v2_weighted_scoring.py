@@ -34,3 +34,24 @@ def test_weighted_holdout_reports_zero_brier(tmp_path):
     assert report["pregame_validated"] is False
     assert {r["method"] for r in report["results"]} == {"weighted", "unweighted"}
     assert all(0 <= r["zero_brier"] <= 1 for r in report["results"])
+
+
+def test_comparison_looks_up_neighborhood_once_per_observation(tmp_path, monkeypatch):
+    from fantasy_football.v2 import weighted_comparison
+    original = AdaptiveNeighborhood.neighbors
+    calls = []
+    def counting_neighbors(self, position, projection, **kwargs):
+        calls.append((position, projection))
+        return original(self, position, projection, **kwargs)
+    monkeypatch.setattr(AdaptiveNeighborhood, "neighbors", counting_neighbors)
+    for season in (2024, 2025):
+        folder = tmp_path / str(season)
+        folder.mkdir()
+        rows = []
+        for i in range(4):
+            for source, points in ((0, i * 2), (1, 5 + i)):
+                rows.append({"season": season, "week": 1, "player_id": i,
+                             "position_id": 4, "stat_source_id": source, "points": points})
+        (folder / "week-01.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows))
+    report = weighted_comparison.evaluate(tmp_path, draws=30, min_neighbors=2)
+    assert sum(r["n"] for r in report["results"] if r["method"] == "weighted") == len(calls)
