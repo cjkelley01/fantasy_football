@@ -53,7 +53,7 @@ class CompactTransactionDefinition:
             ),
             tuple(p.eligible_lineup_slot_ids for p in players),
             tuple(p.is_undroppable for p in players),
-            tuple(p.undroppable_source_id for p in players),
+            tuple(getattr(p, 'undroppable_source_id', None) for p in players),
             tuple(getattr(p, 'default_position_id', None) for p in players),
             snapshot.rules,
             _projection_index(snapshot),
