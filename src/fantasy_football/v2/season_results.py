@@ -36,6 +36,7 @@ def resolve_season(
     first_week: int,
     last_regular_week: int = 14,
     playoff_teams: int = 8,
+    initial_standings: Mapping[int, TeamStanding] | None = None,
 ) -> SeasonResult:
     """Rank regular season by record then points-for; resolve postseason.
 
@@ -47,7 +48,16 @@ def resolve_season(
         raise ValueError("invalid team IDs or playoff field")
     if first_week < 1 or last_regular_week < first_week or last_regular_week >= 15:
         raise ValueError("invalid regular season window")
-    totals = {team: [0, 0, 0, 0.0] for team in teams}
+    if initial_standings is not None and set(initial_standings) != set(teams):
+        raise ValueError("initial standings must cover every team")
+    totals = {
+        team: ([standing.wins, standing.losses, standing.ties, float(standing.points_for)]
+               if initial_standings is not None and (standing := initial_standings[team])
+               else [0, 0, 0, 0.0])
+        for team in teams
+    }
+    if any(any(v < 0 or not isfinite(v) for v in values) for values in totals.values()):
+        raise ValueError("invalid initial standings")
     for week in range(first_week, last_regular_week + 1):
         games = matchups.get(week)
         if games is None:
