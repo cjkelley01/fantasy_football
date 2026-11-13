@@ -53,6 +53,7 @@ def main(argv=None):
     parser.add_argument("--cv", type=float, default=0.35)
     parser.add_argument("--no-management", action="store_true")
     parser.add_argument("--cache-stats", action="store_true", help="Print lineup-cache hit and miss counts")
+    parser.add_argument("--acquisition-stats", action="store_true", help="Print per-phase acquisition attempts, outcomes, and rejection reasons")
     parser.add_argument("--profile", action="store_true", help="Print cumulative CPU hotspots after the benchmark")
     parser.add_argument("--profile-limit", type=int, default=25, help="Number of profiling rows")
     args = parser.parse_args(argv)
@@ -78,7 +79,7 @@ def main(argv=None):
     profiler = cProfile.Profile() if args.profile else None
     if profiler is not None:
         profiler.enable()
-    diagnostics = {} if args.cache_stats else None
+    diagnostics = {} if (args.cache_stats or args.acquisition_stats) else None
     batch = run_projected_seasons(
         snapshot, initial, schedule, periods,
         paths=args.paths, seed=args.seed,
@@ -97,7 +98,8 @@ def main(argv=None):
         "champions": batch.champions,
         "playoff_appearances": batch.playoff_appearances,
         "experimental": True,
-        **({"cache_stats": diagnostics} if diagnostics is not None else {}),
+        **({"cache_stats": {k: v for k, v in diagnostics.items() if k != "acquisitions"}} if args.cache_stats else {}),
+        **({"acquisition_stats": diagnostics["acquisitions"]} if args.acquisition_stats else {}),
     }, indent=2))
     if profiler is not None:
         output = io.StringIO()
