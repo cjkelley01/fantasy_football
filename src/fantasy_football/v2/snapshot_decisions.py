@@ -33,6 +33,7 @@ class SnapshotDecisionProvider:
     skipped_complete: int = 0
     _lineup_vacancies: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
     lineup_cache_hits: int = 0
+    pruned_calls: int = 0
 
     @classmethod
     def prepare(cls, snapshot: LeagueSnapshot) -> "SnapshotDecisionProvider":
@@ -52,6 +53,23 @@ class SnapshotDecisionProvider:
                 for pid, value in current.items()
             }
         return cls(snapshot, workspace, week_values=week_values)
+
+    def skip_decision(self, team_id: int, phase: A, state: CompactTransactionState) -> bool:
+        """Only prune when the exact roster/week was proven complete.
+
+        Never infer completion from another team or a prior week. Changes
+        to roster ownership change the active player tuple and invalidate
+        the shortcut automatically.
+        """
+        ti = state.definition.indexes.team_index[team_id]
+        reserve = {s.slot_id for s in self.snapshot.rules.lineup_slots if s.kind is SlotKind.RESERVE}
+        active = tuple(state.definition.indexes.player_ids[i]
+                       for i, owner in enumerate(state.owner_by_player)
+                       if owner == ti and state.slot_by_player[i] not in reserve)
+        if (state.scoring_week, active) in self._complete_lineups:
+            self.pruned_calls += 1
+            return True
+        return False
 
     def __call__(self, team_id: int, phase: A, state: CompactTransactionState) -> WindowDecision | None:
         self.calls += 1
