@@ -2,17 +2,17 @@
 
 Usage:
  python -m fantasy_football.v2.history_probe --league-id 1877457250 --seasons 2024 2025 2026
-Optional credentials via ESPN_S2 and SWID environment variables.
+Credentials loaded from the same .env configuration as the existing ESPN adapter.
 """
 from __future__ import annotations
 
 import argparse
 import json
-import os
 from collections import Counter
-from urllib.parse import urlencode
 
 import requests
+
+from fantasy_football.config import SettingsError, load_settings
 
 
 def inspect_payload(payload, season):
@@ -65,10 +65,18 @@ def main(argv=None):
     parser.add_argument("--league-id", type=int, required=True)
     parser.add_argument("--seasons", type=int, nargs="+", default=[2024, 2025, 2026])
     parser.add_argument("--output", help="Optional sanitized JSON summary")
+    parser.add_argument("--env-file", default=".env", help="Existing application configuration file")
     args = parser.parse_args(argv)
+    try:
+        settings = load_settings(env_file=args.env_file)
+    except SettingsError as exc:
+        parser.error(str(exc))
+    if settings.league_id != args.league_id:
+        parser.error("league ID does not match configured ESPN_LEAGUE_ID")
+    if settings.credentials is None:
+        parser.error("Private-league credentials missing: configure ESPN_S2 and ESPN_SWID in .env")
     session = requests.Session()
-    cookies = {k: os.environ[v] for k, v in (("espn_s2", "ESPN_S2"), ("SWID", "SWID")) if os.environ.get(v)}
-    session.cookies.update(cookies)
+    session.cookies.update({"espn_s2": settings.credentials.espn_s2, "SWID": settings.credentials.swid})
     results = []
     for season in args.seasons:
         try:
