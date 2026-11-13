@@ -6,7 +6,7 @@ from fantasy_football.v2.projected_scoring import ProjectedScoreProvider
 
 
 def test_scoring_lineup_is_reused_across_paths_without_reusing_scores():
-    snapshot = NS(snapshot_id="snapshot")
+    snapshot = NS(snapshot_id="snapshot", season=2026)
     workspace = NS(reserve_slot_ids=frozenset({99}))
     state = NS(
         scoring_week=10, source_snapshot_id="snapshot",
@@ -17,7 +17,7 @@ def test_scoring_lineup_is_reused_across_paths_without_reusing_scores():
     provider = ProjectedScoreProvider(snapshot, workspace, seed=42)
     def lineup(_snapshot, _week, roster, *, workspace):
         assert roster in ((10,), (30,))
-        return NS(assignments=(NS(effective_projection=20.0),))
+        return NS(assignments=(NS(player_id=roster[0], effective_projection=20.0),))
     with patch("fantasy_football.v2.projected_scoring.optimize_candidate_lineup",
                side_effect=lineup) as optimize:
         first = provider(0, 10, state)
