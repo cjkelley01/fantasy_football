@@ -62,3 +62,28 @@ capture times, scoring slots, bye weeks, and historical scoring settings.
    tests, then write final model and operations reports.
 
 No historical matchup data has been replayed by this commit.
+
+## Automated retrospective box-score pipeline
+
+Historical ESPN box scores can supply **final** lineup slots, not independently
+verified pre-kickoff lineup states. This is a proxy cohort, separate from a
+true pregame capture cohort. It is labeled `retrospective_final_lineup`
+throughout; it does not prove that each starter was locked before kickoff.
+
+Run from the repository root (with ESPN credentials in .env):
+
+```powershell
+.\.venv\Scripts\python.exe -m fantasy_football.v2.espn_matchup_extract --last-completed-2026-week 9
+.\.venv\Scripts\python.exe -m fantasy_football.v2.matchup_audit
+.\.venv\Scripts\python.exe -m fantasy_football.v2.matchup_replay --manifest outputs/historical_backfill/replay_ready_matchups.json
+```
+
+The audit excludes matchups missing paired player scores or whose reconstructed
+team scores differ from official ESPN scores by more than 0.15 points.
+Inspect `matchup_audit.json` before interpreting the replay. A small accepted
+subset may be highly selected and unrepresentative. Never optimize against
+the final lineups as though they were verified pregame decisions.
+
+This pipeline is a research bridge, not the final optimization result. We
+still require a baseline comparison, reliable calibration bins, confidence
+intervals, and playoff-level backtesting before a production switch.
