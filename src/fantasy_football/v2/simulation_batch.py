@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from math import isfinite
 from time import perf_counter
 from typing import Callable, Mapping, Sequence
 
@@ -32,6 +33,38 @@ class SimulationBatch:
     champions: dict[int, int]
     playoff_appearances: dict[int, int]
     results: tuple[SeasonResult, ...]
+
+
+def _update_regular_standings(totals, games, scores):
+    """Apply one completed regular-season week to path-local standings."""
+    seen = set()
+    for home, away in games:
+        if home == away or home not in totals or away not in totals or home in seen or away in seen:
+            raise ValueError("invalid regular-season matchup for waiver reset")
+        seen.update((home, away))
+        if home not in scores or away not in scores:
+            raise ValueError("missing weekly score for waiver reset")
+        a, b = float(scores[home]), float(scores[away])
+        if not isfinite(a) or not isfinite(b):
+            raise ValueError("nonfinite weekly score for waiver reset")
+        totals[home][3] += a
+        totals[away][3] += b
+        if a > b:
+            totals[home][0] += 1
+            totals[away][1] += 1
+        elif b > a:
+            totals[away][0] += 1
+            totals[home][1] += 1
+        else:
+            totals[home][2] += 1
+            totals[away][2] += 1
+    if seen != set(totals):
+        raise ValueError("incomplete regular-season matchup for waiver reset")
+
+
+def _inverse_standings_priority(totals):
+    """Worst record, then fewest points for, then stable team ID."""
+    return tuple(sorted(totals, key=lambda t: (totals[t][0] + totals[t][2] / 2, totals[t][3], t)))
 
 
 def simulate_paths(
@@ -89,6 +122,14 @@ def simulate_paths(
     ir_transaction_examples: dict[tuple[int, int, int, int | None, int], dict[str, object]] = {}
     for path in range(paths):
         state = initial.clone()
+        totals = {
+            team: [standing.wins, standing.losses, standing.ties, float(standing.points_for)]
+            if initial_standings is not None and (standing := initial_standings[team])
+            else [0, 0, 0, 0.0]
+            for team in team_ids
+        }
+        if initial_standings is not None and set(initial_standings) != set(team_ids):
+            raise ValueError("initial standings must cover every team")
         weekly_scores: dict[int, Mapping[int, float]] = {}
         for week in weeks:
             if week != state.scoring_week or matchup_periods[week] != state.matchup_period_id:
@@ -170,6 +211,11 @@ def simulate_paths(
                         count - 1 for count in per_team_waivers.values() if count > 1
                     )
             weekly_scores[week] = dict(score_provider(path, week, state))
+            if week <= last_regular_week:
+                _update_regular_standings(totals, matchups.get(week, ()), weekly_scores[week])
+                if week < last_regular_week:
+                    priority = _inverse_standings_priority(totals)
+                    state.waiver_order = [state.definition.indexes.team_index[t] for t in priority]
         result = resolve_season(
             team_ids, matchups, weekly_scores,
             first_week=first_week, last_regular_week=last_regular_week,
