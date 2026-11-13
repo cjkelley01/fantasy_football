@@ -75,7 +75,10 @@ class SnapshotDecisionProvider:
             return None
         pool = tuple(d.indexes.player_ids[i] for i, owner in enumerate(state.owner_by_player)
                      if owner == -1 and state.availability_by_player[i] is phase)
-        key = (state.scoring_week, team_id, phase, active, pool)
+        reserve_occupants = tuple((pid, sid) for pid, sid in owned if sid in reserve)
+        key = (state.scoring_week, state.cycle_id, team_id, phase, active,
+               reserve_occupants, pool, state.season_acquisition_counts[ti],
+               state.matchup_acquisition_counts[ti])
         if key in self._no_decision:
             self.skipped_unchanged += 1
             return None
