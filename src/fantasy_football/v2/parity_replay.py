@@ -42,6 +42,19 @@ def differences(canonical, compact, snapshot):
     return mismatches
 
 
+def availability_detail_differences(canonical, compact, snapshot):
+    expected = CompactTransactionState.from_evolving(snapshot, canonical)
+    return [
+        {'player_id': pid, 'canonical': repr(left), 'compact': repr(right)}
+        for pid, left, right in zip(
+            expected.definition.indexes.player_ids,
+            expected.availability_details_by_player,
+            compact.availability_details_by_player,
+        )
+        if left != right
+    ][:20]
+
+
 def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_cv=0.35,
            release_authorizations=(), boundary_at_utc=None):
     canonical = initialize_evolving_state(snapshot, scoring_week=snapshot.first_simulation_week,
@@ -123,7 +136,8 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_
         compact = correction.state
         mismatch = differences(canonical, compact, snapshot)
         if mismatch:
-            discrepancies.append({'week': week, 'stage': 'ir_correction', 'mismatches': mismatch})
+            discrepancies.append({'week': week, 'stage': 'ir_correction', 'mismatches': mismatch,
+                                  'availability_diff': availability_detail_differences(canonical, compact, snapshot)})
             break
         week_examined = week_accepted = 0
         # Mirror compact_window's repeat-until-no-progress behavior, including
@@ -157,6 +171,7 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_
                         mismatch.append('acceptance')
                     if mismatch:
                         discrepancies.append({'week': week, 'stage': phase.value,
+                            'availability_diff': availability_detail_differences(v1.state, v2.state, snapshot),
                             'team_id': team, 'add_player_id': proposal.add_player_id,
                             'drop_player_id': proposal.drop_player_id,
                             'v1_accepted': v1.accepted, 'v2_accepted': v2.accepted,
