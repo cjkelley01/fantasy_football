@@ -77,3 +77,51 @@ def test_explicit_droppable_player_can_be_replaced_with_undroppable_list_enabled
     result = execute_compact_proposal(state, proposal, destination_slot_id=20)
     assert result.accepted
     assert result.state.ownership_ids() == {20: 2}
+
+
+
+def test_reserve_occupant_without_positive_projection_does_not_block_ordinary_add():
+    from fantasy_football.canonical.model import SlotKind
+    state, proposal = eligible()
+    reserve_slot = NS(slot_id=99, capacity=1, kind=SlotKind.RESERVE)
+    state.definition = replace(
+        state.definition,
+        rules=NS(
+            lineup_slots=state.definition.rules.lineup_slots + (reserve_slot,),
+            acquisition=state.definition.rules.acquisition,
+            undroppable_list_enabled=False,
+            position_limits=(),
+        ),
+        projected_points_by_week={state.scoring_week: {10: 0.0}},
+    )
+    # A second rostered player occupies reserve while the ordinary drop remains legal.
+    state.owner_by_player[2] = state.definition.indexes.team_index[2]
+    state.slot_by_player[2] = 99
+    state.availability_by_player[2] = A.ROSTERED
+    state.ir_policy = IRPolicy.PROJECTION_BASED
+    result = execute_compact_proposal(state, proposal, destination_slot_id=20)
+    assert result.accepted
+    assert result.state.ownership_ids()[30] == 2
+
+
+def test_recovered_reserve_occupant_requires_correction_before_acquisition():
+    from fantasy_football.canonical.model import SlotKind
+    state, proposal = eligible()
+    reserve_slot = NS(slot_id=99, capacity=1, kind=SlotKind.RESERVE)
+    state.definition = replace(
+        state.definition,
+        rules=NS(
+            lineup_slots=state.definition.rules.lineup_slots + (reserve_slot,),
+            acquisition=state.definition.rules.acquisition,
+            undroppable_list_enabled=False,
+            position_limits=(),
+        ),
+        projected_points_by_week={state.scoring_week: {30: 5.0}},
+    )
+    state.owner_by_player[2] = state.definition.indexes.team_index[2]
+    state.slot_by_player[2] = 99
+    state.availability_by_player[2] = A.ROSTERED
+    state.ir_policy = IRPolicy.PROJECTION_BASED
+    result = execute_compact_proposal(state, proposal, destination_slot_id=20)
+    assert not result.accepted
+    assert "correction required" in result.reason
