@@ -216,9 +216,9 @@ def simulate_paths(
             weekly_scores[week] = dict(score_provider(path, week, state))
             if week <= last_regular_week:
                 _update_regular_standings(totals, matchups.get(week, ()), weekly_scores[week])
-                if week < last_regular_week:
-                    priority = _inverse_standings_priority(totals)
-                    state.waiver_order = [state.definition.indexes.team_index[t] for t in priority]
+                # Final regular-season standings also set the Week 15 opening order.
+                priority = _inverse_standings_priority(totals)
+                state.waiver_order = [state.definition.indexes.team_index[t] for t in priority]
         result = resolve_season(
             team_ids, matchups, weekly_scores,
             first_week=first_week, last_regular_week=last_regular_week,
