@@ -24,9 +24,9 @@ class AutomaticManager:
     workspace: LineupOptimizationWorkspace
     bench_slot_ids: tuple[int, ...]
     roster_capacity: int
-    reserve_slot_ids: frozenset[int]
-    bench_capacities: dict[int, int]
     week_values: dict[int, dict[int, PlayerValue]]
+    reserve_slot_ids: frozenset[int] = field(default_factory=frozenset, init=False)
+    bench_capacities: dict[int, int] = field(default_factory=dict, init=False)
     cache_hits: int = 0
     cache_misses: int = 0
     needs_seen: int = 0
@@ -38,6 +38,16 @@ class AutomaticManager:
     _indexed_state: CompactTransactionState | None = field(default=None, init=False, repr=False)
     _team_entries: tuple[tuple[tuple[int, int, int], ...], ...] = field(default=(), init=False, repr=False)
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.reserve_slot_ids = frozenset(
+            rule.slot_id for rule in self.snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.RESERVE
+        )
+        self.bench_capacities = {
+            rule.slot_id: rule.capacity for rule in self.snapshot.rules.lineup_slots
+            if rule.slot_id in self.bench_slot_ids
+        }
 
     @classmethod
     def prepare(cls, snapshot: LeagueSnapshot, policy: ManagerPolicy = ManagerPolicy()) -> "AutomaticManager":
@@ -84,15 +94,7 @@ class AutomaticManager:
                     future_sum += current
                     future_count += 1
                     future_positive = future_positive or current > 0
-        reserve_ids = frozenset(
-            rule.slot_id for rule in snapshot.rules.lineup_slots
-            if rule.kind is SlotKind.RESERVE
-        )
-        bench_capacities = {
-            rule.slot_id: rule.capacity for rule in snapshot.rules.lineup_slots
-            if rule.slot_id in bench
-        }
-        return cls(snapshot, policy, workspace, bench, capacity, reserve_ids, bench_capacities, values)
+        return cls(snapshot, policy, workspace, bench, capacity, values)
 
     def __call__(
         self, team_id: int, phase: AcquisitionAvailability,
