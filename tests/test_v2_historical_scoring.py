@@ -31,8 +31,11 @@ def test_extract_retains_provenance_and_never_certifies_retrospective_projection
                ("s1", "src1", "2026-11-12T00:00:00Z", gzip.compress(raw),
                 hashlib.sha256(raw).hexdigest(), len(raw), "kona_player_info", "gzip"))
     records, captures = extract_records(db, season=2026)
-    report, pairs = summarize(records, captures)
+    report, pairs, histories = summarize(records, captures)
     assert report["same_capture_actual_projection_pairs"] == 1
+    assert report["unique_paired_player_weeks"] == 1
+    assert report["repeated_paired_player_weeks"] == 0
+    assert histories[0]["capture_count"] == 1
     assert report["verified_pregame_pairs"] == 0
     assert not report["calibration_ready"]
     assert pairs[0]["error"] == 13.4 - 26.5
