@@ -45,6 +45,7 @@ def simulate_paths(
     max_successes_per_team_per_phase: int | None = None,
     retain_results: bool = False,
     initial_standings: Mapping[int, TeamStanding] | None = None,
+    acquisition_diagnostics: dict[str, object] | None = None,
 ) -> SimulationBatch:
     """Execute complete weekly score paths and resolve league championships.
 
@@ -76,6 +77,8 @@ def simulate_paths(
     appearances: Counter[int] = Counter()
     retained: list[SeasonResult] = []
     started = perf_counter()
+    acquisition_counts: Counter[str] = Counter()
+    rejection_reasons: Counter[str] = Counter()
     for path in range(paths):
         state = initial.clone()
         weekly_scores: dict[int, Mapping[int, float]] = {}
@@ -88,10 +91,36 @@ def simulate_paths(
                     matchup_period_id=matchup_periods[week],
                 )
             if decision_provider is not None:
-                state = process_compact_acquisition_window(
-                    state, decision_provider,
+                if acquisition_diagnostics is not None:
+                    def counted_decision(team_id, phase, current):
+                        acquisition_counts[f"{phase.value}_decisions"] += 1
+                        decision = decision_provider(team_id, phase, current)
+                        if decision is not None:
+                            acquisition_counts[f"{phase.value}_proposals"] += 1
+                        return decision
+                    decide = counted_decision
+                else:
+                    decide = decision_provider
+                window = process_compact_acquisition_window(
+                    state, decide,
                     max_successes_per_team_per_phase=max_successes_per_team_per_phase,
-                ).state
+                )
+                state = window.state
+                if acquisition_diagnostics is not None:
+                    per_team_waivers: Counter[int] = Counter()
+                    for proposal in window.accepted:
+                        acquisition_counts[f"{proposal.availability.value}_accepted"] += 1
+                        if proposal.availability is AcquisitionAvailability.WAIVERS:
+                            per_team_waivers[proposal.team_id] += 1
+                    for proposal, reason in window.rejected:
+                        acquisition_counts[f"{proposal.availability.value}_rejected"] += 1
+                        rejection_reasons[reason] += 1
+                    acquisition_counts["team_windows_with_multiple_waivers"] += sum(
+                        count > 1 for count in per_team_waivers.values()
+                    )
+                    acquisition_counts["additional_waivers_after_first"] += sum(
+                        count - 1 for count in per_team_waivers.values() if count > 1
+                    )
             weekly_scores[week] = dict(score_provider(path, week, state))
         result = resolve_season(
             team_ids, matchups, weekly_scores,
@@ -102,6 +131,11 @@ def simulate_paths(
         appearances.update(result.playoff_seeds)
         if retain_results:
             retained.append(result)
+    if acquisition_diagnostics is not None:
+        acquisition_diagnostics.update({
+            "counts": dict(sorted(acquisition_counts.items())),
+            "rejection_reasons": dict(sorted(rejection_reasons.items())),
+        })
     return SimulationBatch(
         paths, perf_counter() - started, dict(champions),
         dict(appearances), tuple(retained),
