@@ -1,13 +1,16 @@
 """Run the V2 projected-season integration benchmark against a local snapshot.
 
 Example:
-  python -m fantasy_football.v2.benchmark --db outputs/fantasy_football.runs.sqlite3 --paths 1
+  python -m fantasy_football.v2.benchmark --db outputs/fantasy_football.sqlite3 --paths 1
 
 This is an experimental model, not a calibrated production forecast.
 """
 from __future__ import annotations
 
 import argparse
+import cProfile
+import io
+import pstats
 import json
 from pathlib import Path
 
@@ -49,6 +52,8 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cv", type=float, default=0.35)
     parser.add_argument("--no-management", action="store_true")
+    parser.add_argument("--profile", action="store_true", help="Print cumulative CPU hotspots after the benchmark")
+    parser.add_argument("--profile-limit", type=int, default=25, help="Number of profiling rows")
     args = parser.parse_args(argv)
 
     store = SnapshotStore(args.db)
@@ -69,12 +74,17 @@ def main(argv=None):
         snapshot, scoring_week=snapshot.first_simulation_week,
         ir_policy=IRPolicy.PROJECTION_BASED,
     )
+    profiler = cProfile.Profile() if args.profile else None
+    if profiler is not None:
+        profiler.enable()
     batch = run_projected_seasons(
         snapshot, initial, schedule, periods,
         paths=args.paths, seed=args.seed,
         coefficient_of_variation=args.cv,
         manage_rosters=not args.no_management,
     )
+    if profiler is not None:
+        profiler.disable()
     print(json.dumps({
         "snapshot_id": snapshot_id,
         "paths": batch.paths,
@@ -85,6 +95,11 @@ def main(argv=None):
         "playoff_appearances": batch.playoff_appearances,
         "experimental": True,
     }, indent=2))
+    if profiler is not None:
+        output = io.StringIO()
+        pstats.Stats(profiler, stream=output).strip_dirs().sort_stats("cumulative").print_stats(args.profile_limit)
+        print("\\nPROFILE (cumulative CPU time):")
+        print(output.getvalue())
     return 0
 
 
