@@ -55,7 +55,7 @@ def test_validated_release_round_trip_matches_compact_state(status):
     compact_held = CompactTransactionState.from_evolving(snapshot, held)
     i = compact_held.definition.indexes.player_index[-101]
     assert compact_held.availability_by_player[i] is A.HOLD
-    with pytest.raises(TransactionStateError, match="prohibited acquisition cycle"):
+    with pytest.raises(TransactionStateError, match="before authorized cycle 2"):
         release_held_player(held, snapshot, player_id=-101, authorization=authorization)
     advanced = advance_cycle(held, snapshot, cycle_id=2, scoring_week=16)
     assert next(x.status for x in advanced.availability if x.player_id == -101) is A.HOLD
