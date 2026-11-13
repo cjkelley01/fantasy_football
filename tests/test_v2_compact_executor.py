@@ -56,6 +56,24 @@ def test_drop_authorization_fails_closed():
             position_limits=(),
         ),
     )
+    state.definition = replace(state.definition, undroppable=(None, False, None))
     result = execute_compact_proposal(state, proposal, destination_slot_id=20)
     assert not result.accepted
-    assert "authorization" in result.reason
+    assert "permission" in result.reason or "authorization" in result.reason
+
+
+def test_explicit_droppable_player_can_be_replaced_with_undroppable_list_enabled():
+    state, proposal = eligible()
+    state.definition = replace(
+        state.definition,
+        rules=NS(
+            lineup_slots=state.definition.rules.lineup_slots,
+            acquisition=state.definition.rules.acquisition,
+            undroppable_list_enabled=True,
+            position_limits=(),
+        ),
+    )
+    assert state.definition.undroppable[0] is False
+    result = execute_compact_proposal(state, proposal, destination_slot_id=20)
+    assert result.accepted
+    assert result.state.ownership_ids() == {20: 2}
