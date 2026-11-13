@@ -50,9 +50,14 @@ def execute_compact_proposal(
     if drop is not None and rules.undroppable_list_enabled is not False and d.undroppable[drop] is not False:
         return CompactExecutionResult(state, False, "drop authorization requires canonical evidence")
     reserve_slots = {s.slot_id for s in rules.lineup_slots if s.kind is SlotKind.RESERVE}
+    # Collect the team's existing roster once. Reuse it for reserve evidence
+    # and position limits instead of scanning the entire player pool twice.
+    owned_indices = [
+        i for i, owner in enumerate(state.owner_by_player) if owner == team
+    ]
     reserve_players = [
-        d.indexes.player_ids[i] for i, owner in enumerate(state.owner_by_player)
-        if owner == team and state.slot_by_player[i] in reserve_slots
+        d.indexes.player_ids[i] for i in owned_indices
+        if state.slot_by_player[i] in reserve_slots
     ]
     if reserve_players:
         if state.ir_policy is IRPolicy.PROJECTION_BASED:
@@ -82,8 +87,8 @@ def execute_compact_proposal(
         add_pos = positions[add]
         limit = next((r.maximum for r in rules.position_limits if r.position_id == add_pos), None)
         if limit is not None:
-            count = sum(owner == team and i != drop and positions[i] == add_pos
-                        for i, owner in enumerate(state.owner_by_player))
+            count = sum(i != drop and positions[i] == add_pos
+                        for i in owned_indices)
             if count >= limit:
                 return CompactExecutionResult(state, False, "position limit reached")
     candidate = state.clone()
