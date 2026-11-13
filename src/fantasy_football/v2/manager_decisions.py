@@ -120,10 +120,7 @@ def propose_acquisition(
     # exact ordering and tie-breakers without sorting all free agents.
     best_proposal: tuple[float, float, int, int, AcquisitionAvailability] | None = None
     available = eligible_candidates = positive_candidates = 0
-    canonical_eligible = 0
     for i, pid in enumerate(ids):
-        if any(slot in state.definition.eligible_slots[i] for slot in need_slot_ids):
-            canonical_eligible += 1
         status = state.availability_by_player[i]
         if state.owner_by_player[i] != -1 or status not in allowed_availability:
             continue
@@ -153,6 +150,12 @@ def propose_acquisition(
         if not available:
             record("no_available_players_in_phase")
         elif not eligible_candidates:
+            # Canonical eligibility is only needed to explain a failed search.
+            # Avoid scanning every player/slot on successful decisions.
+            needed = frozenset(need_slot_ids)
+            canonical_eligible = any(
+                needed.intersection(slots) for slots in state.definition.eligible_slots
+            )
             record("no_eligible_player_in_available_pool" if canonical_eligible else "no_canonical_eligible_player")
         elif not positive_candidates:
             record("no_positive_current_projection")
