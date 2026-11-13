@@ -57,6 +57,7 @@ def main(argv=None):
     parser.add_argument("--cache-stats", action="store_true", help="Print lineup-cache hit and miss counts")
     parser.add_argument("--acquisition-stats", action="store_true", help="Print per-phase acquisition attempts, outcomes, and rejection reasons")
     parser.add_argument("--profile", action="store_true", help="Print cumulative CPU hotspots after the benchmark")
+    parser.add_argument("--detail-diagnostics", action="store_true", help="Include rejection and waiver claim breakdowns by week and team")
     parser.add_argument("--profile-limit", type=int, default=25, help="Number of profiling rows")
     args = parser.parse_args(argv)
     if not 0 <= args.vacancy_bonus < float("inf"):
@@ -83,7 +84,7 @@ def main(argv=None):
     profiler = cProfile.Profile() if args.profile else None
     if profiler is not None:
         profiler.enable()
-    diagnostics = {} if (args.cache_stats or args.acquisition_stats) else None
+    diagnostics = {} if (args.cache_stats or args.acquisition_stats or args.detail_diagnostics) else None
     batch = run_projected_seasons(
         snapshot, initial, schedule, periods,
         paths=args.paths, seed=args.seed,
@@ -105,7 +106,7 @@ def main(argv=None):
         "experimental": True,
         "vacancy_bonus": args.vacancy_bonus,
         **({"cache_stats": {k: v for k, v in diagnostics.items() if k not in ("acquisitions", "manager_needs")}} if args.cache_stats else {}),
-        **({"acquisition_stats": diagnostics["acquisitions"], "manager_needs": diagnostics["manager_needs"]} if args.acquisition_stats else {}),
+        **({"acquisition_stats": {k: v for k, v in diagnostics["acquisitions"].items() if args.detail_diagnostics or k not in ("rejections_by_week_team", "accepted_waivers_by_week_team")}, "manager_needs": diagnostics["manager_needs"]} if (args.acquisition_stats or args.detail_diagnostics) else {}),
     }, indent=2))
     if profiler is not None:
         output = io.StringIO()
