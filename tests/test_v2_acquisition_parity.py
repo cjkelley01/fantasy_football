@@ -42,3 +42,34 @@ def test_successful_waiver_add_matches_v1_state():
     assert result.v1_accepted, result.v1_reason
     assert result.v2_accepted, result.v2_reason
     assert result.matches, result.differences
+
+
+def test_successive_free_agent_and_waiver_claims_match_v1():
+    from fantasy_football.v2.acquisition_parity import reconcile_acquisition_sequence
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    steps = reconcile_acquisition_sequence(snapshot, initial, (
+        (AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+        (AcquisitionProposal(3, 4, None, 20, 1.0, A.WAIVERS), 20),
+    ))
+    assert len(steps) == 2
+    for step in steps:
+        assert step.result.v1_accepted, step.result.v1_reason
+        assert step.result.v2_accepted, step.result.v2_reason
+        assert step.result.matches, step.result.differences
+
+
+def test_rejected_claim_between_valid_claims_does_not_diverge():
+    from fantasy_football.v2.acquisition_parity import reconcile_acquisition_sequence
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    steps = reconcile_acquisition_sequence(snapshot, initial, (
+        (AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+        (AcquisitionProposal(2, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+        (AcquisitionProposal(3, 4, None, 20, 1.0, A.WAIVERS), 20),
+    ))
+    assert [step.result.v1_accepted for step in steps] == [True, False, True]
+    assert [step.result.v2_accepted for step in steps] == [True, False, True]
+    assert all(step.result.matches for step in steps), [
+        step.result.differences for step in steps
+    ]
