@@ -13,6 +13,7 @@ from typing import Callable, Mapping, Sequence
 
 from fantasy_football.v2.compact_cycle import advance_compact_cycle
 from fantasy_football.v2.compact_window import process_compact_acquisition_window
+from fantasy_football.v2.ir_correction import correct_recovered_ir
 from fantasy_football.v2.season_results import SeasonResult, TeamStanding, resolve_season
 from fantasy_football.v2.transaction_state import CompactTransactionState
 from fantasy_football.v2.waiver_window import WindowDecision
@@ -82,6 +83,7 @@ def simulate_paths(
     rejection_context: Counter[tuple[int, int, str]] = Counter()
     waiver_team_week_counts: Counter[tuple[int, int]] = Counter()
     rejection_examples: dict[tuple[int, int, str], dict[str, object]] = {}
+    ir_correction_counts: Counter[str] = Counter()
     for path in range(paths):
         state = initial.clone()
         weekly_scores: dict[int, Mapping[int, float]] = {}
@@ -94,6 +96,12 @@ def simulate_paths(
                     matchup_period_id=matchup_periods[week],
                 )
             if decision_provider is not None:
+                correction = correct_recovered_ir(state)
+                state = correction.state
+                if acquisition_diagnostics is not None:
+                    ir_correction_counts["activated"] += len(correction.activated)
+                    for _, reason in correction.blocked:
+                        ir_correction_counts[f"blocked_{reason}"] += 1
                 if acquisition_diagnostics is not None:
                     def counted_decision(team_id, phase, current):
                         acquisition_counts[f"{phase.value}_decisions"] += 1
@@ -161,6 +169,7 @@ def simulate_paths(
     if acquisition_diagnostics is not None:
         acquisition_diagnostics.update({
             "counts": dict(sorted(acquisition_counts.items())),
+            "ir_corrections": dict(sorted(ir_correction_counts.items())),
             "rejection_reasons": dict(sorted(rejection_reasons.items())),
             "rejections_by_week_team": [
                 {"week": week, "team_id": team, "reason": reason, "count": count,
