@@ -1,18 +1,20 @@
-"""Integration harness tests: both engines run, with no mocked transaction calls."""
-from dataclasses import replace
-
-from fantasy_football.evolving_state import AcquisitionAvailability as A
+"""Run both real transaction engines against a validated canonical fixture."""
+from fantasy_football.evolving_state import (
+    AcquisitionAvailability as A, IRPolicy, initialize_evolving_state,
+)
 from fantasy_football.v2.acquisition_parity import reconcile_acquisition
 from fantasy_football.v2.manager_decisions import AcquisitionProposal
-from test_v2_transaction_state import fixture
+from tests.canonical_fixtures import canonical_snapshot
 
 
 def test_identical_invalid_acquisition_rejected_by_both_engines():
-    snapshot, initial = fixture()
-    proposal = AcquisitionProposal(2, 999999, None, 20, 1.0, A.WAIVERS)
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    proposal = AcquisitionProposal(1, 999999, None, 20, 1.0, A.WAIVERS)
     result = reconcile_acquisition(snapshot, initial, proposal, destination_slot_id=20)
+    assert not result.v1_accepted
     assert not result.v2_accepted
-    assert not result.matches or not result.v1_accepted
+    assert result.matches
 
 
 def test_parity_result_reports_differences_without_masking_them():
