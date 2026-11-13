@@ -32,6 +32,7 @@ class AutomaticManager:
     no_need_seen: int = 0
     proposals_returned: int = 0
     no_proposal_with_need: int = 0
+    no_proposal_reasons: dict[str, int] = field(default_factory=dict)
     _indexed_state: CompactTransactionState | None = field(default=None, init=False, repr=False)
     _team_entries: tuple[tuple[tuple[int, int, int], ...], ...] = field(default=(), init=False, repr=False)
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
@@ -172,6 +173,7 @@ class AutomaticManager:
                 if rule.kind is SlotKind.RESERVE
             ),
             allowed_availability=frozenset({phase}),
+            diagnostics=self.no_proposal_reasons,
         )
         if proposal is None:
             self.no_proposal_with_need += 1
@@ -179,10 +181,12 @@ class AutomaticManager:
         if occupancy[destination] >= bench_capacity[destination]:
             if proposal.drop_player_id is None:
                 self.no_proposal_with_need += 1
+                self.no_proposal_reasons["bench_full_without_drop"] = self.no_proposal_reasons.get("bench_full_without_drop", 0) + 1
                 return None
             drop_index = compact.definition.indexes.player_index[proposal.drop_player_id]
             if compact.slot_by_player[drop_index] not in self.bench_slot_ids:
                 self.no_proposal_with_need += 1
+                self.no_proposal_reasons["drop_does_not_free_bench"] = self.no_proposal_reasons.get("drop_does_not_free_bench", 0) + 1
                 return None
             destination = compact.slot_by_player[drop_index]
         self.proposals_returned += 1
