@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 
 from fantasy_football.v2.adaptive_scoring import WIDTH
+from fantasy_football.v2.starter_scoring import MIN_PROJECTION
 from fantasy_football.v2.two_track_evaluation import evaluate_rows
 
 
@@ -46,6 +47,16 @@ def run(root, *, last_completed_2026_week, draws=200):
     if draws < 10:
         raise ValueError("draws must be >= 10")
     rows = load_rows(root, last_completed_2026_week)
+    coverage = {}
+    for season in (2024, 2025, 2026):
+        selected = [r for r in rows if r["season"] == season]
+        by_position = {}
+        for pos in sorted(WIDTH):
+            group = [r for r in selected if r["position"] == pos]
+            eligible = sum(r["projection"] >= MIN_PROJECTION[pos] for r in group)
+            by_position[str(pos)] = {"paired": len(group), "eligible": eligible,
+                                     "below_threshold": len(group) - eligible}
+        coverage[str(season)] = by_position
     results = {}
     for season in (2025, 2026):
         training = [r for r in rows if r["season"] < season]
@@ -61,7 +72,7 @@ def run(root, *, last_completed_2026_week, draws=200):
             "ESPN historical weekly projections equal projections available at kickoff (unverified)",
             "production_ready": False, "chronology": "train only on prior seasons",
             "last_completed_2026_week": last_completed_2026_week,
-            "draws": draws, "paired_rows_by_season": {
+            "draws": draws, "eligibility_audit": coverage, "paired_rows_by_season": {
                 str(s): sum(r["season"] == s for r in rows) for s in (2024, 2025, 2026)},
             "results": results}
 
@@ -80,6 +91,8 @@ def main(argv=None):
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"Paired observations: {report['paired_rows_by_season']}")
+    for season, positions in report["eligibility_audit"].items():
+        print(f"{season} eligibility: {positions}")
     for season, result in report["results"].items():
         print(f"{season}: {result['status']} training={result['training_pairs']} evaluation={result['evaluation_pairs']}")
         for row in result["metrics"]:
