@@ -145,7 +145,7 @@ def main(argv=None):
         args.history_output.parent.mkdir(parents=True, exist_ok=True)
         with args.history_output.open("w", encoding="utf-8") as stream:
             for row in histories:
-                stream.write(json.dumps(row, sort_keys=True) + "\\n")
+                stream.write(json.dumps(row, sort_keys=True) + "\n")
         report["history_output"] = str(args.history_output)
     print(json.dumps(report, indent=2))
     return 0
