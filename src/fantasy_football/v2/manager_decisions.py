@@ -62,6 +62,7 @@ def propose_acquisition(
     forbidden_drop_ids: frozenset[int] = frozenset(),
     excluded_capacity_slot_ids: frozenset[int] = frozenset(),
     allowed_availability: frozenset[AcquisitionAvailability] = frozenset({AcquisitionAvailability.FREE_AGENT, AcquisitionAvailability.WAIVERS}),
+    diagnostics: dict[str, int] | None = None,
 ) -> AcquisitionProposal | None:
     """Find a sensible acquisition for an unmet lineup need.
 
@@ -87,6 +88,10 @@ def propose_acquisition(
              if owner == team_index and state.slot_by_player[i] not in excluded_capacity_slot_ids]
     if len(owned) > roster_capacity:
         raise ValueError("roster exceeds provided capacity")
+    def record(reason: str) -> None:
+        if diagnostics is not None:
+            diagnostics[reason] = diagnostics.get(reason, 0) + 1
+
     if len(owned) == roster_capacity:
         best_drop: tuple[float, int] | None = None
         for i in owned:
@@ -104,6 +109,7 @@ def propose_acquisition(
             if best_drop is None or option < best_drop:
                 best_drop = option
         if best_drop is None:
+            record("no_authorized_unprotected_drop")
             return None
         drop_cost, drop_id = best_drop
     else:
@@ -112,10 +118,12 @@ def propose_acquisition(
     # Only the top proposal is returned. A running minimum preserves the
     # exact ordering and tie-breakers without sorting all free agents.
     best_proposal: tuple[float, float, int, int, AcquisitionAvailability] | None = None
+    available = eligible_candidates = positive_candidates = 0
     for i, pid in enumerate(ids):
         status = state.availability_by_player[i]
         if state.owner_by_player[i] != -1 or status not in allowed_availability:
             continue
+        available += 1
         eligible = state.definition.eligible_slots[i]
         slot = None
         for needed_slot in need_slot_ids:
@@ -124,9 +132,11 @@ def propose_acquisition(
                 break
         if slot is None:
             continue
+        eligible_candidates += 1
         value = values.get(pid)
         if value is None or value.current <= 0:
             continue
+        positive_candidates += 1
         gain = value.current - drop_cost
         if gain < policy.minimum_net_gain:
             continue
@@ -134,6 +144,14 @@ def propose_acquisition(
         if best_proposal is None or option < best_proposal:
             best_proposal = option
     if best_proposal is None:
+        if not available:
+            record("no_available_players_in_phase")
+        elif not eligible_candidates:
+            record("no_position_eligible_candidate")
+        elif not positive_candidates:
+            record("no_positive_current_projection")
+        else:
+            record("candidate_gain_below_threshold")
         return None
     neg_gain, _, pid, slot, status = best_proposal
     return AcquisitionProposal(team_id, pid, drop_id, slot, -neg_gain, status)
