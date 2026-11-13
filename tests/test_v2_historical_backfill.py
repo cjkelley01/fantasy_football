@@ -24,7 +24,7 @@ def test_fetch_week_paginates_and_deduplicates():
     class Request:
         def league_get(self, *, params, headers):
             offset = json.loads(headers["x-fantasy-filter"])["players"]["offset"]
-            return {"players": [_player(1, 10, 14)] if offset == 0 else [_player(1, 10, 14), _player(2, 8, 9)] if offset == 1 else []}
+            return {"players": [_player(1, 10, 14)] if offset == 0 else [_player(2, 8, 9)] if offset == 1 else []}
     rows, pages = fetch_week(Request(), 2024, 1, page_size=1, pause=0)
     assert pages == 3
     assert len(rows) == 4
