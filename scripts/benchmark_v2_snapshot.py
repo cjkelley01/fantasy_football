@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import statistics
+import sqlite3
 import sys
 from collections import Counter
 from pathlib import Path
@@ -23,6 +24,7 @@ if str(ROOT) not in sys.path:
 
 from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state
 from fantasy_football.snapshot_store import SnapshotStore
+from fantasy_football.config import load_settings, SettingsError
 from fantasy_football.v2.projected_scoring import ProjectedScoreProvider
 from fantasy_football.v2.season_results import TeamStanding
 from fantasy_football.v2.simulation_batch import simulate_paths
@@ -70,8 +72,49 @@ def snapshot_schedule(snapshot):
     return schedule, {w: week_period[w] for w in range(first, 19)}
 
 
+def locate_database(explicit, snapshot_id):
+    if explicit is not None:
+        candidates = [Path(explicit)]
+    else:
+        candidates = []
+        try:
+            candidates.append(load_settings().snapshot_db_path)
+        except SettingsError:
+            pass
+        candidates.extend((Path("outputs/fantasy_football.sqlite3"),
+                           Path("outputs/fantasy_football.runs.sqlite3")))
+        candidates.extend(sorted(Path("outputs").glob("*.sqlite3")))
+    checked = []
+    for path in dict.fromkeys(candidates):
+        if not path.is_file():
+            checked.append(f"{path}: missing")
+            continue
+        try:
+            with sqlite3.connect(f"file:{path.resolve().as_posix()}?mode=ro", uri=True) as connection:
+                tables = {row[0] for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )}
+                if not {"store_metadata", "snapshots", "canonical_documents"}.issubset(tables):
+                    checked.append(f"{path}: not a canonical snapshot store")
+                    continue
+                found = connection.execute(
+                    "SELECT 1 FROM snapshots WHERE snapshot_id=?", (snapshot_id,)
+                ).fetchone()
+                if found is None:
+                    checked.append(f"{path}: canonical store, snapshot ID not found")
+                    continue
+            return path
+        except sqlite3.DatabaseError as exc:
+            checked.append(f"{path}: SQLite error ({exc})")
+    raise ValueError("Cannot locate requested canonical snapshot. Checked:\n  "
+                     + "\n  ".join(checked)
+                     + "\nPass --db PATH to select the correct snapshot database.")
+
+
 def run(db, snapshot_id, paths, repeats, seed, cv):
-    loaded = SnapshotStore(db).load(snapshot_id)
+    resolved_db = locate_database(db, snapshot_id)
+    print(f'Using canonical snapshot database: {resolved_db}', flush=True)
+    loaded = SnapshotStore(resolved_db).load(snapshot_id)
     snapshot = loaded.snapshot
     schedule, periods = snapshot_schedule(snapshot)
     first = snapshot.first_simulation_week
@@ -123,7 +166,7 @@ def run(db, snapshot_id, paths, repeats, seed, cv):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--db", default="outputs/fantasy_football.runs.sqlite3")
+    parser.add_argument("--db", default=None, help="Canonical snapshot SQLite path; autodetected if omitted")
     parser.add_argument("--snapshot-id", required=True)
     parser.add_argument("--paths", type=int, default=100)
     parser.add_argument("--repeats", type=int, default=2)
