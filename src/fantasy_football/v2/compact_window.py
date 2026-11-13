@@ -55,6 +55,9 @@ def process_compact_acquisition_window(
                 if (max_successes_per_team_per_phase is not None
                         and successes.get(team_id, 0) >= max_successes_per_team_per_phase):
                     continue
+                skip = getattr(decide, 'skip_decision', None)
+                if skip is not None and skip(team_id, phase, current):
+                    continue
                 decision = decide(team_id, phase, current)
                 if decision is None:
                     continue
