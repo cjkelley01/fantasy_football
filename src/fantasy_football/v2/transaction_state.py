@@ -21,6 +21,7 @@ class CompactTransactionDefinition:
     default_positions: tuple[int, ...]
     # Rules and evidence are immutable canonical objects, retained without loss.
     rules: object
+    projected_points_by_week: dict[int, dict[int, float]] | None = None
 
     @classmethod
     def from_snapshot(cls, snapshot: LeagueSnapshot) -> "CompactTransactionDefinition":
@@ -39,6 +40,11 @@ class CompactTransactionDefinition:
             tuple(p.is_undroppable for p in players),
             tuple(getattr(p, 'default_position_id', None) for p in players),
             snapshot.rules,
+            {
+                week: {record.player_id: record.effective_projection for record in snapshot.player_weeks
+                       if record.scoring_week == week and record.season == snapshot.season}
+                for week in range(snapshot.first_simulation_week, snapshot.final_simulation_week + 1)
+            },
         )
 
 
