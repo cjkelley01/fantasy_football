@@ -12,6 +12,20 @@ from fantasy_football.canonical.model import LeagueSnapshot
 from fantasy_football.v2.compact_state import CompactLeagueDefinition
 
 
+def _projection_index(snapshot: LeagueSnapshot) -> dict[int, dict[int, float]]:
+    """Index only supplied projection records; never fabricate missing evidence.
+
+    Minimal test snapshots may omit player_weeks entirely. A real snapshot
+    supplies canonical player-week records, which are indexed by scoring week.
+    """
+    by_week: dict[int, dict[int, float]] = {}
+    for record in getattr(snapshot, "player_weeks", ()):
+        if getattr(record, "season", snapshot.season) != snapshot.season:
+            continue
+        by_week.setdefault(record.scoring_week, {})[record.player_id] = record.effective_projection
+    return by_week
+
+
 @dataclass(frozen=True, slots=True)
 class CompactTransactionDefinition:
     indexes: CompactLeagueDefinition
@@ -40,11 +54,7 @@ class CompactTransactionDefinition:
             tuple(p.is_undroppable for p in players),
             tuple(getattr(p, 'default_position_id', None) for p in players),
             snapshot.rules,
-            {
-                week: {record.player_id: record.effective_projection for record in snapshot.player_weeks
-                       if record.scoring_week == week and record.season == snapshot.season}
-                for week in range(snapshot.first_simulation_week, snapshot.final_simulation_week + 1)
-            },
+            _projection_index(snapshot),
         )
 
 
