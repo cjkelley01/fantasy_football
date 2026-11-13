@@ -34,3 +34,20 @@ def test_compact_window_does_not_repeat_rejected_claim():
     assert not result.accepted
     assert len(result.rejected) == 1
     assert result.state.ownership_ids() == {10: 2}
+
+
+def test_free_agent_order_is_reverse_of_opening_priority_even_after_waiver_move():
+    state, _ = eligible()
+    opening = state.waiver_priority_ids()
+    assert opening == (2, 1)
+    calls = []
+
+    def decide(team, phase, current):
+        calls.append((team, phase))
+        return None
+
+    process_compact_acquisition_window(state, decide)
+    waiver_visits = [team for team, phase in calls if phase is A.WAIVERS]
+    free_agent_visits = [team for team, phase in calls if phase is A.FREE_AGENT]
+    assert waiver_visits == list(opening)
+    assert free_agent_visits == list(reversed(opening))
