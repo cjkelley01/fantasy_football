@@ -21,9 +21,10 @@ class ManagerPolicy:
     future_weight: float = 0.65
     temporary_absence_protection: float = 12.0
     max_candidates: int | None = None
+    essential_vacancy_bonus: float = 8.0
 
     def __post_init__(self) -> None:
-        if self.minimum_net_gain < 0 or self.future_weight < 0 or self.temporary_absence_protection < 0:
+        if self.minimum_net_gain < 0 or self.future_weight < 0 or self.temporary_absence_protection < 0 or self.essential_vacancy_bonus < 0:
             raise ValueError("policy weights must be nonnegative")
         if self.max_candidates is not None and self.max_candidates < 1:
             raise ValueError("max_candidates must be positive")
@@ -119,7 +120,10 @@ def propose_acquisition(
     # exact ordering and tie-breakers without sorting all free agents.
     best_proposal: tuple[float, float, int, int, AcquisitionAvailability] | None = None
     available = eligible_candidates = positive_candidates = 0
+    canonical_eligible = 0
     for i, pid in enumerate(ids):
+        if any(slot in state.definition.eligible_slots[i] for slot in need_slot_ids):
+            canonical_eligible += 1
         status = state.availability_by_player[i]
         if state.owner_by_player[i] != -1 or status not in allowed_availability:
             continue
@@ -138,7 +142,9 @@ def propose_acquisition(
             continue
         positive_candidates += 1
         gain = value.current - drop_cost
-        if gain < policy.minimum_net_gain:
+        # Filling an actual vacant starter has value beyond the raw player
+        # swap, but the premium never bypasses legal drop protections.
+        if gain + policy.essential_vacancy_bonus < policy.minimum_net_gain:
             continue
         option = (-gain, -value.current, pid, slot, status)
         if best_proposal is None or option < best_proposal:
@@ -147,7 +153,7 @@ def propose_acquisition(
         if not available:
             record("no_available_players_in_phase")
         elif not eligible_candidates:
-            record("no_position_eligible_candidate")
+            record("no_eligible_player_in_available_pool" if canonical_eligible else "no_canonical_eligible_player")
         elif not positive_candidates:
             record("no_positive_current_projection")
         else:
