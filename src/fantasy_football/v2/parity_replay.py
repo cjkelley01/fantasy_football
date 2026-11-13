@@ -28,26 +28,27 @@ from fantasy_football.v2.compact_executor import execute_compact_proposal
 from fantasy_football.v2.manager_decisions import ManagerPolicy
 from fantasy_football.v2.transaction_executor import execute_proposal
 from fantasy_football.v2.transaction_state import CompactTransactionState
+from fantasy_football.evolving_state import release_held_player
 
 
 def differences(canonical, compact, snapshot):
     expected = CompactTransactionState.from_evolving(snapshot, canonical)
     fields = ('owner_by_player', 'slot_by_player', 'availability_by_player',
-              'waiver_order', 'season_acquisition_counts', 'matchup_acquisition_counts')
+              'waiver_order', 'initial_waiver_order', 'season_acquisition_counts',
+              'matchup_acquisition_counts', 'cycle_id', 'scoring_week', 'matchup_period_id')
     mismatches = [field for field in fields if getattr(expected, field) != getattr(compact, field)]
-    if [getattr(x, 'prohibited_cycle_id', None) for x in expected.availability_details_by_player] != [
-        getattr(x, 'prohibited_cycle_id', None) for x in compact.availability_details_by_player
-    ]:
-        mismatches.append('prohibited_cycle_id')
+    if expected.availability_details_by_player != compact.availability_details_by_player:
+        mismatches.append('availability_details')
     return mismatches
 
 
-def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_cv=0.35):
+def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_cv=0.35,
+           release_authorizations=(), boundary_at_utc=None):
     canonical = initialize_evolving_state(snapshot, scoring_week=snapshot.first_simulation_week,
                                            ir_policy=IRPolicy.PROJECTION_BASED)
     compact = CompactTransactionState.from_evolving(snapshot, canonical)
     manager = AutomaticManager.prepare(snapshot, ManagerPolicy(essential_vacancy_bonus=vacancy_bonus))
-    examined = accepted = ir_activated = ir_with_drop = 0
+    examined = accepted = ir_activated = ir_with_drop = releases_applied = 0
     discrepancies = []
     weekly = []
     games, _ = canonical_schedule(snapshot)
@@ -72,6 +73,35 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_
         mismatch = differences(canonical, compact, snapshot)
         if mismatch:
             discrepancies.append({'week': week, 'stage': 'cycle', 'mismatches': mismatch})
+            break
+        # Release only with V1-validated, player-specific authorization.
+        # Never infer release merely from elapsed cycles.
+        for authorization in release_authorizations:
+            index = compact.definition.indexes.player_index[authorization.player_id]
+            if compact.availability_by_player[index] is not A.HOLD:
+                continue
+            if canonical.cycle_id < authorization.eligible_cycle_id:
+                continue
+            try:
+                canonical = release_held_player(
+                    canonical, snapshot, player_id=authorization.player_id,
+                    authorization=authorization, boundary_at_utc=boundary_at_utc,
+                )
+            except Exception as exc:
+                discrepancies.append({'week': week, 'stage': 'availability_release',
+                    'player_id': authorization.player_id, 'canonical_error': str(exc)})
+                break
+            released = next(item for item in canonical.availability
+                            if item.player_id == authorization.player_id)
+            compact.availability_by_player[index] = released.status
+            compact.availability_details_by_player[index] = released
+            releases_applied += 1
+            mismatch = differences(canonical, compact, snapshot)
+            if mismatch:
+                discrepancies.append({'week': week, 'stage': 'availability_release',
+                    'player_id': authorization.player_id, 'mismatches': mismatch})
+                break
+        if discrepancies:
             break
         correction = correct_recovered_ir(compact, values=manager.week_values.get(week),
                                           policy=manager.policy)
@@ -164,11 +194,14 @@ def replay(snapshot, *, vacancy_bonus=4.0, last_week=None, score_seed=42, score_
             'last_week_requested': end, 'weeks_completed': len(weekly),
             'weekly': weekly, 'proposals_examined': examined, 'accepted': accepted,
             'ir_activated': ir_activated, 'ir_activations_requiring_drop': ir_with_drop,
+            'authorized_releases_applied': releases_applied,
+            'held_players_remaining': sum(status is A.HOLD for status in compact.availability_by_player),
             'discrepancies': discrepancies,
             'parity_passed': not discrepancies,
             'scope': 'repeat_acquisitions_with_shared_scores_and_standings_priority_resets',
             'limitations': ['shared V2 scores, not V1/V2 scoring parity',
-                            'no availability release', 'canonical ledger not compared'],
+                            'no automatic release evidence provider; only supplied validated authorizations',
+                            'canonical ledger not compared'],
             'ledger_compared': False}
 
 
