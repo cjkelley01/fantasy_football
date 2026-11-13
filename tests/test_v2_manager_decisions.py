@@ -115,8 +115,8 @@ def test_manager_diagnostics_classify_missing_phase_candidates():
 def test_essential_vacancy_bonus_can_justify_modest_short_term_roster_cost():
     state, values = setup_state()
     values = dict(values)
-    values[30] = PlayerValue(4, 0)
-    values[40] = PlayerValue(4, 0)
+    values[30] = PlayerValue(1, 0)
+    values[40] = PlayerValue(1, 0)
     reasons = {}
     without_bonus = propose_acquisition(
         state, team_id=1, need_slot_ids=(0,), values=values, roster_capacity=3,
