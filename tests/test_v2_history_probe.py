@@ -13,14 +13,13 @@ class FakeResponse:
 
 
 class FakeSession:
-    def get(self, url, **kwargs):
-        assert "/seasons/2024/" in url
-        assert kwargs["timeout"] == 20
-        return FakeResponse()
+    def league_get(self, **kwargs):
+        assert kwargs["params"]["scoringPeriodId"] == 1
+        return FakeResponse().json()
 
 
 def test_history_probe_reports_both_stat_types_without_pregame_claim():
-    result = probe(FakeSession(), 123, 2024)
+    result = probe(lambda season: FakeSession(), 123, 2024)
     assert result["http_status"] == 200
     assert result["players_returned"] == 1
     assert result["weekly_stat_counts"] == [
