@@ -27,6 +27,11 @@ class AutomaticManager:
     week_values: dict[int, dict[int, PlayerValue]]
     cache_hits: int = 0
     cache_misses: int = 0
+    needs_seen: int = 0
+    multiple_needs_seen: int = 0
+    no_need_seen: int = 0
+    proposals_returned: int = 0
+    no_proposal_with_need: int = 0
     _indexed_state: CompactTransactionState | None = field(default=None, init=False, repr=False)
     _team_entries: tuple[tuple[tuple[int, int, int], ...], ...] = field(default=(), init=False, repr=False)
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
@@ -125,7 +130,11 @@ class AutomaticManager:
             self.cache_hits += 1
         need_slots, protected = lineup_info
         if not need_slots:
+            self.no_need_seen += 1
             return None
+        self.needs_seen += 1
+        if len(need_slots) > 1:
+            self.multiple_needs_seen += 1
         # A bench slot must have room after a proposed drop, otherwise the
         # executor will reject the proposal without mutating state.
         occupancy = {
@@ -165,12 +174,16 @@ class AutomaticManager:
             allowed_availability=frozenset({phase}),
         )
         if proposal is None:
+            self.no_proposal_with_need += 1
             return None
         if occupancy[destination] >= bench_capacity[destination]:
             if proposal.drop_player_id is None:
+                self.no_proposal_with_need += 1
                 return None
             drop_index = compact.definition.indexes.player_index[proposal.drop_player_id]
             if compact.slot_by_player[drop_index] not in self.bench_slot_ids:
+                self.no_proposal_with_need += 1
                 return None
             destination = compact.slot_by_player[drop_index]
+        self.proposals_returned += 1
         return WindowDecision(proposal, destination)
