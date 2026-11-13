@@ -95,3 +95,63 @@ def test_protected_drop_rejected_atomically_by_both_engines():
     assert not result.v1_accepted
     assert not result.v2_accepted
     assert result.matches, result.differences
+
+
+# Broad parity matrix: each case executes both real engines, not mocked calls.
+import pytest
+from dataclasses import replace
+from fantasy_football.v2.acquisition_parity import reconcile_acquisition_sequence
+
+
+@pytest.mark.parametrize("team,player,drop,slot,phase", [
+    (1, 3, None, 20, A.FREE_AGENT),  # ordinary free agent
+    (3, 4, None, 20, A.WAIVERS),     # waiver priority rotation
+    (2, 3, 2, 0, A.FREE_AGENT),      # atomic replacement
+    (1, 3, 1, 0, A.FREE_AGENT),      # protected drop
+    (2, 3, None, 0, A.FREE_AGENT),   # occupied starter
+    (2, 4, None, 20, A.FREE_AGENT),  # wrong availability phase
+    (3, 3, None, 21, A.FREE_AGENT),  # IR destination forbidden
+    (3, 3, None, 16, A.FREE_AGENT),  # ineligible destination
+    (3, 999999, None, 20, A.WAIVERS), # unknown player
+    (999999, 3, None, 20, A.FREE_AGENT), # unknown team
+])
+def test_acquisition_legality_matrix_matches_v1(team, player, drop, slot, phase):
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    result = reconcile_acquisition(
+        snapshot, initial, AcquisitionProposal(team, player, drop, slot, 1.0, phase),
+        destination_slot_id=slot,
+    )
+    assert result.matches, (
+        team, player, drop, slot, phase, result.v1_reason, result.v2_reason,
+        result.differences,
+    )
+
+
+def test_claimed_player_cannot_be_reacquired_by_competing_team():
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    steps = reconcile_acquisition_sequence(snapshot, initial, (
+        (AcquisitionProposal(3, 4, None, 20, 1.0, A.WAIVERS), 20),
+        (AcquisitionProposal(4, 4, None, 20, 1.0, A.WAIVERS), 20),
+        (AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+    ))
+    assert [s.result.v1_accepted for s in steps] == [True, False, True]
+    assert all(s.result.matches for s in steps), [s.result.differences for s in steps]
+
+
+def test_matchup_acquisition_limit_rejection_matches_v1():
+    snapshot = canonical_snapshot()
+    snapshot = replace(
+        snapshot, rules=replace(
+            snapshot.rules,
+            acquisition=replace(snapshot.rules.acquisition, matchup_limit=0),
+        ),
+    )
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    result = reconcile_acquisition(
+        snapshot, initial, AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT),
+        destination_slot_id=20,
+    )
+    assert not result.v1_accepted and not result.v2_accepted
+    assert result.matches, result.differences
