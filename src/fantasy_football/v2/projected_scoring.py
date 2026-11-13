@@ -25,6 +25,7 @@ class ProjectedScoreProvider:
     seed: int = 0
     coefficient_of_variation: float = 0.35
     _rngs: dict[int, Random] = field(default_factory=dict)
+    _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[float, ...]] = field(default_factory=dict)
 
     @classmethod
     def prepare(
@@ -47,23 +48,29 @@ class ProjectedScoreProvider:
             self._rngs[path] = rng
         ids = state.definition.indexes.player_ids
         teams = state.definition.indexes.team_ids
+        # Group once per week rather than scanning the full player universe
+        # separately for every team. Cache exact projected lineups across paths;
+        # only the stochastic draws vary between paths.
+        rosters: list[list[int]] = [[] for _ in teams]
+        reserve = self.workspace.reserve_slot_ids
+        for index, owner in enumerate(state.owner_by_player):
+            if owner >= 0 and state.slot_by_player[index] is not None and state.slot_by_player[index] not in reserve:
+                rosters[owner].append(ids[index])
         scores: dict[int, float] = {}
         for team_index, team_id in enumerate(teams):
-            roster = tuple(
-                pid for index, pid in enumerate(ids)
-                if state.owner_by_player[index] == team_index
-                and state.slot_by_player[index] is not None
-                and state.slot_by_player[index] not in self.workspace.reserve_slot_ids
+            roster = tuple(rosters[team_index])
+            key = (week, roster)
+            expected_points = self._lineup_cache.get(key)
+            if expected_points is None:
+                lineup = optimize_candidate_lineup(
+                    self.snapshot, week, roster, workspace=self.workspace,
+                )
+                expected_points = tuple(max(0.0, a.effective_projection) for a in lineup.assignments)
+                self._lineup_cache[key] = expected_points
+            scores[team_id] = sum(
+                max(0.0, rng.gauss(expected, expected * self.coefficient_of_variation))
+                for expected in expected_points
             )
-            lineup = optimize_candidate_lineup(
-                self.snapshot, week, roster, workspace=self.workspace,
-            )
-            total = 0.0
-            for assignment in lineup.assignments:
-                expected = max(0.0, assignment.effective_projection)
-                sampled = rng.gauss(expected, expected * self.coefficient_of_variation)
-                total += max(0.0, sampled)
-            scores[team_id] = total
         if len(self._rngs) > 1:
             self._rngs = {path: rng}
         return scores
