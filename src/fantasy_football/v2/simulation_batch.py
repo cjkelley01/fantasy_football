@@ -13,7 +13,7 @@ from typing import Callable, Mapping, Sequence
 
 from fantasy_football.v2.compact_cycle import advance_compact_cycle
 from fantasy_football.v2.compact_window import process_compact_acquisition_window
-from fantasy_football.v2.season_results import SeasonResult, resolve_season
+from fantasy_football.v2.season_results import SeasonResult, TeamStanding, resolve_season
 from fantasy_football.v2.transaction_state import CompactTransactionState
 from fantasy_football.v2.waiver_window import WindowDecision
 from fantasy_football.evolving_state import AcquisitionAvailability
@@ -44,6 +44,7 @@ def simulate_paths(
     decision_provider: DecisionProvider | None = None,
     max_successes_per_team_per_phase: int = 1,
     retain_results: bool = False,
+    initial_standings: Mapping[int, TeamStanding] | None = None,
 ) -> SimulationBatch:
     """Execute complete weekly score paths and resolve league championships.
 
@@ -95,6 +96,7 @@ def simulate_paths(
         result = resolve_season(
             team_ids, matchups, weekly_scores,
             first_week=first_week, last_regular_week=last_regular_week,
+            initial_standings=initial_standings,
         )
         champions[result.playoffs.champion] += 1
         appearances.update(result.playoff_seeds)
