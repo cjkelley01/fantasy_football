@@ -44,6 +44,11 @@ def process_compact_acquisition_window(
     # V1 freezes free-agent order from the opening waiver queue, reversed.
     # Successful waiver claims must not reorder this second phase.
     free_agent_order = tuple(reversed(current.waiver_order))
+    # A provider-confirmed complete lineup is independent of free-agent pool
+    # changes. Its own roster cannot change unless this team executes a claim.
+    # Keep the proof local to this window; never reuse across weeks/paths.
+    proven_complete: set[int] = set()
+    skip = getattr(decide, 'skip_decision', None)
     for phase in (A.WAIVERS, A.FREE_AGENT):
         successes: dict[int, int] = {}
         attempted: set[tuple[int, int, int | None]] = set()
@@ -55,8 +60,10 @@ def process_compact_acquisition_window(
                 if (max_successes_per_team_per_phase is not None
                         and successes.get(team_id, 0) >= max_successes_per_team_per_phase):
                     continue
-                skip = getattr(decide, 'skip_decision', None)
+                if team_index in proven_complete:
+                    continue
                 if skip is not None and skip(team_id, phase, current):
+                    proven_complete.add(team_index)
                     continue
                 decision = decide(team_id, phase, current)
                 if decision is None:
@@ -73,6 +80,7 @@ def process_compact_acquisition_window(
                 )
                 if result.accepted:
                     current = result.state
+                    proven_complete.discard(team_index)
                     accepted.append(proposal)
                     successes[team_id] = successes.get(team_id, 0) + 1
                     progress = True
