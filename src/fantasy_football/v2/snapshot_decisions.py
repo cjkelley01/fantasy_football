@@ -34,6 +34,7 @@ class SnapshotDecisionProvider:
     _lineup_vacancies: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
     lineup_cache_hits: int = 0
     pruned_calls: int = 0
+    skip_is_phase_independent: bool = True
 
     @classmethod
     def prepare(cls, snapshot: LeagueSnapshot) -> "SnapshotDecisionProvider":
