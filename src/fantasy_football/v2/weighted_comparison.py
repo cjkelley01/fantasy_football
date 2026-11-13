@@ -13,7 +13,7 @@ from random import Random
 from fantasy_football.v2.adaptive_scoring import AdaptiveNeighborhood, load_projection_pairs
 from fantasy_football.v2.scoring_band_diagnostics import band
 from fantasy_football.v2.starter_scoring import MIN_PROJECTION
-from fantasy_football.v2.weighted_scoring import WeightedNeighborhoodSampler
+from fantasy_football.v2.weighted_scoring import local_weights
 
 
 def evaluate(root: Path, *, draws=200, min_neighbors=80):
@@ -27,7 +27,6 @@ def evaluate(root: Path, *, draws=200, min_neighbors=80):
     for season in seasons:
         training = tuple(row for row in records if row["season"] != season)
         model = AdaptiveNeighborhood(training, min_neighbors=min_neighbors)
-        weighted = WeightedNeighborhoodSampler(model)
         metrics = defaultdict(lambda: defaultdict(float))
         for row in records:
             pos, proj, actual = row["position"], row["projection"], row["actual"]
@@ -38,10 +37,21 @@ def evaluate(root: Path, *, draws=200, min_neighbors=80):
             except ValueError:
                 continue
             center = sum(r["projection"] for r in neighbors) / len(neighbors)
+            weights = local_weights(neighbors, proj, width)
+            weighted_center = sum(w * r["projection"] for r, w in zip(neighbors, weights)) / sum(weights)
             for method in ("unweighted", "weighted"):
                 rng = Random(f"{season}:{row['position']}:{proj}:{actual}:{method}")
                 if method == "weighted":
-                    samples = [weighted.draw(pos, proj, rng) for _ in range(draws)]
+                    picks = rng.choices(neighbors, weights=weights, k=draws)
+                    samples = []
+                    for picked in picks:
+                        if picked["actual"] == 0:
+                            score = 0.0
+                        else:
+                            score = picked["actual"] + proj - weighted_center
+                            if pos != 16:
+                                score = max(0.0, score)
+                        samples.append(score)
                 else:
                     samples = []
                     for _ in range(draws):
