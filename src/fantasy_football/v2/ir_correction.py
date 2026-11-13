@@ -139,7 +139,7 @@ def correct_recovered_ir(
                 candidate.availability_by_player[drop] = A.HOLD
                 candidate.availability_details_by_player[drop] = PlayerAvailability(
                     dropped_pid, A.HOLD, None, None, state.cycle_id,
-                    (rules.undroppable_list_source_id if rules.undroppable_list_enabled is False
+                    (getattr(rules, 'undroppable_list_source_id', None) if rules.undroppable_list_enabled is False
                      else d.drop_source_ids[drop]),
                 )
             candidate.slot_by_player[ir] = destination
