@@ -25,6 +25,8 @@ class ProjectedScoreProvider:
     seed: int = 0
     coefficient_of_variation: float = 0.35
     _rngs: dict[int, Random] = field(default_factory=dict)
+    cache_hits: int = 0
+    cache_misses: int = 0
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[float, ...]] = field(default_factory=dict)
 
     @classmethod
@@ -62,11 +64,14 @@ class ProjectedScoreProvider:
             key = (week, roster)
             expected_points = self._lineup_cache.get(key)
             if expected_points is None:
+                self.cache_misses += 1
                 lineup = optimize_candidate_lineup(
                     self.snapshot, week, roster, workspace=self.workspace,
                 )
                 expected_points = tuple(max(0.0, a.effective_projection) for a in lineup.assignments)
                 self._lineup_cache[key] = expected_points
+            else:
+                self.cache_hits += 1
             scores[team_id] = sum(
                 max(0.0, rng.gauss(expected, expected * self.coefficient_of_variation))
                 for expected in expected_points
