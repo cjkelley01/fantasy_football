@@ -155,3 +155,47 @@ def test_matchup_acquisition_limit_rejection_matches_v1():
     )
     assert not result.v1_accepted and not result.v2_accepted
     assert result.matches, result.differences
+
+
+@pytest.mark.parametrize("policy", [IRPolicy.STRICT, IRPolicy.PROJECTION_BASED])
+def test_cycle_boundary_same_period_matches_canonical(policy):
+    from fantasy_football.v2.acquisition_parity import reconcile_cycle_boundary
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=16, ir_policy=policy)
+    assert reconcile_cycle_boundary(snapshot, initial, cycle_id=initial.cycle_id + 1, scoring_week=17) == ()
+
+
+@pytest.mark.parametrize("policy", [IRPolicy.STRICT, IRPolicy.PROJECTION_BASED])
+def test_cycle_boundary_new_matchup_period_resets_counts(policy):
+    from fantasy_football.v2.acquisition_parity import reconcile_cycle_boundary
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=policy)
+    assert reconcile_cycle_boundary(snapshot, initial, cycle_id=initial.cycle_id + 1, scoring_week=16) == ()
+
+
+@pytest.mark.parametrize("policy", [IRPolicy.STRICT, IRPolicy.PROJECTION_BASED])
+def test_valid_acquisition_parity_under_both_ir_policies(policy):
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=policy)
+    result = reconcile_acquisition(
+        snapshot, initial, AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT),
+        destination_slot_id=20,
+    )
+    assert result.v1_accepted and result.v2_accepted
+    assert result.matches, result.differences
+
+
+@pytest.mark.parametrize("limit_field", ["season_limit", "matchup_limit"])
+def test_acquisition_limit_zero_rejected_by_both_engines(limit_field):
+    snapshot = canonical_snapshot()
+    snapshot = replace(snapshot, rules=replace(
+        snapshot.rules,
+        acquisition=replace(snapshot.rules.acquisition, **{limit_field: 0}),
+    ))
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    result = reconcile_acquisition(
+        snapshot, initial, AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT),
+        destination_slot_id=20,
+    )
+    assert not result.v1_accepted and not result.v2_accepted
+    assert result.matches, result.differences
