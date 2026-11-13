@@ -11,6 +11,7 @@ import json
 from collections import Counter
 
 import requests
+from espn_api.football import League
 
 from fantasy_football.config import SettingsError, load_settings
 
@@ -37,24 +38,23 @@ def inspect_payload(payload, season):
 
 
 def probe(session, league_id, season, *, timeout=20):
-    # ESPN's historical endpoint is separate from the current-season endpoint.
-    base = ("https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/"
-            f"leagueHistory/{league_id}" if season < 2018 else
-            f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/ffl/seasons/{season}/segments/0/leagues/{league_id}")
-    filters = {"players": {"limit": 50, "offset": 0, "filterStatus": {"value": ["ONTEAM", "FREEAGENT", "WAIVERS"]}}}
-    response = session.get(base, params={"view": "kona_player_info", "scoringPeriodId": 1},
-                           headers={"x-fantasy-filter": json.dumps(filters)}, timeout=timeout)
-    result = {"season": season, "http_status": response.status_code, "endpoint_family": "leagueHistory" if season < 2018 else "seasonal"}
-    if response.status_code != 200:
-        result["error"] = "access_denied" if response.status_code in (401, 403) else "http_error"
-        return result
+    """Use the same ESPN request client and player filter as the working adapter."""
+    filters = {"players": {
+        "filterStatus": {"value": ["FREEAGENT", "WAIVERS", "ONTEAM"]},
+        "limit": 50, "offset": 0,
+        "sortPercOwned": {"sortPriority": 1, "sortAsc": False},
+    }}
+    result = {"season": season, "endpoint_family": "espn_api_league_get"}
     try:
-        payload = response.json()
-    except ValueError:
-        result["error"] = "invalid_json"
+        payload = session(season).league_get(
+            params={"view": "kona_player_info", "scoringPeriodId": 1},
+            headers={"x-fantasy-filter": json.dumps(filters, separators=(",", ":"))},
+        )
+    except Exception as exc:
+        # Never expose exception strings: some HTTP clients include request URLs.
+        result["error"] = type(exc).__name__
         return result
-    if isinstance(payload, list):
-        payload = payload[0] if payload else {}
+    result["http_status"] = 200
     result.update(inspect_payload(payload, season))
     result["warning"] = "Historical projection values have unknown pregame provenance."
     return result
@@ -75,12 +75,14 @@ def main(argv=None):
         parser.error("league ID does not match configured ESPN_LEAGUE_ID")
     if settings.credentials is None:
         parser.error("Private-league credentials missing: configure ESPN_S2 and ESPN_SWID in .env")
-    session = requests.Session()
-    session.cookies.update({"espn_s2": settings.credentials.espn_s2, "SWID": settings.credentials.swid})
+    def request_for_season(season):
+        return League(league_id=args.league_id, year=season,
+                      espn_s2=settings.credentials.espn_s2,
+                      swid=settings.credentials.swid, fetch_league=False).espn_request
     results = []
     for season in args.seasons:
         try:
-            results.append(probe(session, args.league_id, season))
+            results.append(probe(request_for_season, args.league_id, season))
         except requests.RequestException as exc:
             results.append({"season": season, "error": type(exc).__name__})
     report = {"league_id": args.league_id, "results": results}
