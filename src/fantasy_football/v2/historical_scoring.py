@@ -87,17 +87,40 @@ def summarize(records, captures):
                 "projection_timing": "unverified_retrospective",
             })
     counts = Counter(str(p["position_id"]) for p in pairs)
+    histories = defaultdict(list)
+    for pair in pairs:
+        histories[(pair["season"], pair["week"], pair["player_id"])].append(pair)
+    repeated = sum(len(items) > 1 for items in histories.values())
+    changing = sum(len({item["projection"] for item in items}) > 1 for items in histories.values())
+    unique_positions = Counter(
+        str(sorted(items, key=lambda x: x["retrieved_at_utc"])[0]["position_id"])
+        for items in histories.values()
+    )
+    history_rows = [
+        {"season": season, "week": week, "player_id": player_id,
+         "capture_count": len(items),
+         "first_retrieved_at_utc": min(x["retrieved_at_utc"] for x in items),
+         "last_retrieved_at_utc": max(x["retrieved_at_utc"] for x in items),
+         "distinct_projection_values": len({x["projection"] for x in items}),
+         "projection_min": min(x["projection"] for x in items),
+         "projection_max": max(x["projection"] for x in items)}
+        for (season, week, player_id), items in sorted(histories.items())
+    ]
     weeks = sorted({(p["season"], p["week"]) for p in pairs})
     return {
         "raw_captures": captures,
         "distinct_observations": len(records),
         "same_capture_actual_projection_pairs": len(pairs),
+        "unique_paired_player_weeks": len(histories),
+        "repeated_paired_player_weeks": repeated,
+        "player_weeks_with_projection_changes": changing,
+        "unique_paired_player_weeks_by_position_id": dict(sorted(unique_positions.items())),
         "pairs_by_position_id": dict(sorted(counts.items())),
         "paired_season_weeks": [{"season": s, "week": w} for s, w in weeks],
         "verified_pregame_pairs": 0,
         "calibration_ready": False,
         "caution": "Same-capture historical projections are NOT verified pregame forecasts; do not fit production uncertainty or correlations from them.",
-    }, pairs
+    }, pairs, history_rows
 
 
 def main(argv=None):
@@ -105,18 +128,25 @@ def main(argv=None):
     parser.add_argument("--db", type=Path, required=True)
     parser.add_argument("--season", type=int, default=2026)
     parser.add_argument("--output", type=Path, help="Optional JSONL export of unverified paired observations")
+    parser.add_argument("--history-output", type=Path, help="Optional JSONL export of capture histories")
     args = parser.parse_args(argv)
     if not args.db.is_file():
         parser.error(f"database not found: {args.db}")
     with sqlite3.connect(f"file:{args.db.resolve()}?mode=ro", uri=True) as connection:
         records, captures = extract_records(connection, season=args.season)
-    report, pairs = summarize(records, captures)
+    report, pairs, histories = summarize(records, captures)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         with args.output.open("w", encoding="utf-8") as stream:
             for pair in sorted(pairs, key=lambda p: (p["season"], p["week"], p["player_id"], p["retrieved_at_utc"])):
                 stream.write(json.dumps(pair, sort_keys=True) + "\n")
         report["output"] = str(args.output)
+    if args.history_output:
+        args.history_output.parent.mkdir(parents=True, exist_ok=True)
+        with args.history_output.open("w", encoding="utf-8") as stream:
+            for row in histories:
+                stream.write(json.dumps(row, sort_keys=True) + "\\n")
+        report["history_output"] = str(args.history_output)
     print(json.dumps(report, indent=2))
     return 0
 
