@@ -49,6 +49,7 @@ def process_compact_acquisition_window(
     # Keep the proof local to this window; never reuse across weeks/paths.
     proven_complete: set[int] = set()
     skip = getattr(decide, 'skip_decision', None)
+    reusable_skip = bool(getattr(decide, 'skip_is_phase_independent', False))
     for phase in (A.WAIVERS, A.FREE_AGENT):
         successes: dict[int, int] = {}
         attempted: set[tuple[int, int, int | None]] = set()
@@ -60,10 +61,11 @@ def process_compact_acquisition_window(
                 if (max_successes_per_team_per_phase is not None
                         and successes.get(team_id, 0) >= max_successes_per_team_per_phase):
                     continue
-                if team_index in proven_complete:
+                if reusable_skip and team_index in proven_complete:
                     continue
                 if skip is not None and skip(team_id, phase, current):
-                    proven_complete.add(team_index)
+                    if reusable_skip:
+                        proven_complete.add(team_index)
                     continue
                 decision = decide(team_id, phase, current)
                 if decision is None:
