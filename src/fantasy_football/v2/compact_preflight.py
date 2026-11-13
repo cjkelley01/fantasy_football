@@ -44,12 +44,14 @@ def preflight_acquisition(
             return "team does not own proposed drop"
         if state.definition.undroppable[drop] is not False:
             return "drop permission is unresolved or player is protected"
-    occupancy = sum(
-        owner == team and state.slot_by_player[i] == destination_slot_id and i != drop
-        for i, owner in enumerate(state.owner_by_player)
-    )
-    if occupancy >= slot.capacity:
-        return "destination slot is full"
+    # Only the full/not-full result matters. Stop as soon as capacity is
+    # reached rather than scanning every remaining player in the league.
+    occupancy = 0
+    for i, owner in enumerate(state.owner_by_player):
+        if owner == team and i != drop and state.slot_by_player[i] == destination_slot_id:
+            occupancy += 1
+            if occupancy >= slot.capacity:
+                return "destination slot is full"
     acquisition = state.definition.rules.acquisition
     for count, limit in (
         (state.season_acquisition_counts[team], acquisition.season_limit),
