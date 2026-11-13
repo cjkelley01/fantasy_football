@@ -9,6 +9,7 @@ from fantasy_football.v2.automatic_manager import AutomaticManager
 from fantasy_football.v2.manager_decisions import ManagerPolicy
 from fantasy_football.v2.projected_scoring import ProjectedScoreProvider
 from fantasy_football.v2.simulation_batch import SimulationBatch, simulate_paths
+from fantasy_football.v2.season_results import TeamStanding
 from fantasy_football.v2.transaction_state import CompactTransactionState
 
 
@@ -32,6 +33,10 @@ def run_projected_seasons(
     until calibrated and parity-tested against the canonical simulator.
     """
     compact = CompactTransactionState.from_evolving(snapshot, initial)
+    historical = {
+        team.team_id: TeamStanding(team.team_id, team.wins, team.losses, team.ties, team.points_for)
+        for team in snapshot.teams
+    }
     scoring = ProjectedScoreProvider.prepare(
         snapshot, seed=seed, coefficient_of_variation=coefficient_of_variation,
     )
@@ -42,4 +47,5 @@ def run_projected_seasons(
         first_week=snapshot.first_simulation_week,
         matchup_periods=matchup_periods,
         decision_provider=manager,
+        initial_standings=historical,
     )
