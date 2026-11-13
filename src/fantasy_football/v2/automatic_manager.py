@@ -24,6 +24,8 @@ class AutomaticManager:
     workspace: LineupOptimizationWorkspace
     bench_slot_ids: tuple[int, ...]
     roster_capacity: int
+    reserve_slot_ids: frozenset[int]
+    bench_capacities: dict[int, int]
     week_values: dict[int, dict[int, PlayerValue]]
     cache_hits: int = 0
     cache_misses: int = 0
@@ -82,7 +84,7 @@ class AutomaticManager:
                     future_sum += current
                     future_count += 1
                     future_positive = future_positive or current > 0
-        return cls(snapshot, policy, workspace, bench, capacity, values)
+        return cls(snapshot, policy, workspace, bench, capacity, frozenset(\n            rule.slot_id for rule in snapshot.rules.lineup_slots\n            if rule.kind is SlotKind.RESERVE\n        ), {rule.slot_id: rule.capacity for rule in snapshot.rules.lineup_slots\n            if rule.slot_id in bench}, values)
 
     def __call__(
         self, team_id: int, phase: AcquisitionAvailability,
