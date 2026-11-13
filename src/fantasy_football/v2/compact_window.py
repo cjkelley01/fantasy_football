@@ -26,14 +26,16 @@ def process_compact_acquisition_window(
     state: CompactTransactionState,
     decide: Callable[[int, A, CompactTransactionState], WindowDecision | None],
     *,
-    max_successes_per_team_per_phase: int = 1,
+    max_successes_per_team_per_phase: int | None = None,
 ) -> CompactWindowResult:
     """Process sequential waivers/free agents without V1 state reconstruction.
 
     A successful claim changes ownership before the next decision, and waiver
-    claims move priority only after success. Never mutates the supplied state.
+    claims move priority only after success. By default, repeat essential claims
+    until no legal progress remains; optional cap is for controlled experiments.
+    Never mutates the supplied state.
     """
-    if max_successes_per_team_per_phase < 1:
+    if max_successes_per_team_per_phase is not None and max_successes_per_team_per_phase < 1:
         raise ValueError("max successes must be positive")
     current = state.clone()
     accepted: list[AcquisitionProposal] = []
@@ -50,7 +52,8 @@ def process_compact_acquisition_window(
             order = tuple(current.waiver_order) if phase is A.WAIVERS else free_agent_order
             for team_index in order:
                 team_id = team_ids[team_index]
-                if successes.get(team_id, 0) >= max_successes_per_team_per_phase:
+                if (max_successes_per_team_per_phase is not None
+                        and successes.get(team_id, 0) >= max_successes_per_team_per_phase):
                     continue
                 decision = decide(team_id, phase, current)
                 if decision is None:
