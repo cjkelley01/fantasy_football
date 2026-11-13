@@ -5,7 +5,7 @@ The compact policy ranks acquisitions; the V1 executor checks legality.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fantasy_football.canonical.model import LeagueSnapshot, RosterEntry, SlotKind
 from fantasy_football.evolving_state import AcquisitionAvailability
@@ -25,6 +25,7 @@ class AutomaticManager:
     bench_slot_ids: tuple[int, ...]
     roster_capacity: int
     week_values: dict[int, dict[int, PlayerValue]]
+    _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
 
     @classmethod
     def prepare(cls, snapshot: LeagueSnapshot, policy: ManagerPolicy = ManagerPolicy()) -> "AutomaticManager":
@@ -92,16 +93,23 @@ class AutomaticManager:
             rule.slot_id for rule in self.snapshot.rules.lineup_slots
             if rule.kind is SlotKind.RESERVE
         )
-        candidate = optimize_candidate_lineup(
-            self.snapshot, compact.scoring_week,
-            tuple(entry.player_id for entry in entries
-                  if entry.lineup_slot_id not in reserve),
-            workspace=self.workspace,
-        )
-        if not candidate.vacant_slots:
+        roster = tuple(entry.player_id for entry in entries
+                       if entry.lineup_slot_id not in reserve)
+        cache_key = (compact.scoring_week, roster)
+        lineup_info = self._lineup_cache.get(cache_key)
+        if lineup_info is None:
+            candidate = optimize_candidate_lineup(
+                self.snapshot, compact.scoring_week, roster,
+                workspace=self.workspace,
+            )
+            lineup_info = (
+                tuple(v.lineup_slot_id for v in candidate.vacant_slots),
+                frozenset(a.player_id for a in candidate.assignments),
+            )
+            self._lineup_cache[cache_key] = lineup_info
+        need_slots, protected = lineup_info
+        if not need_slots:
             return None
-        protected = frozenset(a.player_id for a in candidate.assignments)
-        need_slots = tuple(v.lineup_slot_id for v in candidate.vacant_slots)
         # A bench slot must have room after a proposed drop, otherwise the
         # executor will reject the proposal without mutating state.
         occupancy = {
