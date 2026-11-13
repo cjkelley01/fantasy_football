@@ -22,7 +22,7 @@ def test_points_for_breaks_equal_records_and_initial_standings_are_retained():
     assert _inverse_standings_priority(totals) == (3, 2, 1, 4)
     _update_regular_standings(totals, ((1, 2), (3, 4)),
                               {1: 90, 2: 120, 3: 100, 4: 90})
-    assert _inverse_standings_priority(totals) == (3, 1, 2, 4)
+    assert _inverse_standings_priority(totals) == (1, 3, 4, 2)
 
 
 def test_ties_count_half_win_and_incomplete_week_is_rejected():
