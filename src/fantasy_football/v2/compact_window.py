@@ -39,12 +39,16 @@ def process_compact_acquisition_window(
     accepted: list[AcquisitionProposal] = []
     rejected: list[tuple[AcquisitionProposal, str]] = []
     team_ids = current.definition.indexes.team_ids
+    # V1 freezes free-agent order from the opening waiver queue, reversed.
+    # Successful waiver claims must not reorder this second phase.
+    free_agent_order = tuple(reversed(current.waiver_order))
     for phase in (A.WAIVERS, A.FREE_AGENT):
         successes: dict[int, int] = {}
         attempted: set[tuple[int, int, int | None]] = set()
         while True:
             progress = False
-            for team_index in tuple(current.waiver_order):
+            order = tuple(current.waiver_order) if phase is A.WAIVERS else free_agent_order
+            for team_index in order:
                 team_id = team_ids[team_index]
                 if successes.get(team_id, 0) >= max_successes_per_team_per_phase:
                     continue
