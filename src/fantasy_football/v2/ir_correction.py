@@ -34,7 +34,11 @@ def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
     activated: list[int] = []
     blocked: list[tuple[int, str]] = []
     projections = (d.projected_points_by_week or {}).get(state.scoring_week, {})
-    evidence = {e.player_id: e for e in state.ir_evidence if e.scoring_week == state.scoring_week}
+    evidence = {
+        e.player_id: e for e in state.ir_evidence
+        if hasattr(e, "player_id") and hasattr(e, "scoring_week")
+        and e.scoring_week == state.scoring_week
+    }
     for team in range(len(d.indexes.team_ids)):
         occupants = [
             i for i, owner in enumerate(current.owner_by_player)
