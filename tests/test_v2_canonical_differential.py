@@ -134,3 +134,21 @@ def test_competing_waiver_window_respects_reversed_opening_priority():
     b = process_compact_acquisition_window(v2, decide, max_successes_per_team_per_phase=1)
     assert [p.team_id for p in a.accepted] == [p.team_id for p in b.accepted] == [2]
     _compare(a.state, b.state, snapshot)
+
+
+def test_canonical_ir_activation_into_vacant_bench_matches_compact():
+    from fantasy_football.evolving_state import place_on_ir, activate_from_ir
+    from fantasy_football.v2.ir_correction import correct_recovered_ir
+
+    snapshot = canonical_snapshot()
+    snapshot = replace(snapshot, players=tuple(
+        replace(p, injury_status="OUT") if p.player_id == 1 else p
+        for p in snapshot.players
+    ))
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    placed = place_on_ir(initial, snapshot, team_id=1, player_id=1, reserve_slot_id=21)
+    compact = CompactTransactionState.from_evolving(snapshot, placed)
+    corrected = correct_recovered_ir(compact)
+    canonical = activate_from_ir(placed, snapshot, team_id=1, player_id=1, ordinary_slot_id=20)
+    assert corrected.activated == (1,)
+    _compare(canonical, corrected.state, snapshot)
