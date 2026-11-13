@@ -79,6 +79,8 @@ def simulate_paths(
     started = perf_counter()
     acquisition_counts: Counter[str] = Counter()
     rejection_reasons: Counter[str] = Counter()
+    rejection_context: Counter[tuple[int, int, str]] = Counter()
+    waiver_team_week_counts: Counter[tuple[int, int]] = Counter()
     for path in range(paths):
         state = initial.clone()
         weekly_scores: dict[int, Mapping[int, float]] = {}
@@ -112,9 +114,11 @@ def simulate_paths(
                         acquisition_counts[f"{proposal.availability.value}_accepted"] += 1
                         if proposal.availability is AcquisitionAvailability.WAIVERS:
                             per_team_waivers[proposal.team_id] += 1
+                            waiver_team_week_counts[(week, proposal.team_id)] += 1
                     for proposal, reason in window.rejected:
                         acquisition_counts[f"{proposal.availability.value}_rejected"] += 1
                         rejection_reasons[reason] += 1
+                        rejection_context[(week, proposal.team_id, reason)] += 1
                     acquisition_counts["team_windows_with_multiple_waivers"] += sum(
                         count > 1 for count in per_team_waivers.values()
                     )
@@ -135,6 +139,14 @@ def simulate_paths(
         acquisition_diagnostics.update({
             "counts": dict(sorted(acquisition_counts.items())),
             "rejection_reasons": dict(sorted(rejection_reasons.items())),
+            "rejections_by_week_team": [
+                {"week": week, "team_id": team, "reason": reason, "count": count}
+                for (week, team, reason), count in sorted(rejection_context.items())
+            ],
+            "accepted_waivers_by_week_team": [
+                {"week": week, "team_id": team, "count": count}
+                for (week, team), count in sorted(waiver_team_week_counts.items())
+            ],
         })
     return SimulationBatch(
         paths, perf_counter() - started, dict(champions),
