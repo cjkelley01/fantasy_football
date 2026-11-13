@@ -77,3 +77,23 @@ def test_scoring_rejects_mismatched_week_and_snapshot():
 def test_scoring_rejects_invalid_variance(cv):
     with pytest.raises(ValueError, match="coefficient_of_variation"):
         ProjectedScoreProvider.prepare(canonical_snapshot(), coefficient_of_variation=cv)
+
+
+def test_draw_cache_is_bounded_to_current_path_and_replay_is_stable():
+    _, compact, scorer, week = _setup(cv=0.35)
+    first = scorer(11, week, compact)
+    assert scorer._draw_cache_path == 11
+    assert scorer._draw_cache
+    assert all(len(key) == 2 for key in scorer._draw_cache)
+    first_keys = set(scorer._draw_cache)
+    second = scorer(12, week, compact)
+    assert scorer._draw_cache_path == 12
+    assert set(scorer._draw_cache) == first_keys
+    assert scorer(11, week, compact) == first
+    assert scorer(12, week, compact) == second
+
+
+def test_zero_variance_does_not_generate_random_draws():
+    _, compact, scorer, week = _setup(cv=0.0)
+    scorer(0, week, compact)
+    assert not scorer._draw_cache
