@@ -110,3 +110,37 @@ def test_manager_diagnostics_classify_missing_phase_candidates():
                                  allowed_availability=frozenset(), diagnostics=reasons)
     assert result is None
     assert reasons == {"no_available_players_in_phase": 1}
+
+
+def test_essential_vacancy_bonus_can_justify_modest_short_term_roster_cost():
+    state, values = setup_state()
+    values = dict(values)
+    values[30] = PlayerValue(4, 0)
+    values[40] = PlayerValue(4, 0)
+    reasons = {}
+    without_bonus = propose_acquisition(
+        state, team_id=1, need_slot_ids=(0,), values=values, roster_capacity=3,
+        policy=ManagerPolicy(essential_vacancy_bonus=0), diagnostics=reasons,
+        protected_player_ids=frozenset({10, 50}),
+    )
+    assert without_bonus is None
+    assert reasons == {"candidate_gain_below_threshold": 1}
+    with_bonus = propose_acquisition(
+        state, team_id=1, need_slot_ids=(0,), values=values, roster_capacity=3,
+        policy=ManagerPolicy(essential_vacancy_bonus=8),
+        protected_player_ids=frozenset({10, 50}),
+    )
+    assert with_bonus is not None
+    assert with_bonus.drop_player_id == 20
+    assert with_bonus.expected_gain < 0
+
+
+def test_eligibility_diagnostic_distinguishes_available_pool_from_canonical_players():
+    state, values = setup_state()
+    reasons = {}
+    result = propose_acquisition(
+        state, team_id=1, need_slot_ids=(4,), values=values, roster_capacity=4,
+        diagnostics=reasons,
+    )
+    assert result is None
+    assert reasons == {"no_eligible_player_in_available_pool": 1}
