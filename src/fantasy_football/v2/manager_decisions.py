@@ -88,7 +88,7 @@ def propose_acquisition(
     if len(owned) > roster_capacity:
         raise ValueError("roster exceeds provided capacity")
     if len(owned) == roster_capacity:
-        drop_options = []
+        best_drop: tuple[float, int] | None = None
         for i in owned:
             pid = ids[i]
             if pid in protected_player_ids or pid in forbidden_drop_ids:
@@ -100,22 +100,25 @@ def propose_acquisition(
             sacrifice = max(0.0, value.current) + policy.future_weight * max(0.0, value.future)
             if value.temporarily_unavailable:
                 sacrifice += policy.temporary_absence_protection
-            drop_options.append((sacrifice, pid))
-        if not drop_options:
+            option = (sacrifice, pid)
+            if best_drop is None or option < best_drop:
+                best_drop = option
+        if best_drop is None:
             return None
-        drop_options.sort(key=lambda x: (x[0], x[1]))
-        drop_cost, drop_id = drop_options[0]
+        drop_cost, drop_id = best_drop
     else:
         drop_cost, drop_id = 0.0, None
 
-    proposals = []
+    # Only the top proposal is returned. A running minimum preserves the
+    # exact ordering and tie-breakers without sorting all free agents.
+    best_proposal: tuple[float, float, int, int, AcquisitionAvailability] | None = None
     for i, pid in enumerate(ids):
         status = state.availability_by_player[i]
         if state.owner_by_player[i] != -1 or status not in allowed_availability:
             continue
         eligible = state.definition.eligible_slots[i]
-        slots = [slot for slot in need_slot_ids if slot in eligible]
-        if not slots:
+        slot = next((slot for slot in need_slot_ids if slot in eligible), None)
+        if slot is None:
             continue
         value = values.get(pid)
         if value is None or value.current <= 0:
@@ -123,11 +126,10 @@ def propose_acquisition(
         gain = value.current - drop_cost
         if gain < policy.minimum_net_gain:
             continue
-        proposals.append((-gain, -value.current, pid, slots[0], status))
-    proposals.sort()
-    if policy.max_candidates is not None:
-        proposals = proposals[:policy.max_candidates]
-    if not proposals:
+        option = (-gain, -value.current, pid, slot, status)
+        if best_proposal is None or option < best_proposal:
+            best_proposal = option
+    if best_proposal is None:
         return None
-    neg_gain, _, pid, slot, status = proposals[0]
+    neg_gain, _, pid, slot, status = best_proposal
     return AcquisitionProposal(team_id, pid, drop_id, slot, -neg_gain, status)
