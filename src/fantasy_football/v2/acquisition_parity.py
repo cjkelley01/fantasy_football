@@ -83,3 +83,34 @@ def reconcile_acquisition_sequence(
         steps.append(AcquisitionParityStep(proposal, destination_slot_id, result))
         v1_state, v2_state = v1.state, v2.state
     return tuple(steps)
+
+
+def reconcile_cycle_boundary(
+    snapshot: LeagueSnapshot,
+    initial: EvolvingLeagueState,
+    *,
+    cycle_id: int,
+    scoring_week: int,
+) -> tuple[StateDifference, ...]:
+    """Compare a canonical week/cycle transition with the compact projection.
+
+    Only transaction-relevant fields are compared. Canonical audit ledger
+    remains authoritative and is intentionally excluded from this parity check.
+    """
+    from fantasy_football.evolving_state import advance_cycle
+    v1 = advance_cycle(initial, snapshot, cycle_id=cycle_id, scoring_week=scoring_week)
+    v2 = CompactTransactionState.from_evolving(snapshot, initial)
+    next_periods = [
+        period.matchup_period_id for period in snapshot.matchup_periods
+        if scoring_week in period.scoring_weeks
+    ]
+    if len(next_periods) != 1:
+        raise ValueError("scoring week must belong to exactly one matchup period")
+    next_period = next_periods[0]
+    if next_period != v2.matchup_period_id:
+        v2.matchup_acquisition_counts = [0] * len(v2.matchup_acquisition_counts)
+    v2.initial_waiver_order = v2.waiver_order.copy()
+    v2.matchup_period_id = next_period
+    v2.scoring_week = scoring_week
+    v2.cycle_id = cycle_id
+    return compare_transaction_states(v1, v2)
