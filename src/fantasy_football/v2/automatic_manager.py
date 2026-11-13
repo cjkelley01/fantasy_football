@@ -25,6 +25,8 @@ class AutomaticManager:
     bench_slot_ids: tuple[int, ...]
     roster_capacity: int
     week_values: dict[int, dict[int, PlayerValue]]
+    cache_hits: int = 0
+    cache_misses: int = 0
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
 
     @classmethod
@@ -98,6 +100,7 @@ class AutomaticManager:
         cache_key = (compact.scoring_week, roster)
         lineup_info = self._lineup_cache.get(cache_key)
         if lineup_info is None:
+            self.cache_misses += 1
             candidate = optimize_candidate_lineup(
                 self.snapshot, compact.scoring_week, roster,
                 workspace=self.workspace,
@@ -107,6 +110,8 @@ class AutomaticManager:
                 frozenset(a.player_id for a in candidate.assignments),
             )
             self._lineup_cache[cache_key] = lineup_info
+        else:
+            self.cache_hits += 1
         need_slots, protected = lineup_info
         if not need_slots:
             return None
