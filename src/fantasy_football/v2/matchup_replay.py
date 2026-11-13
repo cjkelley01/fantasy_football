@@ -19,8 +19,8 @@ from fantasy_football.v2.assumed_kickoff_evaluation import load_rows
 def replay(root: Path, manifest: dict, *, draws=1000, seed=0):
     if draws < 10:
         raise ValueError("draws must be >= 10")
-    if manifest.get("starter_provenance") != "pregame":
-        raise ValueError("Starter manifest must explicitly declare pregame provenance")
+    if manifest.get("starter_provenance") not in ("pregame", "retrospective_final_lineup"):
+        raise ValueError("Starter manifest must explicitly declare pregame provenance or retrospective_final_lineup")
     completed_week = int(manifest["last_completed_2026_week"])
     rows = load_rows(root, completed_week)
     by_key = {(r["season"], r["week"], r["player_id"]): r for r in rows}
@@ -76,7 +76,7 @@ def replay(root: Path, manifest: dict, *, draws=1000, seed=0):
                         "brier": round((prob-observed)**2, 6)})
     n = len(results)
     return {"production_ready": False, "assumption": "retrospective ESPN projections equal kickoff projections (unverified)",
-            "starter_provenance": "pregame_declared_unverified",
+            "starter_provenance": manifest["starter_provenance"],
             "training": "prior_seasons_only", "draws": draws, "seed": seed,
             "matchup_count": n,
             "mean_brier": round(sum(x["brier"] for x in results)/n, 6) if n else None,
