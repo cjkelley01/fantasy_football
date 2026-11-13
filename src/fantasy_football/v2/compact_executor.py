@@ -99,7 +99,7 @@ def execute_compact_proposal(
         candidate.availability_by_player[drop] = A.HOLD
         candidate.availability_details_by_player[drop] = PlayerAvailability(
             proposal.drop_player_id, A.HOLD, None, None, state.cycle_id,
-            (rules.undroppable_list_source_id if rules.undroppable_list_enabled is False
+            (getattr(rules, 'undroppable_list_source_id', None) if rules.undroppable_list_enabled is False
              else d.drop_source_ids[drop]),
         )
     previous = candidate.availability_details_by_player[add]
