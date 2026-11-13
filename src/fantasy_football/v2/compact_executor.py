@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from fantasy_football.evolving_state import (
-    AcquisitionAvailability as A, PlayerAvailability, IRPolicy,
+    AcquisitionAvailability as A, PlayerAvailability, IRPolicy, IREligibility,
 )
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.v2.compact_preflight import preflight_acquisition
@@ -50,9 +50,28 @@ def execute_compact_proposal(
     if drop is not None and rules.undroppable_list_enabled is not False and d.undroppable[drop] is not False:
         return CompactExecutionResult(state, False, "drop authorization requires canonical evidence")
     reserve_slots = {s.slot_id for s in rules.lineup_slots if s.kind is SlotKind.RESERVE}
-    if any(owner == team and state.slot_by_player[i] in reserve_slots
-           for i, owner in enumerate(state.owner_by_player)):
-        return CompactExecutionResult(state, False, "reserve legality requires canonical verification")
+    reserve_players = [
+        d.indexes.player_ids[i] for i, owner in enumerate(state.owner_by_player)
+        if owner == team and state.slot_by_player[i] in reserve_slots
+    ]
+    if reserve_players:
+        if state.ir_policy is IRPolicy.PROJECTION_BASED:
+            projections = (d.projected_points_by_week or {}).get(state.scoring_week, {})
+            if any(pid not in projections for pid in reserve_players):
+                return CompactExecutionResult(state, False, "reserve projection evidence unavailable")
+            if any(projections[pid] > 0 for pid in reserve_players):
+                return CompactExecutionResult(state, False, "reserve correction required: positive projection")
+        elif state.ir_policy is IRPolicy.STRICT:
+            evidence = {
+                item.player_id: item for item in state.ir_evidence
+                if item.scoring_week == state.scoring_week
+            }
+            if any(pid not in evidence or evidence[pid].eligibility is IREligibility.UNKNOWN
+                   for pid in reserve_players):
+                return CompactExecutionResult(state, False, "reserve strict eligibility evidence unresolved")
+            if any(evidence[pid].eligibility is IREligibility.INELIGIBLE
+                   for pid in reserve_players):
+                return CompactExecutionResult(state, False, "reserve correction required: ineligible occupant")
     if state.ir_policy not in (IRPolicy.STRICT, IRPolicy.PROJECTION_BASED):
         return CompactExecutionResult(state, False, "unrecognized IR policy")
     players = getattr(d, "default_positions", None)
