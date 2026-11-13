@@ -7,6 +7,9 @@ bench-drop corrections are supported here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Mapping
+
+from fantasy_football.v2.manager_decisions import ManagerPolicy, PlayerValue
 
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.evolving_state import AcquisitionAvailability as A, IRPolicy, IREligibility, PlayerAvailability
@@ -20,7 +23,12 @@ class IRCorrectionResult:
     blocked: tuple[tuple[int, str], ...]
 
 
-def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
+def correct_recovered_ir(
+    state: CompactTransactionState,
+    *,
+    values: Mapping[int, PlayerValue] | None = None,
+    policy: ManagerPolicy = ManagerPolicy(),
+) -> IRCorrectionResult:
     """Activate modeled-recovered IR players without bypassing drop protection.
 
     This restricted compact operation does not synthesize canonical ledger
@@ -34,6 +42,21 @@ def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
     activated: list[int] = []
     blocked: list[tuple[int, str]] = []
     projections = (d.projected_points_by_week or {}).get(state.scoring_week, {})
+    if values is None:
+        # Standalone correction uses indexed projection evidence. The live
+        # simulator supplies its richer current/future player valuations.
+        values = {pid: PlayerValue(current=points) for pid, points in projections.items()}
+
+    def sacrifice(index: int) -> tuple[float, int]:
+        pid = d.indexes.player_ids[index]
+        value = values.get(pid)
+        if value is None:
+            # Missing evidence must not make a player look expendable.
+            return (float("inf"), pid)
+        cost = max(0.0, value.current) + policy.future_weight * max(0.0, value.future)
+        if value.temporarily_unavailable:
+            cost += policy.temporary_absence_protection
+        return (cost, pid)
     evidence = {
         e.player_id: e for e in state.ir_evidence
         if hasattr(e, "player_id") and hasattr(e, "scoring_week")
@@ -84,6 +107,7 @@ def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
                     destination = slot.slot_id
                     break
             if destination is None:
+                options = []
                 for slot in ordinary:
                     if slot.slot_id not in d.eligible_slots[ir]:
                         continue
@@ -95,10 +119,12 @@ def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
                         and (not rules.position_limits or
                              d.default_positions[j] == d.default_positions[ir])
                     ]
-                    if choices:
-                        destination = slot.slot_id
-                        drop = min(choices, key=lambda j: d.indexes.player_ids[j])
-                        break
+                    options.extend((sacrifice(j), slot.slot_id, j) for j in choices)
+                if options:
+                    best, destination, drop = min(options)
+                    if best[0] == float("inf"):
+                        destination = None
+                        drop = None
             if destination is None:
                 blocked.append((pid, "no_authorized_bench_destination"))
                 continue
