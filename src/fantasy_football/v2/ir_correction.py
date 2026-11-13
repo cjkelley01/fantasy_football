@@ -69,6 +69,14 @@ def correct_recovered_ir(state: CompactTransactionState) -> IRCorrectionResult:
                     for j, owner in enumerate(current.owner_by_player)
                 )
                 if count < slot.capacity:
+                    pos = d.default_positions[ir]
+                    limit = next((rule.maximum for rule in rules.position_limits
+                                  if rule.position_id == pos), None)
+                    if limit is not None and sum(
+                        owner == team and d.default_positions[j] == pos
+                        for j, owner in enumerate(current.owner_by_player)
+                    ) > limit:
+                        continue
                     destination = slot.slot_id
                     break
             if destination is None:
