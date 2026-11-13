@@ -230,6 +230,7 @@ def main(argv=None):
     parser.add_argument('--vacancy-bonus', type=float, default=4.0)
     parser.add_argument('--last-week', type=int)
     parser.add_argument('--score-seed', type=int, default=42)
+    parser.add_argument('--score-seeds', type=int, nargs='+', help='Run parity independently for each listed seed')
     parser.add_argument('--score-cv', type=float, default=0.35)
     args = parser.parse_args(argv)
     store = SnapshotStore(args.db)
@@ -240,10 +241,17 @@ def main(argv=None):
     snapshot = store.load(snapshot_id, verify_sources=False).snapshot
     if snapshot.league_id != args.league_id or snapshot.season != args.season:
         parser.error('snapshot does not match league/season')
-    result = replay(snapshot, vacancy_bonus=args.vacancy_bonus, last_week=args.last_week,
-                    score_seed=args.score_seed, score_cv=args.score_cv)
-    print(json.dumps(result, indent=2))
-    return 0 if result['parity_passed'] else 1
+    seeds = args.score_seeds if args.score_seeds is not None else [args.score_seed]
+    if not seeds:
+        parser.error('at least one score seed is required')
+    results = [replay(snapshot, vacancy_bonus=args.vacancy_bonus, last_week=args.last_week,
+                      score_seed=seed, score_cv=args.score_cv) for seed in seeds]
+    if args.score_seeds is None:
+        print(json.dumps(results[0], indent=2))
+    else:
+        print(json.dumps({'all_passed': all(item['parity_passed'] for item in results),
+                          'runs': [{'score_seed': seed, **item} for seed, item in zip(seeds, results)]}, indent=2))
+    return 0 if all(item['parity_passed'] for item in results) else 1
 
 
 if __name__ == '__main__':
