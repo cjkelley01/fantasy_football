@@ -99,3 +99,39 @@ def test_ir_drop_with_missing_value_is_blocked():
     result = correct_recovered_ir(state, values={30: PlayerValue(8)})
     assert not result.activated
     assert result.blocked == ((30, "no_authorized_bench_destination"),)
+
+
+def test_ir_transaction_diagnostics_include_valuation_and_destination():
+    state = scenario()
+    values = {10: PlayerValue(3, 7), 30: PlayerValue(9, 11)}
+    result = correct_recovered_ir(state, values=values)
+    assert result.transactions == ({
+        "team_id": 2,
+        "activated_player_id": 30,
+        "dropped_player_id": 10,
+        "destination_slot_id": 20,
+        "activated_current_projection": 5.0,
+        "activated_future_projection": 11,
+        "dropped_current_projection": 3,
+        "dropped_future_projection": 7,
+        "drop_sacrifice_score": 3 + 0.65 * 7,
+    },)
+
+
+def test_ir_correction_preserves_canonical_activation_shape():
+    # V1 activate_from_ir requires a rostered reserve occupant, an eligible
+    # ordinary destination, and an authorized drop if capacity is full.
+    # These are invariant checks, not full V1 ledger parity.
+    state = scenario()
+    result = correct_recovered_ir(state)
+    assert result.activated == (30,)
+    i = state.definition.indexes.player_index[30]
+    assert state.slot_by_player[i] == 99
+    assert result.state.slot_by_player[i] in state.definition.eligible_slots[i]
+    assert result.state.owner_by_player[i] == state.owner_by_player[i]
+    assert result.state.availability_by_player[i] is A.ROSTERED
+    assert result.state.waiver_order == state.waiver_order
+    assert result.state.season_acquisition_counts == state.season_acquisition_counts
+    assert result.state.matchup_acquisition_counts == state.matchup_acquisition_counts
+    assert result.state.availability_by_player[0] is A.HOLD
+    assert result.state.availability_details_by_player[0].prohibited_cycle_id == state.cycle_id
