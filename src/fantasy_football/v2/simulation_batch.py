@@ -85,6 +85,8 @@ def simulate_paths(
     waiver_team_week_counts: Counter[tuple[int, int]] = Counter()
     rejection_examples: dict[tuple[int, int, str], dict[str, object]] = {}
     ir_correction_counts: Counter[str] = Counter()
+    ir_transaction_counts: Counter[tuple[int, int, int, int | None, int]] = Counter()
+    ir_transaction_examples: dict[tuple[int, int, int, int | None, int], dict[str, object]] = {}
     for path in range(paths):
         state = initial.clone()
         weekly_scores: dict[int, Mapping[int, float]] = {}
@@ -105,6 +107,12 @@ def simulate_paths(
                 state = correction.state
                 if acquisition_diagnostics is not None:
                     ir_correction_counts["activated"] += len(correction.activated)
+                    for transaction in correction.transactions:
+                        key = (week, transaction["team_id"], transaction["activated_player_id"],
+                               transaction["dropped_player_id"], transaction["destination_slot_id"])
+                        ir_transaction_counts[key] += 1
+                        if key not in ir_transaction_examples:
+                            ir_transaction_examples[key] = transaction
                     for _, reason in correction.blocked:
                         ir_correction_counts[f"blocked_{reason}"] += 1
                 if acquisition_diagnostics is not None:
@@ -175,6 +183,13 @@ def simulate_paths(
         acquisition_diagnostics.update({
             "counts": dict(sorted(acquisition_counts.items())),
             "ir_corrections": dict(sorted(ir_correction_counts.items())),
+            "ir_correction_transactions": [
+                {"week": week, "count": count, **ir_transaction_examples[key]}
+                for key, count in sorted(ir_transaction_counts.items(),
+                    key=lambda item: (item[0][0], item[0][1], item[0][2],
+                                      item[0][3] if item[0][3] is not None else -1, item[0][4]))
+                for week in (key[0],)
+            ],
             "rejection_reasons": dict(sorted(rejection_reasons.items())),
             "rejections_by_week_team": [
                 {"week": week, "team_id": team, "reason": reason, "count": count,
