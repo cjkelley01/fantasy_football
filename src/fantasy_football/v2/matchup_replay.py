@@ -27,6 +27,7 @@ def replay(root: Path, manifest: dict, *, draws=1000, seed=0):
     rng = Random(seed)
     results = []
     seen = set()
+    model_cache = {}
     for matchup in manifest["matchups"]:
         season, week = int(matchup["season"]), int(matchup["week"])
         if season not in (2025, 2026) or (season == 2026 and week > completed_week):
@@ -38,10 +39,12 @@ def replay(root: Path, manifest: dict, *, draws=1000, seed=0):
         teams = matchup["teams"]
         if len(teams) != 2:
             raise ValueError("Exactly two teams required")
-        historical = [r for r in rows if r["season"] < season]
-        if not historical:
-            raise ValueError("No prior-season training observations")
-        model = AdaptiveNeighborhood(tuple(historical))
+        if season not in model_cache:
+            historical = [r for r in rows if r["season"] < season]
+            if not historical:
+                raise ValueError("No prior-season training observations")
+            model_cache[season] = AdaptiveNeighborhood(tuple(historical))
+        model = model_cache[season]
         actuals, simulated = [], [[], []]
         ids = set()
         for team_idx, team in enumerate(teams):
@@ -58,15 +61,27 @@ def replay(root: Path, manifest: dict, *, draws=1000, seed=0):
                     raise ValueError(f"Missing actual/projection pair for starter {player_key}")
                 records.append(by_key[player_key])
             actuals.append(round(sum(row["actual"] for row in records), 4))
+            distributions = []
+            for row in records:
+                neighbors, _ = model.neighbors(row["position"], row["projection"])
+                baseline = sum(item["projection"] for item in neighbors) / len(neighbors)
+                values = []
+                for item in neighbors:
+                    actual = item["actual"]
+                    if actual == 0:
+                        values.append(0.0)
+                    else:
+                        adjusted = actual + row["projection"] - baseline
+                        values.append(adjusted if row["position"] == 16 else max(0.0, adjusted))
+                distributions.append(values)
             for _ in range(draws):
-                score = sum(model.sample(row["position"], row["projection"], rng,
-                                         preserve_zero=True)[0] for row in records)
-                simulated[team_idx].append(score)
+                simulated[team_idx].append(sum(rng.choice(values) for values in distributions))
         # Independent team draws; no correlated-game model is claimed.
         wins = sum(a > b for a, b in zip(*simulated))
         ties = sum(a == b for a, b in zip(*simulated))
         prob = (wins + .5 * ties) / draws
         observed = .5 if actuals[0] == actuals[1] else float(actuals[0] > actuals[1])
+        print("Replay {}/{}".format(len(results) + 1, len(manifest["matchups"])), flush=True)
         results.append({"season": season, "week": week, "matchup_id": matchup["matchup_id"],
                         "team_ids": [t["team_id"] for t in teams],
                         "actual_scores": actuals,
