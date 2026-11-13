@@ -27,7 +27,8 @@ class ProjectedScoreProvider:
     cache_hits: int = 0
     cache_misses: int = 0
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, float], ...]] = field(default_factory=dict)
-    _draw_cache: dict[tuple[int, int, int], float] = field(default_factory=dict)
+    _draw_cache: dict[tuple[int, int], float] = field(default_factory=dict)
+    _draw_cache_path: int | None = None
 
     @classmethod
     def prepare(
@@ -54,6 +55,9 @@ class ProjectedScoreProvider:
             if owner >= 0 and state.slot_by_player[index] is not None and state.slot_by_player[index] not in reserve:
                 rosters[owner].append(ids[index])
         scores: dict[int, float] = {}
+        if self._draw_cache_path != path:
+            self._draw_cache.clear()
+            self._draw_cache_path = path
         draw_cache = self._draw_cache
         for team_index, team_id in enumerate(teams):
             roster = tuple(rosters[team_index])
@@ -73,7 +77,7 @@ class ProjectedScoreProvider:
                 if self.coefficient_of_variation == 0.0 or expected == 0.0:
                     total += expected
                     continue
-                draw_key = (path, week, pid)
+                draw_key = (week, pid)
                 draw = draw_cache.get(draw_key)
                 if draw is None:
                     draw = _stable_standard_normal(self.seed, path, pid, self.snapshot.season, week)
