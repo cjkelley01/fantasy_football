@@ -42,7 +42,7 @@ def simulate_paths(
     last_regular_week: int = 14,
     matchup_periods: Mapping[int, int] | None = None,
     decision_provider: DecisionProvider | None = None,
-    max_successes_per_team_per_phase: int = 1,
+    max_successes_per_team_per_phase: int | None = None,
     retain_results: bool = False,
     initial_standings: Mapping[int, TeamStanding] | None = None,
 ) -> SimulationBatch:
