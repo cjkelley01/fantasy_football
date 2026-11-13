@@ -73,12 +73,14 @@ class AdaptiveNeighborhood:
             raise ValueError(f"No observations in capped neighborhood for position {position}")
         return within, width
 
-    def sample(self, position: int, projection: float, rng: Random, *, exclude_season=None):
+    def sample(self, position: int, projection: float, rng: Random, *, exclude_season=None, preserve_zero=False):
         neighbors, width = self.neighbors(position, projection, exclude_season=exclude_season)
         # Center the observed actual outcomes on the local historical projection
         # average, not the global position average.
         baseline = sum(row["projection"] for row in neighbors) / len(neighbors)
         actual = rng.choice(neighbors)["actual"]
+        if preserve_zero and actual == 0:
+            return 0.0, len(neighbors), width
         result = actual + projection - baseline
         return (result if position == 16 else max(0.0, result)), len(neighbors), width
 
@@ -86,8 +88,10 @@ class AdaptiveNeighborhood:
 @dataclass(frozen=True)
 class AdaptiveScoreSampler:
     neighborhood: AdaptiveNeighborhood
+    preserve_zero: bool = False
 
     def sample_player_scores(self, context: PlayerScoreContext, rng: Random):
         return {player_id: self.neighborhood.sample(
-            context.positions[player_id], float(projection), rng)[0]
+            context.positions[player_id], float(projection), rng,
+            preserve_zero=self.preserve_zero)[0]
             for player_id, projection in sorted(context.projections.items())}
