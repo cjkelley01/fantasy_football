@@ -154,5 +154,7 @@ def test_vacancy_bonus_calibration_boundary():
     base = dict(team_id=1, need_slot_ids=(0,), values=values,
                 roster_capacity=3, protected_player_ids=frozenset({10, 50}))
     assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=0), **base) is None
-    assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=4), **base) is None
+    at_four = propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=4), **base)
+    assert at_four is not None
+    assert at_four.expected_gain < 0
     assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=8), **base) is not None
