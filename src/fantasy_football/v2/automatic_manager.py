@@ -84,7 +84,15 @@ class AutomaticManager:
                     future_sum += current
                     future_count += 1
                     future_positive = future_positive or current > 0
-        return cls(snapshot, policy, workspace, bench, capacity, frozenset(\n            rule.slot_id for rule in snapshot.rules.lineup_slots\n            if rule.kind is SlotKind.RESERVE\n        ), {rule.slot_id: rule.capacity for rule in snapshot.rules.lineup_slots\n            if rule.slot_id in bench}, values)
+        reserve_ids = frozenset(
+            rule.slot_id for rule in snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.RESERVE
+        )
+        bench_capacities = {
+            rule.slot_id: rule.capacity for rule in snapshot.rules.lineup_slots
+            if rule.slot_id in bench
+        }
+        return cls(snapshot, policy, workspace, bench, capacity, reserve_ids, bench_capacities, values)
 
     def __call__(
         self, team_id: int, phase: AcquisitionAvailability,
