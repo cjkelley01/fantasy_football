@@ -73,3 +73,25 @@ def test_rejected_claim_between_valid_claims_does_not_diverge():
     assert all(step.result.matches for step in steps), [
         step.result.differences for step in steps
     ]
+
+
+def test_successful_replacement_matches_v1_and_preserves_drop_hold():
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    # Team 2's QB is explicitly droppable; replace him in the same QB slot.
+    proposal = AcquisitionProposal(2, 3, 2, 0, 1.0, A.FREE_AGENT)
+    result = reconcile_acquisition(snapshot, initial, proposal, destination_slot_id=0)
+    assert result.v1_accepted, result.v1_reason
+    assert result.v2_accepted, result.v2_reason
+    assert result.matches, result.differences
+
+
+def test_protected_drop_rejected_atomically_by_both_engines():
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    # Team 1's QB is protected by the undroppable list.
+    proposal = AcquisitionProposal(1, 3, 1, 0, 1.0, A.FREE_AGENT)
+    result = reconcile_acquisition(snapshot, initial, proposal, destination_slot_id=0)
+    assert not result.v1_accepted
+    assert not result.v2_accepted
+    assert result.matches, result.differences
