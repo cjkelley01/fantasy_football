@@ -22,3 +22,23 @@ def test_parity_result_reports_differences_without_masking_them():
     from fantasy_football.v2.transaction_reconciliation import StateDifference
     result = AcquisitionParityResult(True, True, (StateDifference("waiver_priority", (1, 2), (2, 1)),), None, None)
     assert not result.matches
+
+
+def test_successful_free_agent_add_matches_v1_state():
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    proposal = AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT)
+    result = reconcile_acquisition(snapshot, initial, proposal, destination_slot_id=20)
+    assert result.v1_accepted, result.v1_reason
+    assert result.v2_accepted, result.v2_reason
+    assert result.matches, result.differences
+
+
+def test_successful_waiver_add_matches_v1_state():
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    proposal = AcquisitionProposal(3, 4, None, 20, 1.0, A.WAIVERS)
+    result = reconcile_acquisition(snapshot, initial, proposal, destination_slot_id=20)
+    assert result.v1_accepted, result.v1_reason
+    assert result.v2_accepted, result.v2_reason
+    assert result.matches, result.differences
