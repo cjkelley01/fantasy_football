@@ -92,7 +92,7 @@ def test_reserve_occupant_without_positive_projection_does_not_block_ordinary_ad
             undroppable_list_enabled=False,
             position_limits=(),
         ),
-        projected_points_by_week={state.scoring_week: {10: 0.0}},
+        projected_points_by_week={state.scoring_week: {30: 0.0}},
     )
     # A second rostered player occupies reserve while the ordinary drop remains legal.
     state.owner_by_player[2] = state.definition.indexes.team_index[2]
