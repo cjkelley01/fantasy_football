@@ -81,6 +81,7 @@ def simulate_paths(
     rejection_reasons: Counter[str] = Counter()
     rejection_context: Counter[tuple[int, int, str]] = Counter()
     waiver_team_week_counts: Counter[tuple[int, int]] = Counter()
+    rejection_examples: dict[tuple[int, int, str], dict[str, object]] = {}
     for path in range(paths):
         state = initial.clone()
         weekly_scores: dict[int, Mapping[int, float]] = {}
@@ -118,7 +119,29 @@ def simulate_paths(
                     for proposal, reason in window.rejected:
                         acquisition_counts[f"{proposal.availability.value}_rejected"] += 1
                         rejection_reasons[reason] += 1
-                        rejection_context[(week, proposal.team_id, reason)] += 1
+                        key = (week, proposal.team_id, reason)
+                        rejection_context[key] += 1
+                        if key not in rejection_examples:
+                            team_index = state.definition.indexes.team_index[proposal.team_id]
+                            reserve_slots = {
+                                slot.slot_id for slot in state.definition.rules.lineup_slots
+                                if slot.kind.value == "reserve"
+                            }
+                            reserve_ids = [
+                                state.definition.indexes.player_ids[i]
+                                for i, owner in enumerate(state.owner_by_player)
+                                if owner == team_index and state.slot_by_player[i] in reserve_slots
+                            ]
+                            projections = (state.definition.projected_points_by_week or {}).get(week, {})
+                            rejection_examples[key] = {
+                                "add_player_id": proposal.add_player_id,
+                                "drop_player_id": proposal.drop_player_id,
+                                "availability": proposal.availability.value,
+                                "reserve_occupants": [
+                                    {"player_id": pid, "projection": projections.get(pid)}
+                                    for pid in sorted(reserve_ids)
+                                ],
+                            }
                     acquisition_counts["team_windows_with_multiple_waivers"] += sum(
                         count > 1 for count in per_team_waivers.values()
                     )
@@ -140,7 +163,8 @@ def simulate_paths(
             "counts": dict(sorted(acquisition_counts.items())),
             "rejection_reasons": dict(sorted(rejection_reasons.items())),
             "rejections_by_week_team": [
-                {"week": week, "team_id": team, "reason": reason, "count": count}
+                {"week": week, "team_id": team, "reason": reason, "count": count,
+                 "example": rejection_examples[(week, team, reason)]}
                 for (week, team, reason), count in sorted(rejection_context.items())
             ],
             "accepted_waivers_by_week_team": [
