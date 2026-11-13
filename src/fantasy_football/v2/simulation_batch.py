@@ -116,6 +116,7 @@ def simulate_paths(
     rejection_reasons: Counter[str] = Counter()
     rejection_context: Counter[tuple[int, int, str]] = Counter()
     waiver_team_week_counts: Counter[tuple[int, int]] = Counter()
+    accepted_transaction_counts: Counter[tuple[int, str, int, int, int | None]] = Counter()
     rejection_examples: dict[tuple[int, int, str], dict[str, object]] = {}
     ir_correction_counts: Counter[str] = Counter()
     ir_transaction_counts: Counter[tuple[int, int, int, int | None, int]] = Counter()
@@ -175,6 +176,8 @@ def simulate_paths(
                     per_team_waivers: Counter[int] = Counter()
                     for proposal in window.accepted:
                         acquisition_counts[f"{proposal.availability.value}_accepted"] += 1
+                        accepted_transaction_counts[(week, proposal.availability.value,
+                            proposal.team_id, proposal.add_player_id, proposal.drop_player_id)] += 1
                         if proposal.availability is AcquisitionAvailability.WAIVERS:
                             per_team_waivers[proposal.team_id] += 1
                             waiver_team_week_counts[(week, proposal.team_id)] += 1
@@ -241,6 +244,14 @@ def simulate_paths(
                 {"week": week, "team_id": team, "reason": reason, "count": count,
                  "example": rejection_examples[(week, team, reason)]}
                 for (week, team, reason), count in sorted(rejection_context.items())
+            ],
+            "accepted_acquisitions_by_week_team_player": [
+                {"week": week, "phase": phase, "team_id": team,
+                 "add_player_id": add, "drop_player_id": drop, "count": count}
+                for (week, phase, team, add, drop), count in sorted(
+                    accepted_transaction_counts.items(),
+                    key=lambda item: (item[0][0], item[0][1], item[0][2], item[0][3],
+                                      item[0][4] if item[0][4] is not None else -1))
             ],
             "accepted_waivers_by_week_team": [
                 {"week": week, "team_id": team, "count": count}
