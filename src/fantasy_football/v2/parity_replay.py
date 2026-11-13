@@ -3,7 +3,8 @@
 Usage: python -m fantasy_football.v2.parity_replay --db outputs/fantasy_football.sqlite3
 
 This is a transaction parity diagnostic, NOT a statistical calibration.
-It replays sequential waiver/free-agent windows across the simulation horizon.\nStandings-driven priority resets require simulated scores and are NOT modeled here.
+It replays sequential waiver/free-agent windows across the simulation horizon.
+Standings-driven priority resets require simulated scores and are NOT modeled here.
 """
 from __future__ import annotations
 
@@ -11,7 +12,12 @@ import argparse
 import json
 from pathlib import Path
 
-from dataclasses import replace\n\nfrom fantasy_football.evolving_state import (\n    AcquisitionAvailability as A, IRPolicy, initialize_evolving_state,\n    advance_cycle, activate_from_ir,\n)\nfrom fantasy_football.v2.compact_cycle import advance_compact_cycle\nfrom fantasy_football.v2.ir_correction import correct_recovered_ir
+from fantasy_football.evolving_state import (
+    AcquisitionAvailability as A, IRPolicy, initialize_evolving_state,
+    advance_cycle, activate_from_ir,
+)
+from fantasy_football.v2.compact_cycle import advance_compact_cycle
+from fantasy_football.v2.ir_correction import correct_recovered_ir
 from fantasy_football.snapshot_store import SnapshotStore
 from fantasy_football.v2.automatic_manager import AutomaticManager
 from fantasy_football.v2.compact_executor import execute_compact_proposal
