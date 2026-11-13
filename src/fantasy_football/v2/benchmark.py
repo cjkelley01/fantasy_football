@@ -98,8 +98,8 @@ def main(argv=None):
         "champions": batch.champions,
         "playoff_appearances": batch.playoff_appearances,
         "experimental": True,
-        **({"cache_stats": {k: v for k, v in diagnostics.items() if k != "acquisitions"}} if args.cache_stats else {}),
-        **({"acquisition_stats": diagnostics["acquisitions"]} if args.acquisition_stats else {}),
+        **({"cache_stats": {k: v for k, v in diagnostics.items() if k not in ("acquisitions", "manager_needs")}} if args.cache_stats else {}),
+        **({"acquisition_stats": diagnostics["acquisitions"], "manager_needs": diagnostics["manager_needs"]} if args.acquisition_stats else {}),
     }, indent=2))
     if profiler is not None:
         output = io.StringIO()
