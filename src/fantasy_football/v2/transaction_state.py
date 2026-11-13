@@ -32,6 +32,7 @@ class CompactTransactionDefinition:
     # Static player/roster restrictions; preserve canonical identifiers.
     eligible_slots: tuple[tuple[int, ...], ...]
     undroppable: tuple[bool | None, ...]
+    drop_source_ids: tuple[str | None, ...]
     default_positions: tuple[int, ...]
     # Rules and evidence are immutable canonical objects, retained without loss.
     rules: object
@@ -52,6 +53,7 @@ class CompactTransactionDefinition:
             ),
             tuple(p.eligible_lineup_slot_ids for p in players),
             tuple(p.is_undroppable for p in players),
+            tuple(p.undroppable_source_id for p in players),
             tuple(getattr(p, 'default_position_id', None) for p in players),
             snapshot.rules,
             _projection_index(snapshot),
