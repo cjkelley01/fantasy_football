@@ -90,3 +90,23 @@ def test_protected_players_cannot_be_dropped():
                                  values=values, roster_capacity=3,
                                  protected_player_ids=frozenset({20, 50}))
     assert result is None or result.drop_player_id == 10
+
+
+def test_manager_diagnostics_classify_no_authorized_drop():
+    state, values = setup_state()
+    reasons = {}
+    state.definition = replace(state.definition, undroppable=(True, True, False, False, True))
+    result = propose_acquisition(state, team_id=1, need_slot_ids=(0,),
+                                 values=values, roster_capacity=3, diagnostics=reasons)
+    assert result is None
+    assert reasons == {"no_authorized_unprotected_drop": 1}
+
+
+def test_manager_diagnostics_classify_missing_phase_candidates():
+    state, values = setup_state()
+    reasons = {}
+    result = propose_acquisition(state, team_id=1, need_slot_ids=(0,),
+                                 values=values, roster_capacity=4,
+                                 allowed_availability=frozenset(), diagnostics=reasons)
+    assert result is None
+    assert reasons == {"no_available_players_in_phase": 1}
