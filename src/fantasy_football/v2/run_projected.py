@@ -60,6 +60,7 @@ def run_projected_seasons(
             "decisions_with_multiple_needs": manager.multiple_needs_seen,
             "needs_without_proposal": manager.no_proposal_with_need,
             "proposals_returned": manager.proposals_returned,
+            "no_proposal_reasons": dict(manager.no_proposal_reasons),
         } if manager else {})
         diagnostics.update({
             "scoring_cache_hits": scoring.cache_hits,
