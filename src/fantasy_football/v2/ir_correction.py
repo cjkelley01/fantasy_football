@@ -21,6 +21,7 @@ class IRCorrectionResult:
     state: CompactTransactionState
     activated: tuple[int, ...]
     blocked: tuple[tuple[int, str], ...]
+    transactions: tuple[dict[str, object], ...] = ()
 
 
 def correct_recovered_ir(
@@ -41,6 +42,7 @@ def correct_recovered_ir(
     current = state
     activated: list[int] = []
     blocked: list[tuple[int, str]] = []
+    transactions: list[dict[str, object]] = []
     projections = (d.projected_points_by_week or {}).get(state.scoring_week, {})
     if values is None:
         # Standalone correction uses indexed projection evidence. The live
@@ -142,4 +144,17 @@ def correct_recovered_ir(
             candidate.slot_by_player[ir] = destination
             current = candidate
             activated.append(pid)
-    return IRCorrectionResult(current, tuple(activated), tuple(blocked))
+            activated_value = values.get(pid)
+            dropped_value = values.get(dropped_pid) if drop is not None else None
+            transactions.append({
+                "team_id": d.indexes.team_ids[team],
+                "activated_player_id": pid,
+                "dropped_player_id": dropped_pid if drop is not None else None,
+                "destination_slot_id": destination,
+                "activated_current_projection": projections.get(pid),
+                "activated_future_projection": activated_value.future if activated_value else None,
+                "dropped_current_projection": dropped_value.current if dropped_value else None,
+                "dropped_future_projection": dropped_value.future if dropped_value else None,
+                "drop_sacrifice_score": sacrifice(drop)[0] if drop is not None else None,
+            })
+    return IRCorrectionResult(current, tuple(activated), tuple(blocked), tuple(transactions))
