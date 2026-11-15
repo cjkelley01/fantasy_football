@@ -87,41 +87,64 @@ function positiveInteger(value:number,label:string){if(!Number.isInteger(value)|
 function parseIds(raw:string,label:string){if(!raw.trim())return[];const values=raw.split(",").map(item=>Number(item.trim()));if(values.some(value=>!Number.isInteger(value)||value<=0))throw new Error(`${label} IDs must be comma-separated positive integers.`);if(new Set(values).size!==values.length)throw new Error(`${label} IDs contain duplicates.`);return values}
 function exportMetadata(run:BackgroundRunRecord,snapshot:SnapshotSummary){const blob=new Blob([JSON.stringify({scope:"retained_run_metadata_only",units:"timestamps are UTC; no candidate universe is included",snapshot_id:snapshot.snapshot_id,canonical_sha256:snapshot.canonical_sha256,run},null,2)],{type:"application/json"}),link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=`run-${run.run_id}.json`;link.click();URL.revokeObjectURL(link.href)}
 function V2ExperimentalPreview({snapshot}:{snapshot:SnapshotSummary}){
-  const[paths,setPaths]=useState(100);
+  const[paths,setPaths]=useState(1000);
+  const[runId,setRunId]=useState<string|null>(null);
+  const[status,setStatus]=useState<string>("");
   const[seed,setSeed]=useState(42);
   const[busy,setBusy]=useState(false);
   const[result,setResult]=useState<V2PreviewResult|null>(null);
   const[error,setError]=useState<string|null>(null);
   const controller=useRef<AbortController|null>(null);
-  useEffect(()=>{controller.current?.abort();setResult(null);setError(null);setBusy(false);return()=>controller.current?.abort()},[snapshot.snapshot_id]);
+  useEffect(()=>{controller.current?.abort();setResult(null);setError(null);setBusy(false);setRunId(null);setStatus("");return()=>controller.current?.abort()},[snapshot.snapshot_id]);
   const run=async()=>{
     if(busy)return;
     const active=new AbortController();
     controller.current=active;
     setBusy(true);setError(null);setResult(null);
     try{
-      const response=await api.v2Preview({snapshot_id:snapshot.snapshot_id,paths,seed,coefficient_of_variation:0.35,manage_rosters:true,vacancy_bonus:8},active.signal);
-      if(!active.signal.aborted)setResult(response);
+      const submitted=await api.submitV2Baseline({snapshot_id:snapshot.snapshot_id,paths,seed,coefficient_of_variation:0.35,manage_rosters:true,vacancy_bonus:8},active.signal);
+      if(!active.signal.aborted){setRunId(submitted.run_id);setStatus("queued")}
     }catch(reason){
       if(!active.signal.aborted)setError(message(reason,"V2 preview failed."));
     }finally{
       if(controller.current===active){controller.current=null;setBusy(false)}
     }
   };
+  useEffect(()=>{
+    if(!runId)return;
+    let stopped=false;
+    const poll=async()=>{
+      try{
+        const record=await api.run(runId);
+        if(stopped)return;
+        setStatus(record.status);
+        if(record.status==="completed"){
+          const saved=await api.v2BaselineResult(runId);
+          if(!stopped){setResult(saved.result);setBusy(false)}
+        }else if(["failed","cancelled","interrupted"].includes(record.status)){
+          setBusy(false);setError(record.error_message??"V2 run ended without a result.");
+        }
+      }catch(reason){if(!stopped){setError(message(reason,"Unable to read V2 run status."));setBusy(false)}}
+    };
+    void poll();
+    const timer=window.setInterval(()=>{if(status==="queued"||status==="running"||status==="cancel_requested")void poll()},1500);
+    return()=>{stopped=true;window.clearInterval(timer)};
+  },[runId,status]);
+  const cancel=async()=>{if(runId)await api.cancelRun(runId)};
   const teamName=(id:string)=>snapshot.teams.find(team=>String(team.team_id)===id)?.display_name??`Team ${id}`;
   const ordered=result?Object.entries(result.championship_probabilities).sort((a,b)=>b[1]-a[1]):[];
   const percent=(value:number)=>(value*100).toFixed(1)+"%";
-  return <section className="simulation-config" aria-label="Experimental V2 preview">
+  return <section className="simulation-config" aria-label="V2 background baseline">
     <header><div><span className="overline">V2 compact simulator · baseline season</span><h2>Season simulation</h2></div></header>
-    <p>Opt-in projected-score simulation. This is not calibrated, not equivalent to V1, and does not save a run. V2 is the default baseline engine; V1 action search and retained history remain available during migration.</p>
+    <p>Opt-in projected-score simulation. This is not calibrated, not equivalent to V1. Runs are now saved in the existing background-run history. V2 is the default baseline engine; V1 action search and retained history remain available during migration.</p>
     <div className="submission-row">
-      <label>Simulation paths <select aria-label="V2 simulation paths" value={paths} disabled={busy} onChange={event=>setPaths(Number(event.target.value))}><option value={100}>Quick · 100</option><option value={500}>Balanced · 500</option><option value={1000}>Detailed · 1,000</option></select></label>
+      <label>Simulation paths <select aria-label="V2 simulation paths" value={paths} disabled={busy} onChange={event=>setPaths(Number(event.target.value))}><option value={100}>Quick · 100</option><option value={500}>Balanced · 500</option><option value={1000}>Detailed · 1,000</option><option value={5000}>Extended · 5,000</option><option value={10000}>Maximum · 10,000</option></select></label>
       <label>Seed <input aria-label="V2 simulation seed" type="number" min={0} max={2147483647} step={1} value={seed} disabled={busy} onChange={event=>setSeed(Number(event.target.value))}/></label>
-      <button type="button" disabled={busy||!Number.isInteger(seed)||seed<0||seed>2147483647} onClick={()=>void run()}>{busy?"Running V2 preview…":"Run baseline simulation"}</button>
+      <button type="button" disabled={busy||!Number.isInteger(seed)||seed<0||seed>2147483647} onClick={()=>void run()}>{busy?"Submitting V2…":"Run baseline simulation"}</button>{runId&&<span>Run {short(runId)} · {status}</span>}{busy&&runId&&<button type="button" onClick={()=>void cancel()}>Request cancellation</button>}
     </div>
     {error&&<p className="simulation-error" role="alert"><AlertTriangle/>{error}</p>}
     {result&&<div aria-live="polite">
-      <p><strong>{result.paths.toLocaleString()} paths</strong> · {result.elapsed_seconds.toFixed(2)} seconds · seed {result.seed} · ephemeral result</p>
+      <p><strong>{result.paths.toLocaleString()} paths</strong> · {result.elapsed_seconds.toFixed(2)} seconds · seed {result.seed} · saved background result</p>
       <table><thead><tr><th>Team</th><th>Championship</th><th>Finals</th><th>Playoffs</th><th>1 seed</th><th>Top 2 seeds</th></tr></thead><tbody>{ordered.map(([id,probability])=><tr key={id}><td>{teamName(id)}</td><td>{percent(probability)}</td><td>{percent(result.finals_probabilities[id]??0)}</td><td>{percent(result.playoff_probabilities[id]??0)}</td><td>{percent(result.seed_probabilities[id]?.["1"]??0)}</td><td>{percent((result.seed_probabilities[id]?.["1"]??0)+(result.seed_probabilities[id]?.["2"]??0))}</td></tr>)}</tbody></table>
       <p className="runtime-caveat">{result.warning}</p>
     </div>}
