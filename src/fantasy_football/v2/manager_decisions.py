@@ -81,7 +81,7 @@ def propose_acquisition(
         raise ValueError("unknown team")
     team_index = ti[team_id]
     ids = state.definition.indexes.player_ids
-    if set(values) - set(ids):
+    if len(values) > len(ids) or any(pid not in state.definition.indexes.player_index for pid in values):
         raise ValueError("unknown player valuation")
     if not need_slot_ids:
         return None
