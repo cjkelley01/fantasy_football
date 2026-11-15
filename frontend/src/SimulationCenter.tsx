@@ -100,14 +100,14 @@ function V2ExperimentalPreview({snapshot}:{snapshot:SnapshotSummary}){
     if(busy)return;
     const active=new AbortController();
     controller.current=active;
-    setBusy(true);setError(null);setResult(null);
+    setBusy(true);setError(null);setResult(null);setRunId(null);setStatus("");
     try{
       const submitted=await api.submitV2Baseline({snapshot_id:snapshot.snapshot_id,paths,seed,coefficient_of_variation:0.35,manage_rosters:true,vacancy_bonus:8},active.signal);
       if(!active.signal.aborted){setRunId(submitted.run_id);setStatus("queued")}
     }catch(reason){
-      if(!active.signal.aborted)setError(message(reason,"V2 preview failed."));
+      if(!active.signal.aborted){setError(message(reason,"V2 submission failed."));setBusy(false)}
     }finally{
-      if(controller.current===active){controller.current=null;setBusy(false)}
+      if(controller.current===active){controller.current=null}
     }
   };
   useEffect(()=>{
