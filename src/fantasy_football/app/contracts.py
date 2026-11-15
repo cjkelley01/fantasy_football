@@ -537,7 +537,7 @@ class SnapshotRefreshResult(ContractModel):
     unresolved_capabilities: tuple[str, ...]
 
 
-RunType = Literal["baseline", "manual_scenario", "action_search"]
+RunType = Literal["baseline", "manual_scenario", "action_search", "v2_baseline"]
 RunStatus = Literal[
     "queued", "running", "cancel_requested", "completed", "cancelled", "failed",
     "interrupted",
