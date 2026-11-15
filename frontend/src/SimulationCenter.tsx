@@ -111,6 +111,7 @@ function V2ExperimentalPreview({snapshot}:{snapshot:SnapshotSummary}){
   };
   const teamName=(id:string)=>snapshot.teams.find(team=>String(team.team_id)===id)?.display_name??`Team ${id}`;
   const ordered=result?Object.entries(result.championship_probabilities).sort((a,b)=>b[1]-a[1]):[];
+  const percent=(value:number)=>(value*100).toFixed(1)+"%";
   return <section className="simulation-config" aria-label="Experimental V2 preview">
     <header><div><span className="overline">Experimental · V2 compact simulator</span><h2>Fast season-outcome preview</h2></div></header>
     <p>Opt-in projected-score simulation. This is not calibrated, not equivalent to V1, and does not save a run. Existing V1 analyses remain the default.</p>
@@ -122,7 +123,7 @@ function V2ExperimentalPreview({snapshot}:{snapshot:SnapshotSummary}){
     {error&&<p className="simulation-error" role="alert"><AlertTriangle/>{error}</p>}
     {result&&<div aria-live="polite">
       <p><strong>{result.paths.toLocaleString()} paths</strong> · {result.elapsed_seconds.toFixed(2)} seconds · seed {result.seed} · ephemeral result</p>
-      <table><thead><tr><th>Team</th><th>Championship</th><th>Playoffs</th></tr></thead><tbody>{ordered.map(([id,probability])=><tr key={id}><td>{teamName(id)}</td><td>{(probability*100).toFixed(1)}%</td><td>{((result.playoff_probabilities[id]??0)*100).toFixed(1)}%</td></tr>)}</tbody></table>
+      <table><thead><tr><th>Team</th><th>Championship</th><th>Finals</th><th>Playoffs</th><th>1 seed</th><th>Top 2 seeds</th></tr></thead><tbody>{ordered.map(([id,probability])=><tr key={id}><td>{teamName(id)}</td><td>{percent(probability)}</td><td>{percent(result.finals_probabilities[id]??0)}</td><td>{percent(result.playoff_probabilities[id]??0)}</td><td>{percent(result.seed_probabilities[id]?.["1"]??0)}</td><td>{percent((result.seed_probabilities[id]?.["1"]??0)+(result.seed_probabilities[id]?.["2"]??0))}</td></tr>)}</tbody></table>
       <p className="runtime-caveat">{result.warning}</p>
     </div>}
   </section>;
