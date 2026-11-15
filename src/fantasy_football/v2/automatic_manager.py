@@ -38,6 +38,7 @@ class AutomaticManager:
     no_proposal_reasons: dict[str, int] = field(default_factory=dict)
     skip_is_phase_independent: bool = field(default=True, init=False, repr=False)
     _complete_rosters: set[tuple[int, tuple[int, ...]]] = field(default_factory=set, init=False, repr=False)
+    _validated_weeks: set[int] = field(default_factory=set, init=False, repr=False)
     _indexed_state: CompactTransactionState | None = field(default=None, init=False, repr=False)
     _team_entries: tuple[tuple[tuple[int, int, int], ...], ...] = field(default=(), init=False, repr=False)
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
@@ -184,6 +185,12 @@ class AutomaticManager:
             pid for _, pid, slot in entries
             if slot not in self.bench_slot_ids
         ) if bench_is_full else frozenset()
+        week = compact.scoring_week
+        if week not in self._validated_weeks:
+            known = compact.definition.indexes.player_index
+            if any(pid not in known for pid in self.week_values[week]):
+                raise ValueError('unknown player valuation')
+            self._validated_weeks.add(week)
         proposal = propose_acquisition(
             compact, team_id=team_id, need_slot_ids=need_slots,
             values=self.week_values[compact.scoring_week],
@@ -193,6 +200,8 @@ class AutomaticManager:
             excluded_capacity_slot_ids=self.reserve_slot_ids,
             allowed_availability=self._phase_availability[phase],
             diagnostics=self.no_proposal_reasons,
+            owned_player_indexes=tuple(i for i, _, _ in entries),
+            valuations_validated=True,
         )
         if proposal is None:
             self.no_proposal_with_need += 1
