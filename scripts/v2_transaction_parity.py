@@ -127,7 +127,7 @@ def main():
         "accepted_both": sum(x["compact_accepted"] and x["canonical_accepted"] for x in outcomes),
         "disagreements": disagreements,
         "transactions": outcomes,
-        "scope": "single-week sequential proposal parity; no IR correction or ledger parity",
+        "scope": "single-week IR correction and sequential proposal parity; no season-wide or ledger parity",
     }, indent=2))
     return 1 if disagreements or not ir_state_parity else 0
 
