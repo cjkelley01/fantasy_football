@@ -56,6 +56,7 @@ def main(argv=None):
     parser.add_argument("--vacancy-bonus", type=float, default=8.0, help="Essential starter vacancy premium in points; compare 0, 4, and 8")
     parser.add_argument("--cache-stats", action="store_true", help="Print lineup-cache hit and miss counts")
     parser.add_argument("--acquisition-stats", action="store_true", help="Print per-phase acquisition attempts, outcomes, and rejection reasons")
+    parser.add_argument("--verify-reference", action="store_true", help="Check the fixed 1000-path seed-42 real-league baseline for outcome drift")
     parser.add_argument("--profile", action="store_true", help="Print cumulative CPU hotspots after the benchmark")
     parser.add_argument("--detail-diagnostics", action="store_true", help="Include rejection and waiver claim breakdowns by week and team")
     parser.add_argument("--profile-limit", type=int, default=25, help="Number of profiling rows")
@@ -84,7 +85,7 @@ def main(argv=None):
     profiler = cProfile.Profile() if args.profile else None
     if profiler is not None:
         profiler.enable()
-    diagnostics = {} if (args.cache_stats or args.acquisition_stats or args.detail_diagnostics) else None
+    diagnostics = {} if (args.cache_stats or args.acquisition_stats or args.detail_diagnostics or args.verify_reference) else None
     batch = run_projected_seasons(
         snapshot, initial, schedule, periods,
         paths=args.paths, seed=args.seed,
@@ -95,6 +96,27 @@ def main(argv=None):
     )
     if profiler is not None:
         profiler.disable()
+    if args.verify_reference:
+        if (args.paths, args.seed, args.cv, args.vacancy_bonus, args.no_management) != (1000, 42, 0.35, 8.0, False):
+            parser.error("--verify-reference requires --paths 1000 --seed 42 and default policy/scoring settings")
+        if snapshot_id != "3aba763f-0945-4e79-b4e8-1fcc596a531f":
+            parser.error("--verify-reference is only defined for the recorded 2026 snapshot")
+        expected_champions = {1: 171, 13: 207, 4: 109, 3: 231, 8: 41, 17: 120, 10: 113, 9: 4, 14: 4}
+        expected_playoffs = {1: 1000, 17: 998, 3: 999, 8: 986, 13: 999, 14: 873, 10: 855, 4: 876, 9: 384, 18: 21, 5: 9}
+        expected_acquisitions = {"free_agent_accepted": 12000, "waivers_accepted": 3000}
+        actual_acquisitions = (acquisition_stats or {}).get("counts", {})
+        differences = {}
+        if batch.champions != expected_champions:
+            differences["champions"] = {"expected": expected_champions, "actual": batch.champions}
+        if batch.playoff_appearances != expected_playoffs:
+            differences["playoff_appearances"] = {"expected": expected_playoffs, "actual": batch.playoff_appearances}
+        for name, expected in expected_acquisitions.items():
+            if actual_acquisitions.get(name) != expected:
+                differences[name] = {"expected": expected, "actual": actual_acquisitions.get(name)}
+        if differences:
+            print(json.dumps({"reference_check": "FAIL", "differences": differences}, indent=2))
+            return 1
+        print("REFERENCE CHECK PASS: champions, playoff appearances, and accepted acquisitions unchanged")
     print(json.dumps({
         "snapshot_id": snapshot_id,
         "paths": batch.paths,
