@@ -48,7 +48,10 @@ async function postJson<T>(path:string,body:unknown,signal?:AbortSignal):Promise
 }
 async function deleteRequest(path:string,signal?:AbortSignal):Promise<void>{const response=await fetch(path,{method:"DELETE",signal});if(!response.ok){let payload:ApiErrorEnvelope|undefined;try{payload=await response.json() as ApiErrorEnvelope}catch{/* typed fallback */}throw new ApiError(payload?.error.message??`Request failed (${response.status}).`,response.status,payload?.error.code)}}
 
+export type V2PreviewResult = {engine:string;experimental:boolean;calibrated:boolean;persisted:boolean;snapshot_id:string;paths:number;seed:number;elapsed_seconds:number;championship_probabilities:Record<string,number>;playoff_probabilities:Record<string,number>;warning:string};
+
 export const api = {
+  v2Preview:(request:{snapshot_id:string;paths:number;seed:number;coefficient_of_variation:number;manage_rosters:boolean;vacancy_bonus:number},signal?:AbortSignal)=>postJson<V2PreviewResult>("/api/v1/experimental/v2/preview",request,signal),
   health: (signal?: AbortSignal) => getJson<HealthResponse>("/api/v1/health", signal),
   snapshots: (signal?: AbortSignal) => getJson<readonly SnapshotSummary[]>("/api/v1/snapshots", signal),
   snapshot: (snapshotId: string, signal?: AbortSignal) =>
