@@ -2,7 +2,7 @@
 
 This module is a comparison harness, NOT a V1 transaction executor.
 The caller must obtain the V1 outcome independently using the canonical engine.
-Ledger and IR-policy evidence parity remain separate checks.
+Ledger event generation remains a separate check; immutable audit metadata and\nIR evidence retention are checked here.
 """
 from __future__ import annotations
 
@@ -40,6 +40,14 @@ def compare_transaction_states(
         ("roster_and_slots", v1_roster, v2_roster),
         ("availability_and_reentry", v1_availability, v2_availability),
         ("waiver_priority", tuple(v1.current_waiver_priority), v2.waiver_priority_ids()),
+        ("initial_window_waiver_priority", tuple(v1.initial_window_waiver_priority),
+         tuple(ids.team_ids[i] for i in v2.initial_waiver_order)),
+        ("ir_policy", v1.ir_policy, v2.ir_policy),
+        ("ir_eligibility_evidence", v1.ir_eligibility_evidence, v2.ir_evidence),
+        ("assumption_ids", v1.assumption_ids, v2.assumption_ids),
+        ("source_snapshot_id", v1.source_snapshot_id, v2.source_snapshot_id),
+        ("source_schema_version", v1.source_schema_version, v2.source_schema_version),
+        ("season", v1.season, v2.season),
         ("season_acquisitions", dict(v1.season_acquisition_counts),
          dict(zip(ids.team_ids, v2.season_acquisition_counts))),
         ("matchup_acquisitions", dict(v1.matchup_acquisition_counts),
