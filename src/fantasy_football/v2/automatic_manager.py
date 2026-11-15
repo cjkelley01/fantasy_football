@@ -27,6 +27,7 @@ class AutomaticManager:
     week_values: dict[int, dict[int, PlayerValue]]
     reserve_slot_ids: frozenset[int] = field(default_factory=frozenset, init=False)
     bench_capacities: dict[int, int] = field(default_factory=dict, init=False)
+    _phase_availability: dict[AcquisitionAvailability, frozenset[AcquisitionAvailability]] = field(default_factory=dict, init=False, repr=False)
     cache_hits: int = 0
     cache_misses: int = 0
     needs_seen: int = 0
@@ -44,6 +45,7 @@ class AutomaticManager:
             rule.slot_id for rule in self.snapshot.rules.lineup_slots
             if rule.kind is SlotKind.RESERVE
         )
+        self._phase_availability = {phase: frozenset({phase}) for phase in AcquisitionAvailability}
         self.bench_capacities = {
             rule.slot_id: rule.capacity for rule in self.snapshot.rules.lineup_slots
             if rule.slot_id in self.bench_slot_ids
@@ -121,11 +123,7 @@ class AutomaticManager:
         # Compact state was validated at initialization and every acquisition
         # passes the compact executor. Avoid reconstructing and revalidating
         # the entire league for every team/phase/week.
-        reserve = frozenset(
-            rule.slot_id for rule in self.snapshot.rules.lineup_slots
-            if rule.kind is SlotKind.RESERVE
-        )
-        roster = tuple(pid for _, pid, slot in entries if slot not in reserve)
+        roster = tuple(pid for _, pid, slot in entries if slot not in self.reserve_slot_ids)
         cache_key = (compact.scoring_week, roster)
         lineup_info = self._lineup_cache.get(cache_key)
         if lineup_info is None:
@@ -154,12 +152,8 @@ class AutomaticManager:
             slot: sum(entry_slot == slot for _, _, entry_slot in entries)
             for slot in self.bench_slot_ids
         }
-        bench_capacity = {
-            rule.slot_id: rule.capacity for rule in self.snapshot.rules.lineup_slots
-            if rule.slot_id in self.bench_slot_ids
-        }
         destination = next(
-            (slot for slot in self.bench_slot_ids if occupancy[slot] < bench_capacity[slot]),
+            (slot for slot in self.bench_slot_ids if occupancy[slot] < self.bench_capacities[slot]),
             None,
         )
         bench_is_full = destination is None
@@ -180,17 +174,14 @@ class AutomaticManager:
             roster_capacity=self.roster_capacity,
             policy=self.policy, protected_player_ids=protected,
             forbidden_drop_ids=forbidden_drops,
-            excluded_capacity_slot_ids=frozenset(
-                rule.slot_id for rule in self.snapshot.rules.lineup_slots
-                if rule.kind is SlotKind.RESERVE
-            ),
-            allowed_availability=frozenset({phase}),
+            excluded_capacity_slot_ids=self.reserve_slot_ids,
+            allowed_availability=self._phase_availability[phase],
             diagnostics=self.no_proposal_reasons,
         )
         if proposal is None:
             self.no_proposal_with_need += 1
             return None
-        if occupancy[destination] >= bench_capacity[destination]:
+        if occupancy[destination] >= self.bench_capacities[destination]:
             if proposal.drop_player_id is None:
                 self.no_proposal_with_need += 1
                 self.no_proposal_reasons["bench_full_without_drop"] = self.no_proposal_reasons.get("bench_full_without_drop", 0) + 1
