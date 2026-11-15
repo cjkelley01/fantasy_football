@@ -91,3 +91,34 @@ def test_repeated_waiver_passes_allow_two_claims_and_update_priority():
                for team, phase, order in visits)
     assert result.state.season_acquisition_counts[1] == 2
     assert result.state.matchup_acquisition_counts[1] == 3
+
+
+def test_proven_complete_team_is_skipped_across_phases():
+    state, _ = eligible()
+    calls = []
+    class Provider:
+        skip_is_phase_independent = True
+        def skip_decision(self, team, phase, current):
+            return team == 1
+        def __call__(self, team, phase, current):
+            calls.append((team, phase))
+            return None
+    result = process_compact_acquisition_window(state, Provider())
+    assert not result.accepted
+    assert (1, A.WAIVERS) not in calls
+    assert (1, A.FREE_AGENT) not in calls
+    assert (2, A.WAIVERS) in calls
+    assert (2, A.FREE_AGENT) in calls
+
+
+def test_non_opt_in_skip_hook_is_not_used():
+    state, _ = eligible()
+    calls = []
+    class Provider:
+        def skip_decision(self, team, phase, current):
+            raise AssertionError("non-opt-in skip should not run")
+        def __call__(self, team, phase, current):
+            calls.append((team, phase))
+            return None
+    process_compact_acquisition_window(state, Provider())
+    assert len(calls) == 4
