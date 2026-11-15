@@ -39,3 +39,23 @@ Status: **in progress; experimental**. Performance target is met, but speed is n
 - Repeated identical acquisitions across paths can be expected when current-week projections and available players are unchanged. Standings-driven waiver order can still change who acquires a contested player.
 - Do not alter the projection model as part of parity testing; isolate manager-policy effects first.
 - Do not merge into the War Room default simulation backend until the acceptance gates and remaining differences are documented.
+
+
+## Policy sensitivity results (2026-11-15)
+
+Local run: `scripts/v2_realism_audit.py`, 1,000 paths per scenario, seed 42, fixed snapshot `3aba763f-0945-4e79-b4e8-1fcc596a531f`.
+
+| Policy | Accepted free agents | Accepted waivers | Team 4 championships | Team 10 championships | Team 13 championships |
+|---|---:|---:|---:|---:|---:|
+| Management off | 0 | 0 | 81 | 69 | 240 |
+| Vacancy bonus 0 | 8,000 | 3,000 | 89 | 115 | 212 |
+| Vacancy bonus 4 | 12,000 | 3,000 | 109 | 113 | 207 |
+| Vacancy bonus 8 | 12,000 | 3,000 | 109 | 113 | 207 |
+
+At bonuses 4 and 8, **all championship counts, playoff appearances, acquisition counts and manager diagnostics match** in this test. This does not prove those policies are equivalent on other snapshots. Retain bonus 8 as the existing regression baseline; bonus 4 is an equivalent candidate on this dataset, not an independently calibrated optimum.
+
+With bonus 8, the 17,000 no-proposal decisions with needs comprise 15,000 `no_eligible_player_in_available_pool` and 2,000 `no_positive_current_projection`. At bonus 0, another 9,000 decisions report `candidate_gain_below_threshold`. These are **decision events, not unique team-week vacancies**: the manager may be called multiple times across phases or repeated acquisition rounds. Do not claim that 17,000 distinct lineups were unfillable.
+
+Across 1,000 paths, 15,000 accepted acquisitions and 5,000 modeled IR activations are recorded. Most acquisition choices are identical across paths because initial rosters, projections and available-player pools are shared; week-13 contested free agents show path-dependent variation (team 9 versus team 17). The run reports no executor rejections, but this alone does not establish canonical transaction parity.
+
+**Decision:** acquisition-policy sensitivity and diagnostic classification are documented. **Outstanding before full correctness/realism signoff:** canonical V1/V2 weekly state-transition comparison; explicit verification of legal alternatives for the no-eligible and no-positive-projection cases; historical calibration of projected scoring and manager choices. Keep V2 labeled experimental until those gates are completed.
