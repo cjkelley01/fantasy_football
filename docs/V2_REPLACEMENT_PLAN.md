@@ -24,7 +24,7 @@ Status: migration in progress. V1 remains available and authoritative until expl
 ## Gaps before replacing V1
 
 1. **Full league output**: include all teams even when a count is zero (done).
-2. **Outcome detail**: preserve or derive final-placement counts, playoff seeds,
+2. **Outcome detail**: regular-season finish and seed distributions plus finals appearances added to experimental preview; still need complete final-placement counts, byes,
    byes, weekly standings, bracket results, and optional per-path evidence.
    Never fabricate unsupported metrics.
 3. **Uncertainty**: report sampling intervals and clearly distinguish them
@@ -42,6 +42,12 @@ Status: migration in progress. V1 remains available and authoritative until expl
 8. **Acceptance**: regression suite, production frontend build, local ESPN
    snapshot smoke test, determinism, full-season transition checks, and
    independent comparison of V1/V2 supported outputs.
+
+## Incremental progress (15 November 2026)
+
+- Preview now returns every team, regular-season rank distributions, playoff seed distributions, and finals appearances using retained path results. Retention is in-memory during the request, **not** durable run storage.
+- Frontend displays championship, finals, playoff qualification, No. 1 seed, and top-two seed odds for all teams.
+- Existing V1 retained runs and action search are unchanged. Full V2 background lifecycle and League Overview compatibility remain pending.
 
 ## Migration order
 
