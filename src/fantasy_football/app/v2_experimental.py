@@ -54,10 +54,10 @@ def run_v2_preview(store: SnapshotStore, request: V2PreviewRequest) -> dict:
         "vacancy_bonus": request.vacancy_bonus,
         "elapsed_seconds": batch.elapsed_seconds,
         "championship_probabilities": {
-            str(team): count / batch.paths for team, count in batch.champions.items()
+            str(team.team_id): batch.champions.get(team.team_id, 0) / batch.paths for team in snapshot.teams
         },
         "playoff_probabilities": {
-            str(team): count / batch.paths for team, count in batch.playoff_appearances.items()
+            str(team.team_id): batch.playoff_appearances.get(team.team_id, 0) / batch.paths for team in snapshot.teams
         },
         "warning": (
             "Experimental projected-score model; not calibrated or semantically "
