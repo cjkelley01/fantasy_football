@@ -49,7 +49,7 @@ def process_compact_acquisition_window(
     # Keep the proof local to this window; never reuse across weeks/paths.
     proven_complete: set[int] = set()
     reusable_skip = bool(getattr(decide, 'skip_is_phase_independent', False))
-    skip = getattr(decide, 'skip_decision', None) if reusable_skip else None
+    skip = getattr(decide, 'skip_decision', None)
     for phase in (A.WAIVERS, A.FREE_AGENT):
         successes: dict[int, int] = {}
         attempted: set[tuple[int, int, int | None]] = set()
