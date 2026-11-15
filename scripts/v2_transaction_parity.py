@@ -12,6 +12,7 @@ from fantasy_football.evolving_state import IRPolicy, TransactionStateError, act
 from fantasy_football.snapshot_store import SnapshotStore
 from fantasy_football.v2.automatic_manager import AutomaticManager
 from fantasy_football.v2.compact_executor import execute_compact_proposal
+from fantasy_football.v2.compact_window import process_compact_acquisition_window
 from fantasy_football.v2.ir_correction import correct_recovered_ir
 from fantasy_football.v2.manager_decisions import ManagerPolicy
 from fantasy_football.v2.transaction_executor import execute_proposal
@@ -73,50 +74,61 @@ def main():
         if ir_state_parity:
             compact = correction.state
     outcomes = []
-    # The same proposal and same starting state are submitted to both executors.
-    # We do not silently advance the V1 state after a disagreement.
-    for phase in ((A.WAIVERS, A.FREE_AGENT) if ir_state_parity else ()):
-        for team_index in tuple(compact.waiver_order):
-            team_id = compact.definition.indexes.team_ids[team_index]
-            decision = manager(team_id, phase, compact)
+    canonical_shadow = [canonical]
+    # Execute the actual V2 window, including repeat passes and waiver-priority
+    # changes. Every proposal is independently checked against canonical V1.
+    class ParityManager:
+        skip_is_phase_independent = manager.skip_is_phase_independent
+
+        def skip_decision(self, team_id, phase, current):
+            return manager.skip_decision(team_id, phase, current)
+
+        def __call__(self, team_id, phase, current):
+            decision = manager(team_id, phase, current)
             if decision is None:
-                continue
+                return None
             fast = execute_compact_proposal(
-                compact, decision.proposal, destination_slot_id=decision.destination_slot_id,
+                current, decision.proposal,
+                destination_slot_id=decision.destination_slot_id,
             )
             slow = execute_proposal(
-                canonical, snapshot, decision.proposal,
+                canonical_shadow[0], snapshot, decision.proposal,
                 destination_slot_id=decision.destination_slot_id,
             )
             record = {
-                "week": compact.scoring_week, "team": team_id, "phase": phase.value,
+                "week": current.scoring_week, "team": team_id, "phase": phase.value,
                 "add": decision.proposal.add_player_id,
                 "drop": decision.proposal.drop_player_id,
                 "compact_accepted": fast.accepted, "canonical_accepted": slow.accepted,
                 "compact_reason": fast.reason, "canonical_reason": slow.reason,
+                "state_parity": None,
             }
             if fast.accepted and slow.accepted:
                 slow_projection = CompactTransactionState.from_evolving(snapshot, slow.state)
                 left, right = normalized(fast.state), normalized(slow_projection)
                 record["state_parity"] = left == right
                 if left != right:
-                    record["differing_fields"] = [k for k in left if left[k] != right[k]]
-            else:
-                record["state_parity"] = None
+                    record["differing_fields"] = [
+                        key for key in left if left[key] != right[key]
+                    ]
+                else:
+                    canonical_shadow[0] = slow.state
             outcomes.append(record)
-            # Advance both states only on matching accepted transactions.
-            if fast.accepted and slow.accepted and record["state_parity"]:
-                compact, canonical = fast.state, slow.state
             if fast.accepted != slow.accepted or record["state_parity"] is False:
-                break
-            if len(outcomes) >= args.limit:
-                break
-        if outcomes and (
-            outcomes[-1]["compact_accepted"] != outcomes[-1]["canonical_accepted"]
-            or outcomes[-1]["state_parity"] is False
-            or len(outcomes) >= args.limit
-        ):
-            break
+                raise AssertionError(
+                    "canonical/compact transaction disagreement: "
+                    + json.dumps(record)
+                )
+            return decision
+
+    if ir_state_parity:
+        window = process_compact_acquisition_window(compact, ParityManager())
+        final_state_parity = (
+            normalized(window.state) ==
+            normalized(CompactTransactionState.from_evolving(snapshot, canonical_shadow[0]))
+        )
+    else:
+        final_state_parity = False
     disagreements = [item for item in outcomes if
                      item["compact_accepted"] != item["canonical_accepted"]
                      or item["state_parity"] is False]
@@ -124,12 +136,13 @@ def main():
         "snapshot_id": args.snapshot_id, "week": snapshot.first_simulation_week,
         "ir_corrections": ir_outcomes, "ir_state_parity": ir_state_parity,
         "compared_proposals": len(outcomes),
+        "final_state_parity": final_state_parity,
         "accepted_both": sum(x["compact_accepted"] and x["canonical_accepted"] for x in outcomes),
         "disagreements": disagreements,
         "transactions": outcomes,
-        "scope": "single-week IR correction and sequential proposal parity; no season-wide or ledger parity",
+        "scope": "complete single-week V2 acquisition window and IR correction; no season-wide or ledger parity",
     }, indent=2))
-    return 1 if disagreements or not ir_state_parity else 0
+    return 1 if disagreements or not ir_state_parity or not final_state_parity else 0
 
 
 if __name__ == "__main__":
