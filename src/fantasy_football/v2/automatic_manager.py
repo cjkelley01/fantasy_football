@@ -36,6 +36,8 @@ class AutomaticManager:
     proposals_returned: int = 0
     no_proposal_with_need: int = 0
     no_proposal_reasons: dict[str, int] = field(default_factory=dict)
+    skip_is_phase_independent: bool = field(default=True, init=False, repr=False)
+    _complete_rosters: set[tuple[int, tuple[int, ...]]] = field(default_factory=set, init=False, repr=False)
     _indexed_state: CompactTransactionState | None = field(default=None, init=False, repr=False)
     _team_entries: tuple[tuple[tuple[int, int, int], ...], ...] = field(default=(), init=False, repr=False)
     _lineup_cache: dict[tuple[int, tuple[int, ...]], tuple[tuple[int, ...], frozenset[int]]] = field(default_factory=dict)
@@ -98,6 +100,19 @@ class AutomaticManager:
                     future_positive = future_positive or current > 0
         return cls(snapshot, policy, workspace, bench, capacity, values)
 
+    def skip_decision(self, team_id: int, phase: AcquisitionAvailability, compact: CompactTransactionState) -> bool:
+        """Skip only previously proved complete lineups for this exact state.
+
+        A different state object may contain a roster change, so fall back to
+        the ordinary decision path rather than relying on stale ownership.
+        """
+        if compact is not self._indexed_state:
+            return False
+        index = compact.definition.indexes.team_index[team_id]
+        entries = self._team_entries[index]
+        roster = tuple(pid for _, pid, slot in entries if slot not in self.reserve_slot_ids)
+        return (compact.scoring_week, roster) in self._complete_rosters
+
     def __call__(
         self, team_id: int, phase: AcquisitionAvailability,
         compact: CompactTransactionState,
@@ -141,6 +156,7 @@ class AutomaticManager:
             self.cache_hits += 1
         need_slots, protected = lineup_info
         if not need_slots:
+            self._complete_rosters.add(cache_key)
             self.no_need_seen += 1
             return None
         self.needs_seen += 1
