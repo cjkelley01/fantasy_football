@@ -1,6 +1,7 @@
 import {useEffect,useMemo,useRef,useState} from "react";
 import {Activity,AlertTriangle,Check,Clock,Download,ExternalLink,Play,Search,ShieldAlert,Square,Trash2} from "lucide-react";
 import {api,ApiError} from "./lib/api";
+import type {V2PreviewResult} from "./lib/api";
 import {CANONICAL_PLAYER_ACQUISITION_STATUSES} from "./types/api";
 import type {ActionOrdering,ActionSearchRequest,BackgroundProgress,BackgroundRunRecord,BaselineAnalysisRequest,NormalOutcomeModelConfiguration,PrecisionSettings,SimulationConfiguration,SnapshotSummary} from "./types/api";
 
@@ -38,6 +39,7 @@ export function SimulationCenter({snapshot,runs,onRunsChange,openResult}:Props){
   const scoped=runs.filter(run=>run.snapshot_id===snapshot.snapshot_id),filtered=scoped.filter(run=>(typeFilter==="all"||run.run_type===typeFilter)&&(statusFilter==="all"||run.status===statusFilter)&&(`${run.run_id} ${run.run_type} ${run.status} ${run.stop_reason??""}`).toLowerCase().includes(query.toLowerCase()));
   return <div className="simulation-center"><header className="simulation-mast"><div><span className="overline">Execution operations · API 1.0</span><h1>Simulation Center</h1><p>Configure explicit analytical work, observe source-backed progress, and revisit retained evidence without inventing completion percentages or ETAs.</p></div><div className="simulation-snapshot"><strong>{snapshot.league_name??`League ${snapshot.league_id}`}</strong><span>{snapshot.season} · {short(snapshot.snapshot_id)}</span></div></header>
     <LiveBoundary snapshot={snapshot}/>
+    <V2ExperimentalPreview snapshot={snapshot}/>
     <nav className="simulation-regions" aria-label="Simulation Center regions"><a href="#configure">Configure</a><a href="#monitor">Monitor</a><a href="#history">History</a></nav>
     <section id="configure" className="simulation-config"><header><div><span className="overline">Configure</span><h2>Start accepted analytical work</h2></div><div className="family-switch"><button className={family==="baseline"?"active":""} onClick={()=>setFamily("baseline")}>Baseline season</button><button className={family==="action_search"?"active":""} onClick={()=>setFamily("action_search")}>Action search</button><button disabled title="Construct manual scenarios in Trade Lab">Manual scenario · Trade Lab</button></div></header>
       <div className="preset-row" aria-label="Execution presets">{(["quick","balanced","detailed"] as const).map(item=><button key={item} className={preset===item?"active":""} onClick={()=>applyPreset(item)}><strong>{human(item)}</strong><span>{commonPresets[item].paths.toLocaleString()} path ceiling · ±{family==="baseline"?(commonPresets[item].halfWidth*100).toFixed(1):actionPrecisionPresets[item].toFixed(2)} pp target</span></button>)}</div>
@@ -85,5 +87,46 @@ function positionName(id:number){return({1:"QB",2:"RB",3:"WR",4:"TE",5:"K",16:"D
 function positiveInteger(value:number,label:string){if(!Number.isInteger(value)||value<=0)throw new Error(`${label} must be a positive integer.`)}
 function parseIds(raw:string,label:string){if(!raw.trim())return[];const values=raw.split(",").map(item=>Number(item.trim()));if(values.some(value=>!Number.isInteger(value)||value<=0))throw new Error(`${label} IDs must be comma-separated positive integers.`);if(new Set(values).size!==values.length)throw new Error(`${label} IDs contain duplicates.`);return values}
 function exportMetadata(run:BackgroundRunRecord,snapshot:SnapshotSummary){const blob=new Blob([JSON.stringify({scope:"retained_run_metadata_only",units:"timestamps are UTC; no candidate universe is included",snapshot_id:snapshot.snapshot_id,canonical_sha256:snapshot.canonical_sha256,run},null,2)],{type:"application/json"}),link=document.createElement("a");link.href=URL.createObjectURL(blob);link.download=`run-${run.run_id}.json`;link.click();URL.revokeObjectURL(link.href)}
+function V2ExperimentalPreview({snapshot}:{snapshot:SnapshotSummary}){
+  const[paths,setPaths]=useState(100);
+  const[seed,setSeed]=useState(42);
+  const[busy,setBusy]=useState(false);
+  const[result,setResult]=useState<V2PreviewResult|null>(null);
+  const[error,setError]=useState<string|null>(null);
+  const controller=useRef<AbortController|null>(null);
+  useEffect(()=>{controller.current?.abort();setResult(null);setError(null);setBusy(false);return()=>controller.current?.abort()},[snapshot.snapshot_id]);
+  const run=async()=>{
+    if(busy)return;
+    const active=new AbortController();
+    controller.current=active;
+    setBusy(true);setError(null);setResult(null);
+    try{
+      const response=await api.v2Preview({snapshot_id:snapshot.snapshot_id,paths,seed,coefficient_of_variation:0.35,manage_rosters:true,vacancy_bonus:8},active.signal);
+      if(!active.signal.aborted)setResult(response);
+    }catch(reason){
+      if(!active.signal.aborted)setError(message(reason,"V2 preview failed."));
+    }finally{
+      if(controller.current===active){controller.current=null;setBusy(false)}
+    }
+  };
+  const teamName=(id:string)=>snapshot.teams.find(team=>String(team.team_id)===id)?.display_name??`Team ${id}`;
+  const ordered=result?Object.entries(result.championship_probabilities).sort((a,b)=>b[1]-a[1]):[];
+  return <section className="simulation-config" aria-label="Experimental V2 preview">
+    <header><div><span className="overline">Experimental · V2 compact simulator</span><h2>Fast season-outcome preview</h2></div></header>
+    <p>Opt-in projected-score simulation. This is not calibrated, not equivalent to V1, and does not save a run. Existing V1 analyses remain the default.</p>
+    <div className="submission-row">
+      <label>Simulation paths <select aria-label="V2 simulation paths" value={paths} disabled={busy} onChange={event=>setPaths(Number(event.target.value))}><option value={100}>100</option><option value={500}>500</option><option value={1000}>1,000</option></select></label>
+      <label>Seed <input aria-label="V2 simulation seed" type="number" min={0} max={2147483647} step={1} value={seed} disabled={busy} onChange={event=>setSeed(Number(event.target.value))}/></label>
+      <button type="button" disabled={busy||!Number.isInteger(seed)||seed<0||seed>2147483647} onClick={()=>void run()}>{busy?"Running V2 preview…":"Run experimental V2"}</button>
+    </div>
+    {error&&<p className="simulation-error" role="alert"><AlertTriangle/>{error}</p>}
+    {result&&<div aria-live="polite">
+      <p><strong>{result.paths.toLocaleString()} paths</strong> · {result.elapsed_seconds.toFixed(2)} seconds · seed {result.seed} · ephemeral result</p>
+      <table><thead><tr><th>Team</th><th>Championship</th><th>Playoffs</th></tr></thead><tbody>{ordered.map(([id,probability])=><tr key={id}><td>{teamName(id)}</td><td>{(probability*100).toFixed(1)}%</td><td>{((result.playoff_probabilities[id]??0)*100).toFixed(1)}%</td></tr>)}</tbody></table>
+      <p className="runtime-caveat">{result.warning}</p>
+    </div>}
+  </section>;
+}
+
 function isAbort(reason:unknown){return reason instanceof DOMException&&reason.name==="AbortError"}
 function message(reason:unknown,fallback:string){return reason instanceof ApiError?reason.message:reason instanceof Error?reason.message:fallback}function human(value:string){return value.replaceAll("_"," ").replace(/\b\w/g,letter=>letter.toUpperCase())}function labelType(value:string){return value==="action_search"?"Unified action search":value==="manual_scenario"?"Manual scenario":"Baseline season simulation"}function short(value:string){return value.length>18?`${value.slice(0,8)}…${value.slice(-6)}`:value}function formatDate(value:string){return new Intl.DateTimeFormat(undefined,{dateStyle:"medium",timeStyle:"short"}).format(new Date(value))}
