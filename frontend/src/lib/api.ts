@@ -51,6 +51,8 @@ async function deleteRequest(path:string,signal?:AbortSignal):Promise<void>{cons
 export type V2PreviewResult = {engine:string;experimental:boolean;calibrated:boolean;persisted:boolean;snapshot_id:string;paths:number;seed:number;elapsed_seconds:number;championship_probabilities:Record<string,number>;playoff_probabilities:Record<string,number>;seed_probabilities:Record<string,Record<string,number>>;regular_season_finish_probabilities:Record<string,Record<string,number>>;finals_probabilities:Record<string,number>;semifinal_win_probabilities:Record<string,number>;warning:string};
 
 export const api = {
+  submitV2Baseline:(request:{snapshot_id:string;paths:number;seed:number;coefficient_of_variation:number;manage_rosters:boolean;vacancy_bonus:number},signal?:AbortSignal)=>postJson<BackgroundRunSubmission>("/api/v1/experimental/v2/runs",request,signal),
+  v2BaselineResult:(runId:string,signal?:AbortSignal)=>getJson<{run:BackgroundRunRecord;result:V2PreviewResult}>(`/api/v1/experimental/v2/runs/${encodeURIComponent(runId)}/result`,signal),
   v2Preview:(request:{snapshot_id:string;paths:number;seed:number;coefficient_of_variation:number;manage_rosters:boolean;vacancy_bonus:number},signal?:AbortSignal)=>postJson<V2PreviewResult>("/api/v1/experimental/v2/preview",request,signal),
   health: (signal?: AbortSignal) => getJson<HealthResponse>("/api/v1/health", signal),
   snapshots: (signal?: AbortSignal) => getJson<readonly SnapshotSummary[]>("/api/v1/snapshots", signal),
