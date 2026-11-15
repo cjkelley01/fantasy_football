@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from fantasy_football.canonical.model import LeagueSnapshot
 from fantasy_football.evolving_state import EvolvingLeagueState
 from fantasy_football.v2.compact_executor import execute_compact_proposal
+from fantasy_football.v2.compact_cycle import advance_compact_cycle
 from fantasy_football.v2.manager_decisions import AcquisitionProposal
 from fantasy_football.v2.transaction_executor import execute_proposal
 from fantasy_football.v2.transaction_reconciliation import (
@@ -106,13 +107,10 @@ def reconcile_cycle_boundary(
     ]
     if len(next_periods) != 1:
         raise ValueError("scoring week must belong to exactly one matchup period")
-    next_period = next_periods[0]
-    if next_period != v2.matchup_period_id:
-        v2.matchup_acquisition_counts = [0] * len(v2.matchup_acquisition_counts)
-    v2.initial_waiver_order = v2.waiver_order.copy()
-    v2.matchup_period_id = next_period
-    v2.scoring_week = scoring_week
-    v2.cycle_id = cycle_id
+    v2 = advance_compact_cycle(
+        v2, cycle_id=cycle_id, scoring_week=scoring_week,
+        matchup_period_id=next_periods[0],
+    )
     return compare_transaction_states(v1, v2)
 
 
@@ -150,15 +148,10 @@ def reconcile_transaction_timeline(
             if len(periods) != 1:
                 raise ValueError("scoring week must belong to exactly one matchup period")
             next_period = periods[0]
-            v2_state = v2_state.clone()
-            if next_period != v2_state.matchup_period_id:
-                v2_state.matchup_acquisition_counts = [
-                    0 for _ in v2_state.matchup_acquisition_counts
-                ]
-            v2_state.initial_waiver_order = v2_state.waiver_order.copy()
-            v2_state.matchup_period_id = next_period
-            v2_state.scoring_week = event.scoring_week
-            v2_state.cycle_id = event.cycle_id
+            v2_state = advance_compact_cycle(
+                v2_state, cycle_id=event.cycle_id,
+                scoring_week=event.scoring_week, matchup_period_id=next_period,
+            )
             results.append(compare_transaction_states(v1_state, v2_state))
         else:
             proposal, destination_slot_id = event
