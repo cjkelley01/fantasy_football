@@ -111,14 +111,20 @@ def test_proven_complete_team_is_skipped_across_phases():
     assert (2, A.FREE_AGENT) in calls
 
 
-def test_non_opt_in_skip_hook_is_not_used():
+
+def test_non_opt_in_skip_hook_is_checked_for_each_phase():
     state, _ = eligible()
     calls = []
+    checked = []
     class Provider:
         def skip_decision(self, team, phase, current):
-            raise AssertionError("non-opt-in skip should not run")
+            checked.append((team, phase))
+            return team == 1 and phase is A.WAIVERS
         def __call__(self, team, phase, current):
             calls.append((team, phase))
             return None
     process_compact_acquisition_window(state, Provider())
-    assert len(calls) == 4
+    assert (1, A.WAIVERS) in checked
+    assert (1, A.FREE_AGENT) in checked
+    assert (1, A.WAIVERS) not in calls
+    assert (1, A.FREE_AGENT) in calls
