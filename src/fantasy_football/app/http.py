@@ -47,6 +47,7 @@ from fantasy_football.app.contracts import (
     SnapshotSummary,
 )
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
+from fantasy_football.app.v2_experimental import V2PreviewRequest, run_v2_preview
 from fantasy_football.app.service import (
     ApplicationDependencies,
     ApplicationService,
@@ -256,6 +257,17 @@ def create_app(
             process_id=os.getpid(),
             launcher_run_id=launcher_run_id,
         )
+
+    @app.post("/api/v1/experimental/v2/preview")
+    def experimental_v2_preview(request: V2PreviewRequest):
+        """Explicit opt-in V2 preview; never alters V1 run storage or routes."""
+        try:
+            return run_v2_preview(snapshot_store, request)
+        except ValueError as exc:
+            raise ApplicationServiceError(
+                "v2_preview_unsupported", "unsupported_configuration",
+                "The selected snapshot or preview configuration is unsupported.",
+            ) from exc
 
     @app.get("/api/v1/snapshots", response_model=tuple[SnapshotSummary, ...])
     def snapshots(
