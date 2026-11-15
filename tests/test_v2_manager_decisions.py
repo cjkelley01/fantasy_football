@@ -158,3 +158,59 @@ def test_vacancy_bonus_calibration_boundary():
     assert at_four is not None
     assert at_four.expected_gain < 0
     assert propose_acquisition(state, policy=ManagerPolicy(essential_vacancy_bonus=8), **base) is not None
+
+
+def test_indexed_roster_fast_path_matches_canonical_scan_across_phases():
+    state, values = setup_state()
+    owned_indexes = tuple(i for i, owner in enumerate(state.owner_by_player)
+                          if owner == state.definition.indexes.team_index[1])
+    for capacity in (3, 4):
+        for need in ((0,), (4,), (0, 4), ()):
+            for phase in (A.WAIVERS, A.FREE_AGENT):
+                for bonus in (0, 4, 8):
+                    options = dict(
+                        team_id=1, need_slot_ids=need, values=values,
+                        roster_capacity=capacity,
+                        policy=ManagerPolicy(essential_vacancy_bonus=bonus),
+                        allowed_availability=frozenset({phase}),
+                        protected_player_ids=frozenset({50}),
+                    )
+                    baseline_reasons = {}
+                    fast_reasons = {}
+                    baseline = propose_acquisition(
+                        state, diagnostics=baseline_reasons, **options,
+                    )
+                    optimized = propose_acquisition(
+                        state, diagnostics=fast_reasons,
+                        owned_player_indexes=owned_indexes,
+                        valuations_validated=True, **options,
+                    )
+                    assert optimized == baseline
+                    assert fast_reasons == baseline_reasons
+
+
+def test_indexed_roster_fast_path_respects_current_ownership_after_drop():
+    state, values = setup_state()
+    original_indexes = (0, 1, 4)
+    # The index cache may be older than a transaction; a dropped player
+    # must never remain eligible for the team's drop calculation.
+    state.owner_by_player[1] = -1
+    state.slot_by_player[1] = None
+    options = dict(team_id=1, need_slot_ids=(0,), values=values,
+                   roster_capacity=3)
+    baseline = propose_acquisition(state, **options)
+    optimized = propose_acquisition(
+        state, owned_player_indexes=original_indexes,
+        valuations_validated=True, **options,
+    )
+    assert optimized == baseline
+
+
+def test_public_planner_rejects_unknown_valuations():
+    state, values = setup_state()
+    invalid = dict(values)
+    invalid[999999] = PlayerValue(1)
+    import pytest
+    with pytest.raises(ValueError, match="unknown player valuation"):
+        propose_acquisition(state, team_id=1, need_slot_ids=(0,),
+                            values=invalid, roster_capacity=3)
