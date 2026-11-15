@@ -746,6 +746,13 @@ class BackgroundRunCoordinator:
                 )
             elif run_type == "v2_baseline":
                 result = run_v2_preview(self.service.dependencies.snapshot_store, request)
+                result["persisted"] = True
+                result["warning"] = "Experimental projected-score model; not calibrated or equivalent to V1. Result retained in background run storage."
+                self.store.set_progress(run_id, BackgroundProgress(
+                    run_id=run_id, status="running", stage="finalizing",
+                    simulation_paths_completed=request.paths,
+                    elapsed_seconds=result["elapsed_seconds"],
+                ))
             elif run_type == "baseline":
                 result = self.service.run_baseline(request)
             else:
