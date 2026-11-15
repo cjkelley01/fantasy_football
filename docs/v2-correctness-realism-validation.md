@@ -1,0 +1,41 @@
+# V2 correctness and realism validation
+
+Status: **in progress; experimental**. Performance target is met, but speed is not evidence of forecast calibration.
+
+## Verified evidence (2026-11-15)
+
+- Local V2 test run: 214 passed before the new differential tests in this phase.
+- Fixed 2026 snapshot `3aba763f-0945-4e79-b4e8-1fcc596a531f`, 1,000 paths, seed 42: championship counts, playoff appearances, and accepted waiver/free-agent totals matched the stored reference after optimization.
+- Same snapshot, 20,000 paths, seed 42: 201.575 seconds (99.219 paths/sec), meeting the under-five-minute goal.
+- New acquisition-planner differential tests compare indexed-roster optimization to the unoptimized public planner for multiple capacities, needs, acquisition phases, and vacancy premiums. These tests must be run locally before marking them passed.
+
+## Behavior currently implemented
+
+- Candidate acquisition selection is driven by **current scoring-week projection** for a player eligible for a vacant lineup slot. The drop sacrifice also incorporates future projections and temporary-absence protection; the policy is **not** purely current-week.
+- Waiver order is updated from simulated standings after regular-season weeks. The free-agent order within an acquisition window is frozen from its opening waiver queue.
+- The lineup solver determines needs. The compact executor validates transactions. IR activation uses modeled recovery based on projection evidence in the current benchmark, **not actual injury eligibility**.
+- The Gaussian scoring uncertainty uses coefficient of variation 0.35 by default. That value is a modeling assumption, not a calibrated finding.
+
+## Acceptance gates before calling V2 correct
+
+1. **Unit and invariants:** run all V2 tests and the complete repository suite. Validate ownership uniqueness, roster slots, acquisition caps, priority changes, and no mutation of input states after accepted/rejected transactions.
+2. **Seeded regression:** run the exact fixed-snapshot 1,000-path reference. Any difference must be classified as intentional policy change or bug.
+3. **V1 comparison:** compare canonical V1 and compact V2 on the *same initial snapshot, weekly schedule, seed, scoring assumptions, and manager policy* wherever behavior is intended to match. Compare transaction legality and state transitions **per week**, not just championship totals. Record known unsupported V1 features rather than silently treating V2 as equivalent.
+4. **Realism audit:** inspect representative team/week decisions: starter vacancies, candidate projections, protected starters, drop sacrifice, IR decisions, waiver-order changes, and why no acquisition was proposed. Verify that acquisitions make football sense rather than merely pass executor rules.
+5. **Sensitivity:** repeat a sufficiently large sample with management off and with vacancy bonuses 0, 4, 8. Quantify changes in championship/playoff odds and transaction counts. A policy setting that drastically changes odds without plausible transactions requires review.
+6. **Calibration:** evaluate projection errors and scoring distribution against historical observations. Do not describe title probabilities as calibrated until this is complete.
+
+## Reproducible commands
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest tests -q -k "test_v2_"
+.\.venv\Scripts\python.exe -m pytest tests -q
+.\.venv\Scripts\python.exe -m fantasy_football.v2.benchmark --db outputs/fantasy_football.sqlite3 --snapshot-id 3aba763f-0945-4e79-b4e8-1fcc596a531f --paths 1000 --seed 42 --verify-reference --acquisition-stats --detail-diagnostics
+```
+
+## Limitations / non-goals
+
+- Matching a seeded regression does **not** establish V1 parity, transaction-ledger parity, or real-world forecasting skill.
+- Repeated identical acquisitions across paths can be expected when current-week projections and available players are unchanged. Standings-driven waiver order can still change who acquires a contested player.
+- Do not alter the projection model as part of parity testing; isolate manager-policy effects first.
+- Do not merge into the War Room default simulation backend until the acceptance gates and remaining differences are documented.
