@@ -31,3 +31,27 @@ def test_reconciliation_detects_acquisition_and_cycle_disagreement():
     compact.cycle_id += 1
     fields = {d.field for d in compare_transaction_states(evolving, compact)}
     assert fields == {"season_acquisitions", "cycle_id"}
+
+
+def test_reconciliation_detects_initial_waiver_order_and_ir_policy_drift():
+    snapshot, evolving = fixture()
+    compact = CompactTransactionState.from_evolving(snapshot, evolving)
+    compact.initial_waiver_order.reverse()
+    compact.ir_policy = object()
+    fields = {d.field for d in compare_transaction_states(evolving, compact)}
+    assert fields == {"initial_window_waiver_priority", "ir_policy"}
+
+
+def test_reconciliation_detects_ir_evidence_and_provenance_drift():
+    snapshot, evolving = fixture()
+    compact = CompactTransactionState.from_evolving(snapshot, evolving)
+    compact.ir_evidence = (object(),)
+    compact.source_snapshot_id = "wrong-snapshot"
+    compact.source_schema_version += 1
+    compact.season += 1
+    compact.assumption_ids = ("invented",)
+    fields = {d.field for d in compare_transaction_states(evolving, compact)}
+    assert fields == {
+        "ir_eligibility_evidence", "source_snapshot_id",
+        "source_schema_version", "season", "assumption_ids",
+    }
