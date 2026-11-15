@@ -199,3 +199,39 @@ def test_acquisition_limit_zero_rejected_by_both_engines(limit_field):
     )
     assert not result.v1_accepted and not result.v2_accepted
     assert result.matches, result.differences
+
+
+@pytest.mark.parametrize("policy", [IRPolicy.STRICT, IRPolicy.PROJECTION_BASED])
+def test_independent_multweek_timeline_across_matchup_boundary(policy):
+    from fantasy_football.v2.acquisition_parity import (
+        CycleAdvance, AcquisitionParityResult, reconcile_transaction_timeline,
+    )
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=policy)
+    events = (
+        (AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+        (AcquisitionProposal(3, 4, None, 20, 1.0, A.WAIVERS), 20),
+        CycleAdvance(initial.cycle_id + 1, 16),
+        (AcquisitionProposal(2, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+        CycleAdvance(initial.cycle_id + 2, 17),
+        (AcquisitionProposal(4, 4, None, 20, 1.0, A.WAIVERS), 20),
+    )
+    results = reconcile_transaction_timeline(snapshot, initial, events)
+    assert len(results) == len(events)
+    for result in results:
+        if isinstance(result, AcquisitionParityResult):
+            assert result.matches, (result.v1_reason, result.v2_reason, result.differences)
+        else:
+            assert result == ()
+
+
+def test_multweek_timeline_does_not_modify_initial_state():
+    from fantasy_football.v2.acquisition_parity import CycleAdvance, reconcile_transaction_timeline
+    snapshot = canonical_snapshot()
+    initial = initialize_evolving_state(snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED)
+    before = initial
+    reconcile_transaction_timeline(snapshot, initial, (
+        (AcquisitionProposal(1, 3, None, 20, 1.0, A.FREE_AGENT), 20),
+        CycleAdvance(initial.cycle_id + 1, 16),
+    ))
+    assert initial == before
