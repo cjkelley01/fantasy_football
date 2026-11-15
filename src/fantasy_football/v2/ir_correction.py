@@ -64,11 +64,11 @@ def correct_recovered_ir(
         if hasattr(e, "player_id") and hasattr(e, "scoring_week")
         and e.scoring_week == state.scoring_week
     }
-    for team in range(len(d.indexes.team_ids)):
-        occupants = [
-            i for i, owner in enumerate(current.owner_by_player)
-            if owner == team and current.slot_by_player[i] in reserve
-        ]
+    reserve_occupants: list[list[int]] = [[] for _ in d.indexes.team_ids]
+    for i, owner in enumerate(current.owner_by_player):
+        if owner >= 0 and current.slot_by_player[i] in reserve:
+            reserve_occupants[owner].append(i)
+    for team, occupants in enumerate(reserve_occupants):
         for ir in occupants:
             pid = d.indexes.player_ids[ir]
             if current.ir_policy is IRPolicy.PROJECTION_BASED:
