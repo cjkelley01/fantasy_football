@@ -58,18 +58,18 @@ def main():
     team_ids = sorted(
         {int(team) for item in results for team in item["champions"]},
     )
-    print("\\nChampionship odds (%) by scenario:")
+    print("\nChampionship odds (%) by scenario:")
     print("team".ljust(9) + "".join(item["scenario"].rjust(20) for item in results))
     for team_id in team_ids:
         print(str(team_id).ljust(9) + "".join(
             f'{100 * item["champions"].get(str(team_id), 0) / args.paths:19.2f}%'
             for item in results
         ))
-    print("\\nAccepted acquisitions by scenario:")
+    print("\nAccepted acquisitions by scenario:")
     for item in results:
         print(f'{item["scenario"]}: free agents={item["accepted_free_agents"]}, '
               f'waivers={item["accepted_waivers"]}')
-    print("\\nChange in championship odds vs vacancy_bonus_8 (percentage points):")
+    print("\nChange in championship odds vs vacancy_bonus_8 (percentage points):")
     for item in results[:-1]:
         deltas = {
             str(team): round(
@@ -79,7 +79,7 @@ def main():
             for team in team_ids
         }
         print(f'{item["scenario"]}: {json.dumps(deltas, sort_keys=True)}')
-    print("\\nFull machine-readable results:")
+    print("\nFull machine-readable results:")
     print(json.dumps({"paths": args.paths, "seed": args.seed, "results": results}, indent=2))
 
 
