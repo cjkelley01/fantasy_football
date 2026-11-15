@@ -82,6 +82,11 @@ def main(argv=None):
         snapshot, scoring_week=snapshot.first_simulation_week,
         ir_policy=IRPolicy.PROJECTION_BASED,
     )
+    if args.verify_reference:
+        if (args.paths, args.seed, args.cv, args.vacancy_bonus, args.no_management) != (1000, 42, 0.35, 8.0, False):
+            parser.error("--verify-reference requires --paths 1000 --seed 42 and default policy/scoring settings")
+        if snapshot_id != "3aba763f-0945-4e79-b4e8-1fcc596a531f":
+            parser.error("--verify-reference is only defined for the recorded 2026 snapshot")
     profiler = cProfile.Profile() if args.profile else None
     if profiler is not None:
         profiler.enable()
@@ -97,14 +102,10 @@ def main(argv=None):
     if profiler is not None:
         profiler.disable()
     if args.verify_reference:
-        if (args.paths, args.seed, args.cv, args.vacancy_bonus, args.no_management) != (1000, 42, 0.35, 8.0, False):
-            parser.error("--verify-reference requires --paths 1000 --seed 42 and default policy/scoring settings")
-        if snapshot_id != "3aba763f-0945-4e79-b4e8-1fcc596a531f":
-            parser.error("--verify-reference is only defined for the recorded 2026 snapshot")
         expected_champions = {1: 171, 13: 207, 4: 109, 3: 231, 8: 41, 17: 120, 10: 113, 9: 4, 14: 4}
         expected_playoffs = {1: 1000, 17: 998, 3: 999, 8: 986, 13: 999, 14: 873, 10: 855, 4: 876, 9: 384, 18: 21, 5: 9}
         expected_acquisitions = {"free_agent_accepted": 12000, "waivers_accepted": 3000}
-        actual_acquisitions = (acquisition_stats or {}).get("counts", {})
+        actual_acquisitions = (diagnostics or {}).get("acquisitions", {}).get("counts", {})
         differences = {}
         if batch.champions != expected_champions:
             differences["champions"] = {"expected": expected_champions, "actual": batch.champions}
