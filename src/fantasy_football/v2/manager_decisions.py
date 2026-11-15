@@ -64,6 +64,8 @@ def propose_acquisition(
     excluded_capacity_slot_ids: frozenset[int] = frozenset(),
     allowed_availability: frozenset[AcquisitionAvailability] = frozenset({AcquisitionAvailability.FREE_AGENT, AcquisitionAvailability.WAIVERS}),
     diagnostics: dict[str, int] | None = None,
+    owned_player_indexes: tuple[int, ...] | None = None,
+    valuations_validated: bool = False,
 ) -> AcquisitionProposal | None:
     """Find a sensible acquisition for an unmet lineup need.
 
@@ -81,12 +83,15 @@ def propose_acquisition(
         raise ValueError("unknown team")
     team_index = ti[team_id]
     ids = state.definition.indexes.player_ids
-    if len(values) > len(ids) or any(pid not in state.definition.indexes.player_index for pid in values):
+    if not valuations_validated and (len(values) > len(ids) or any(pid not in state.definition.indexes.player_index for pid in values)):
         raise ValueError("unknown player valuation")
     if not need_slot_ids:
         return None
-    owned = [i for i, owner in enumerate(state.owner_by_player)
-             if owner == team_index and state.slot_by_player[i] not in excluded_capacity_slot_ids]
+    owned = ([i for i, owner in enumerate(state.owner_by_player)
+              if owner == team_index and state.slot_by_player[i] not in excluded_capacity_slot_ids]
+             if owned_player_indexes is None else
+             [i for i in owned_player_indexes if state.owner_by_player[i] == team_index
+              and state.slot_by_player[i] not in excluded_capacity_slot_ids])
     if len(owned) > roster_capacity:
         raise ValueError("roster exceeds provided capacity")
     def record(reason: str) -> None:
