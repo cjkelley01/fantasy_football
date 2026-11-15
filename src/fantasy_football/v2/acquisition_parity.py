@@ -114,3 +114,64 @@ def reconcile_cycle_boundary(
     v2.scoring_week = scoring_week
     v2.cycle_id = cycle_id
     return compare_transaction_states(v1, v2)
+
+
+@dataclass(frozen=True, slots=True)
+class CycleAdvance:
+    cycle_id: int
+    scoring_week: int
+
+
+def reconcile_transaction_timeline(
+    snapshot: LeagueSnapshot,
+    initial: EvolvingLeagueState,
+    events: tuple[tuple[AcquisitionProposal, int] | CycleAdvance, ...],
+) -> tuple[tuple[StateDifference, ...] | AcquisitionParityResult, ...]:
+    """Independently replay acquisitions and week boundaries on both engines.
+
+    Unlike single-event checks, compact state is never rebuilt from V1 between
+    events. A mismatch therefore persists and is visible in later comparisons.
+    Audit-ledger parity remains outside the scope of this fast-state harness.
+    """
+    from fantasy_football.evolving_state import advance_cycle
+    v1_state = initial
+    v2_state = CompactTransactionState.from_evolving(snapshot, initial)
+    results = []
+    for event in events:
+        if isinstance(event, CycleAdvance):
+            v1_state = advance_cycle(
+                v1_state, snapshot,
+                cycle_id=event.cycle_id, scoring_week=event.scoring_week,
+            )
+            periods = [
+                period.matchup_period_id for period in snapshot.matchup_periods
+                if event.scoring_week in period.scoring_weeks
+            ]
+            if len(periods) != 1:
+                raise ValueError("scoring week must belong to exactly one matchup period")
+            next_period = periods[0]
+            v2_state = v2_state.clone()
+            if next_period != v2_state.matchup_period_id:
+                v2_state.matchup_acquisition_counts = [
+                    0 for _ in v2_state.matchup_acquisition_counts
+                ]
+            v2_state.initial_waiver_order = v2_state.waiver_order.copy()
+            v2_state.matchup_period_id = next_period
+            v2_state.scoring_week = event.scoring_week
+            v2_state.cycle_id = event.cycle_id
+            results.append(compare_transaction_states(v1_state, v2_state))
+        else:
+            proposal, destination_slot_id = event
+            v1 = execute_proposal(
+                v1_state, snapshot, proposal, destination_slot_id=destination_slot_id
+            )
+            v2 = execute_compact_proposal(
+                v2_state, proposal, destination_slot_id=destination_slot_id
+            )
+            v1_state, v2_state = v1.state, v2.state
+            results.append(AcquisitionParityResult(
+                v1.accepted, v2.accepted,
+                compare_transaction_states(v1_state, v2_state),
+                v1.reason, v2.reason,
+            ))
+    return tuple(results)
