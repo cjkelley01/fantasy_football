@@ -26,7 +26,12 @@ class V2PreviewRequest(BaseModel):
     vacancy_bonus: float = Field(default=8.0, ge=0, le=100)
 
 
-def run_v2_preview(store: SnapshotStore, request: V2PreviewRequest) -> dict:
+class V2BackgroundRequest(V2PreviewRequest):
+    """Durable background V2 baseline, with bounded higher path ceiling."""
+    paths: int = Field(default=1000, ge=1, le=10000)
+
+
+def run_v2_preview(store: SnapshotStore, request: V2PreviewRequest | V2BackgroundRequest) -> dict:
     loaded = store.load(request.snapshot_id)
     snapshot = loaded.snapshot
     if snapshot.final_simulation_week < 18:
