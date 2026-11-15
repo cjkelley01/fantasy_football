@@ -25,6 +25,7 @@ def run_projected_seasons(
     manage_rosters: bool = True,
     policy: ManagerPolicy = ManagerPolicy(),
     diagnostics: dict[str, object] | None = None,
+    retain_results: bool = False,
 ) -> SimulationBatch:
     """Run seeded stochastic paths using canonical projected lineup scores.
 
@@ -51,6 +52,7 @@ def run_projected_seasons(
         decision_provider=manager,
         initial_standings=historical,
         acquisition_diagnostics=acquisition_stats,
+        retain_results=retain_results,
     )
     if diagnostics is not None:
         diagnostics["acquisitions"] = acquisition_stats
