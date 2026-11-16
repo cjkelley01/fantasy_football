@@ -6,7 +6,7 @@ import type { BackgroundBaselineResultSummary, BackgroundRunRecord, ProbabilityV
 
 type Props={readonly snapshot:SnapshotSummary;readonly runs:readonly BackgroundRunRecord[];readonly preferredRunId?:string|null};
 export function LeagueOverview({snapshot,runs,preferredRunId}:Props) {
-  const [engine,setEngine]=useState<"v2"|"v1">("v2");
+  const [engine,setEngine]=useState<"v2"|"v1">(()=>runs.some(run=>run.snapshot_id===snapshot.snapshot_id&&run.run_type==="v2_baseline")||!runs.some(run=>run.snapshot_id===snapshot.snapshot_id&&run.run_type==="baseline")?"v2":"v1");
   const completed=useMemo(()=>runs.filter(run=>run.snapshot_id===snapshot.snapshot_id&&run.run_type==="baseline"&&run.status==="completed"&&run.result_available).sort((a,b)=>dateKey(b).localeCompare(dateKey(a))||a.run_id.localeCompare(b.run_id)),[runs,snapshot.snapshot_id]);
   const [selectedRun,setSelectedRun]=useState<string|null>(completed[0]?.run_id??null);
   const [summary,setSummary]=useState<BackgroundBaselineResultSummary|null>(null),[error,setError]=useState<string|null>(null),[loading,setLoading]=useState(false);
