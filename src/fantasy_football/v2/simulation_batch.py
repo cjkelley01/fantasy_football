@@ -268,6 +268,13 @@ def simulate_paths(
                 for (week, team), count in sorted(waiver_team_week_counts.items())
             ],
         })
+    # Every completed path must award six berths in a 14-team league.
+    # Validate aggregate counts as well as individual path brackets so a
+    # reporting regression cannot silently inflate qualification odds.
+    if len(team_ids) == 14 and sum(appearances.values()) != paths * 6:
+        raise ValueError("V2 playoff qualification totals must equal six berths per path")
+    if sum(champions.values()) != paths:
+        raise ValueError("V2 championship totals must equal one champion per path")
     return SimulationBatch(
         paths, perf_counter() - started, dict(champions),
         dict(appearances), tuple(retained),
