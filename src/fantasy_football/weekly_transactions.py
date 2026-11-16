@@ -5,10 +5,11 @@ from __future__ import annotations
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, replace
+from functools import wraps
 from enum import StrEnum
 
 from fantasy_football.canonical.model import LeagueSnapshot, SlotKind
-from fantasy_football.canonical.validation import validate_snapshot
+from fantasy_football.canonical.validation import validate_snapshot, validated_snapshot
 from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     EvolvingLeagueState,
@@ -16,6 +17,7 @@ from fantasy_football.evolving_state import (
     IRPolicy,
     TransactionPhase,
     TransactionStateError,
+    TransactionErrorCode,
     acquisition_blocking_ir_players,
     activate_from_ir,
     add_player,
@@ -30,7 +32,10 @@ from fantasy_football.lineup_optimizer import (
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
-from fantasy_football.roster_value import value_roster
+from fantasy_football.roster_value import value_roster, opponent_valuation_cache_scope
+from fantasy_football.compact_season_state import CompactSeasonState
+from fantasy_football.compact_weekly_search import optimistic_coverage_possible, compact_correction_states
+from fantasy_football.prepared_season import PreparedSeason, prepare_season
 
 
 class WeeklyTransactionError(ValueError):
@@ -68,10 +73,22 @@ class WaiverBoundaryPolicy(StrEnum):
     MODELED_WEEKLY_V1 = "modeled_weekly_v1"
 
 
+class AcquisitionSearchStrategy(StrEnum):
+    EXHAUSTIVE = "exhaustive"
+    PROJECTION_RANKED = "projection_ranked"
+
+
+class AcquisitionValuationStrategy(StrEnum):
+    CURRENT_WEEK = 'current_week'
+    REST_OF_SEASON = 'rest_of_season'
+
+
 @dataclass(frozen=True, slots=True)
 class WeeklyTransactionPolicy:
     waiver_boundary: WaiverBoundaryPolicy = WaiverBoundaryPolicy.UNRESOLVED
     reject_incomplete_valuations: bool = True
+    acquisition_valuation: AcquisitionValuationStrategy = AcquisitionValuationStrategy.REST_OF_SEASON
+    acquisition_search: AcquisitionSearchStrategy = AcquisitionSearchStrategy.EXHAUSTIVE
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +130,7 @@ class TeamDecision:
     unresolved_authorization_plans: int
     rejection_summaries: tuple[CandidateRejectionSummary, ...]
     selected_player_id: int | None
+    failure_codes: tuple[CandidateRejectionSummary, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -159,19 +177,32 @@ class _PlanDiagnostics:
     rejections: tuple[CandidateRejectionSummary, ...]
     evaluations: int
     valuation_seconds: float
+    failure_codes: tuple[CandidateRejectionSummary, ...] = ()
 
 
-def _ordinary_slot_ids(snapshot: LeagueSnapshot, player_id: int) -> tuple[int, ...]:
-    player = next(item for item in snapshot.players if item.player_id == player_id)
-    return tuple(
-        sorted(
-            rule.slot_id
-            for rule in snapshot.rules.lineup_slots
-            if rule.kind is not SlotKind.RESERVE
-            and rule.capacity > 0
-            and rule.slot_id in player.eligible_lineup_slot_ids
+def _ordinary_slot_index(snapshot: LeagueSnapshot) -> dict[int, tuple[int, ...]]:
+    """Index immutable player-to-ordinary-slot eligibility once per plan search."""
+    ordinary_slots = {
+        rule.slot_id
+        for rule in snapshot.rules.lineup_slots
+        if rule.kind is not SlotKind.RESERVE and rule.capacity > 0
+    }
+    return {
+        player.player_id: tuple(
+            sorted(ordinary_slots.intersection(player.eligible_lineup_slot_ids))
         )
-    )
+        for player in snapshot.players
+    }
+
+
+def _ordinary_slot_ids(
+    snapshot: LeagueSnapshot,
+    player_id: int,
+    slot_index: dict[int, tuple[int, ...]] | None = None,
+) -> tuple[int, ...]:
+    if slot_index is not None:
+        return slot_index[player_id]
+    return _ordinary_slot_index(snapshot)[player_id]
 
 
 def _team_owned(state: EvolvingLeagueState, team_id: int) -> tuple[int, ...]:
@@ -234,6 +265,7 @@ def _correction_states(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
     team_id: int,
+    slot_index: dict[int, tuple[int, ...]] | None = None,
 ) -> tuple[EvolvingLeagueState, ...]:
     """Exhaustively enumerate finite reactive IR correction effects.
 
@@ -268,7 +300,7 @@ def _correction_states(
         for blocker in _required_ir_blockers(snapshot, candidate, team_id):
             if blocker in placed:
                 continue
-            for slot_id in _ordinary_slot_ids(snapshot, blocker):
+            for slot_id in _ordinary_slot_ids(snapshot, blocker, slot_index):
                 try:
                     corrected = activate_from_ir(
                         candidate,
@@ -386,6 +418,84 @@ def _corrections_are_relevant(
     return True
 
 
+def _optimistic_coverage_possible(
+    snapshot: LeagueSnapshot,
+    state: EvolvingLeagueState,
+    team_id: int,
+    candidate_id: int,
+    baseline_filled: int,
+    workspace: LineupOptimizationWorkspace,
+) -> bool:
+    """Necessary (not sufficient) condition for an essential acquisition.
+
+    Ignore roster capacities and potential drops, and allow every currently
+    ordinary owned player plus the candidate to be reassigned to any eligible
+    starting slot. If even this relaxed bipartite matching cannot exceed the
+    original coverage, no legal drop/add outcome from this correction state can.
+    This deliberately does not use projection rankings or fixed candidate caps.
+    """
+    week = workspace.week_records[state.scoring_week]
+    players = workspace.players
+    candidate_week = week.get(candidate_id)
+    if candidate_week is None or not candidate_week.projected_lineup_available:
+        return False
+    starter_slots = tuple(slot.lineup_slot_id for slot in workspace.slots)
+    if not set(players[candidate_id].eligible_lineup_slot_ids).intersection(starter_slots):
+        return False
+    ordinary = (
+        entry.player_id for entry in state.roster_entries
+        if entry.team_id == team_id
+        and entry.lineup_slot_id not in workspace.reserve_slot_ids
+    )
+    eligible_ids = tuple(ordinary) + (candidate_id,)
+    assigned: dict[int, int] = {}
+
+    def assign(player_id: int, visited: set[int]) -> bool:
+        for slot_index, slot_id in enumerate(starter_slots):
+            if slot_index in visited or slot_id not in players[player_id].eligible_lineup_slot_ids:
+                continue
+            visited.add(slot_index)
+            incumbent = assigned.get(slot_index)
+            if incumbent is None or assign(incumbent, visited):
+                assigned[slot_index] = player_id
+                return True
+        return False
+
+    filled = 0
+    for player_id in eligible_ids:
+        record = week.get(player_id)
+        if record is None or not record.projected_lineup_available:
+            continue
+        if assign(player_id, set()):
+            filled += 1
+            if filled > baseline_filled:
+                return True
+    return False
+
+
+def _experimental_compact_add(
+    prepared: PreparedSeason,
+    state: EvolvingLeagueState,
+    *,
+    team_id: int,
+    player_id: int,
+    lineup_slot_id: int,
+    phase: TransactionPhase,
+) -> EvolvingLeagueState:
+    """Experimental transaction boundary; reference state remains authoritative.
+
+    Conversion and reconstruction are included in performance measurements.
+    This must not be enabled by default before end-to-end parity gates pass.
+    """
+    compact = CompactSeasonState.from_reference(prepared, state)
+    compact.add_player(
+        team_id=team_id, player_id=player_id,
+        lineup_slot_id=lineup_slot_id, phase=phase,
+    )
+    return compact.to_reference()
+
+
+@opponent_valuation_cache_scope
 def _enumerate_plans(
     snapshot: LeagueSnapshot,
     state: EvolvingLeagueState,
@@ -393,9 +503,14 @@ def _enumerate_plans(
     team_id: int,
     phase: TransactionPhase,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
+    experimental_prepared: PreparedSeason | None = None,
+    experimental_indexed_coverage: bool = False,
+    experimental_compact_corrections: bool = False,
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] | None = None,
+    acquisition_valuation: AcquisitionValuationStrategy = AcquisitionValuationStrategy.REST_OF_SEASON,
+    acquisition_search: AcquisitionSearchStrategy = AcquisitionSearchStrategy.EXHAUSTIVE,
 ) -> tuple[
     tuple[_Plan, ...],
     _PlanDiagnostics,
@@ -403,6 +518,18 @@ def _enumerate_plans(
     tuple[EvolvingLeagueState, ...],
     tuple[EvolvingLeagueState, ...],
 ]:
+    def acquire(candidate_state: EvolvingLeagueState, *, team_id: int, player_id: int,
+                lineup_slot_id: int, phase: TransactionPhase) -> EvolvingLeagueState:
+        if experimental_prepared is None:
+            return add_player(
+                candidate_state, snapshot, team_id=team_id,
+                player_id=player_id, lineup_slot_id=lineup_slot_id, phase=phase,
+            )
+        return _experimental_compact_add(
+            experimental_prepared, candidate_state, team_id=team_id,
+            player_id=player_id, lineup_slot_id=lineup_slot_id, phase=phase,
+        )
+
     workspace = lineup_workspace or prepare_lineup_optimization(snapshot)
     values = valuation_cache if valuation_cache is not None else OrderedDict()
     baseline = optimize_starting_lineup(
@@ -422,6 +549,12 @@ def _enumerate_plans(
         )
     )
     reasons: dict[str, int] = {}
+    failure_codes: dict[str, int] = {}
+
+    def record_failure(stage: str, error: TransactionStateError) -> None:
+        code = error.code.value if isinstance(error.code, TransactionErrorCode) else str(error.code)
+        key = f"{stage}:{code}"
+        failure_codes[key] = failure_codes.get(key, 0) + 1
     plans_by_state: dict[EvolvingLeagueState, _Plan] = {}
     legal_states: dict[EvolvingLeagueState, EvolvingLeagueState] = {}
     essential_states: dict[EvolvingLeagueState, EvolvingLeagueState] = {}
@@ -437,34 +570,153 @@ def _enumerate_plans(
     # Correction reachability depends on the acting roster, evidence, and IR
     # policy—not on the eventual acquisition identity. Explore this exact graph
     # once and reuse its immutable states for every declared pool candidate.
-    corrections = _correction_states(snapshot, state, team_id)
+    slot_index = _ordinary_slot_index(snapshot)
+    if experimental_compact_corrections:
+        correction_prepared = experimental_prepared or prepare_season(snapshot)
+        compact_states = compact_correction_states(
+            correction_prepared,
+            CompactSeasonState.from_reference(correction_prepared, state),
+            team_id,
+        )
+        corrections = tuple(sorted(
+            (candidate.to_reference() for candidate in compact_states),
+            key=lambda candidate: repr(_state_effect_key(candidate)),
+        ))
+    else:
+        corrections = _correction_states(snapshot, state, team_id, slot_index)
     correction_count = len(corrections)
     dropped_states: dict[tuple[int, int], EvolvingLeagueState | TransactionStateError] = {}
+    # Multiple legal transaction paths can yield the same roster. Lineup
+    # coverage depends on roster entries, not transaction ledger history.
+    # Bound the cache so large searches do not retain every explored roster.
+    lineup_vacancies: OrderedDict[tuple, tuple[int, float]] = OrderedDict()
+    starter_ids = frozenset(slot.lineup_slot_id for slot in workspace.slots)
+    week_records = workspace.week_records[state.scoring_week]
+    projected_available = frozenset(
+        player_id for player_id, record in week_records.items()
+        if record.projected_lineup_available
+    ) if experimental_indexed_coverage else frozenset()
+    prepared_coverage = (
+        experimental_prepared if experimental_prepared is not None
+        else prepare_season(snapshot)
+    ) if experimental_indexed_coverage else None
+    compact_corrections = (
+        {id(corrected): CompactSeasonState.from_reference(prepared_coverage, corrected)
+         for corrected in corrections}
+        if prepared_coverage is not None else {}
+    )
+    starter_slot_ids = tuple(slot.lineup_slot_id for slot in workspace.slots)
+    # Vacancy-first candidate discovery: group available players by their
+    # starting-slot eligibility and projection availability. Coverage feasibility
+    # depends on this signature and the corrected roster, not player identity.
+    # Resolve the matching problem once per signature/correction, then visit
+    # only feasible candidates in the original player-ID order. The existing
+    # transaction/waiver executor remains authoritative and sequential.
+    signature_players: dict[tuple[tuple[int, ...], bool], list[int]] = {}
     for player_id in available:
+        record = week_records.get(player_id)
+        signature = (
+            tuple(sorted(starter_ids.intersection(
+                workspace.players[player_id].eligible_lineup_slot_ids
+            ))),
+            record is not None and record.projected_lineup_available,
+        )
+        signature_players.setdefault(signature, []).append(player_id)
+    if acquisition_search is AcquisitionSearchStrategy.PROJECTION_RANKED:
+        # Keep the three strongest projected options for every distinct starter
+        # eligibility signature. A single global top three would exclude valid
+        # candidates for less common positions (e.g. TE or QB).
+        ranked_available: set[int] = set()
+        for signature, player_ids in signature_players.items():
+            if not signature[0] or not signature[1]:
+                continue
+            ranked_available.update(sorted(
+                player_ids,
+                key=lambda player_id: (
+                    -week_records[player_id].effective_projection,
+                    player_id,
+                ),
+            )[:3])
+        signature_players = {
+            signature: [player_id for player_id in player_ids if player_id in ranked_available]
+            for signature, player_ids in signature_players.items()
+        }
+        signature_players = {key: ids for key, ids in signature_players.items() if ids}
+        available = tuple(player_id for player_id in available if player_id in ranked_available)
+    feasible_by_player: dict[int, list[EvolvingLeagueState]] = {}
+    rejected_coverage = 0
+    for corrected in corrections:
+        for signature, players in signature_players.items():
+            representative = players[0]
+            if prepared_coverage is not None:
+                possible = optimistic_coverage_possible(
+                    prepared_coverage, compact_corrections[id(corrected)],
+                    team_id=team_id, candidate_id=representative,
+                    baseline_filled=baseline.filled_starting_slot_count,
+                    starting_slot_ids=starter_slot_ids,
+                    projected_available=projected_available,
+                )
+            else:
+                possible = _optimistic_coverage_possible(
+                    snapshot, corrected, team_id, representative,
+                    baseline.filled_starting_slot_count, workspace,
+                )
+            if possible:
+                for player_id in players:
+                    feasible_by_player.setdefault(player_id, []).append(corrected)
+            else:
+                rejected_coverage += len(players)
+    if rejected_coverage:
+        reasons["cannot_improve_starter_coverage"] = rejected_coverage
+    # Preserve the reference rejection accounting for candidates with no
+    # feasible correction, without entering the expensive transaction search.
+    reasons["ineligible_for_configured_slots"] = sum(
+        player_id not in feasible_by_player for player_id in available
+    )
+    if not reasons["ineligible_for_configured_slots"]:
+        del reasons["ineligible_for_configured_slots"]
+    for player_id in available:
+        if player_id not in feasible_by_player:
+            continue
         player_had_structural_option = False
-        for corrected in corrections:
+        for corrected in feasible_by_player[player_id]:
             owned = _team_owned(corrected, team_id)
-            for slot_id in _ordinary_slot_ids(snapshot, player_id):
+            for slot_id in _ordinary_slot_ids(snapshot, player_id, slot_index):
                 player_had_structural_option = True
                 operations: list[tuple[int | None, EvolvingLeagueState]] = []
                 attempted += 1
                 try:
-                    direct = add_player(
+                    direct = acquire(
                         corrected,
-                        snapshot,
                         team_id=team_id,
                         player_id=player_id,
                         lineup_slot_id=slot_id,
                         phase=phase,
                     )
                 except TransactionStateError as exc:
+                    record_failure("direct_add", exc)
                     direct_error = str(exc)
+                    direct_exception = exc
                 else:
                     direct_error = None
+                    direct_exception = None
                     operations.append((None, direct))
                 if direct_error is not None:
                     # Drops are reactive only when the no-drop add is illegal.
                     for drop_id in owned:
+                        # A drop in a different slot cannot resolve a full
+                        # destination slot. Avoid constructing a doomed state;
+                        # all other failure types still use the authoritative
+                        # transaction engine.
+                        if (
+                            isinstance(direct_exception, TransactionStateError)
+                            and direct_exception.code is TransactionErrorCode.SLOT_CAPACITY
+                            and next(
+                                entry.lineup_slot_id for entry in corrected.roster_entries
+                                if entry.team_id == team_id and entry.player_id == drop_id
+                            ) != slot_id
+                        ):
+                            continue
                         attempted += 1
                         drop_key = (id(corrected), drop_id)
                         dropped = dropped_states.get(drop_key)
@@ -483,15 +735,31 @@ def _enumerate_plans(
                         try:
                             if isinstance(dropped, TransactionStateError):
                                 raise dropped
-                            resulting = add_player(
-                                dropped,
-                                snapshot,
-                                team_id=team_id,
-                                player_id=player_id,
-                                lineup_slot_id=slot_id,
-                                phase=phase,
-                            )
+                            if experimental_prepared is None:
+                                resulting = acquire(
+                                    dropped,
+                                    team_id=team_id,
+                                    player_id=player_id,
+                                    lineup_slot_id=slot_id,
+                                    phase=phase,
+                                )
+                            else:
+                                # Keep both operations indexed; reconstruct only
+                                # the successful resulting state, not each step.
+                                compact = CompactSeasonState.from_reference(
+                                    experimental_prepared, corrected,
+                                )
+                                compact.drop_player(
+                                    team_id=team_id, player_id=drop_id,
+                                    phase=TransactionPhase.ROSTER_CORRECTION,
+                                )
+                                compact.add_player(
+                                    team_id=team_id, player_id=player_id,
+                                    lineup_slot_id=slot_id, phase=phase,
+                                )
+                                resulting = compact.to_reference()
                         except TransactionStateError as exc:
+                            record_failure("drop" if isinstance(dropped, TransactionStateError) else "add_after_drop", exc)
                             text = str(exc)
                             if "unknown" in text or "unresolved" in text:
                                 category = "unresolved_authorization"
@@ -532,37 +800,53 @@ def _enumerate_plans(
                             reasons.get("irrelevant_ir_correction", 0) + 1
                         )
                         continue
-                    after = optimize_starting_lineup(
-                        snapshot,
-                        team_id,
-                        state.scoring_week,
-                        roster_entries=resulting.roster_entries,
-                        workspace=workspace,
-                    )
-                    if after.vacancy_count >= baseline.vacancy_count:
+                    roster_key = resulting.roster_entries
+                    lineup_result = lineup_vacancies.get(roster_key)
+                    if lineup_result is None:
+                        optimized = optimize_starting_lineup(
+                            snapshot,
+                            team_id,
+                            state.scoring_week,
+                            roster_entries=roster_key,
+                            workspace=workspace,
+                        )
+                        lineup_result = (optimized.vacancy_count, optimized.total_projected_points)
+                        lineup_vacancies[roster_key] = lineup_result
+                        if len(lineup_vacancies) > 1024:
+                            lineup_vacancies.popitem(last=False)
+                    else:
+                        lineup_vacancies.move_to_end(roster_key)
+                    after_vacancies, current_week_points = lineup_result
+                    if after_vacancies >= baseline.vacancy_count:
                         reasons["no_coverage_improvement"] = (
                             reasons.get("no_coverage_improvement", 0) + 1
                         )
                         continue
                     essential += 1
-                    essential_states.setdefault(_state_effect_key(resulting), resulting)
-                    state_key = (team_id, _state_effect_key(resulting))
+                    effect_key = _state_effect_key(resulting)
+                    essential_states.setdefault(effect_key, resulting)
+                    state_key = (team_id, effect_key)
                     cached_value = values.get(state_key)
                     if cached_value is None:
                         started = time.perf_counter()
-                        value = value_roster(
-                            snapshot,
-                            resulting,
-                            team_id,
-                            lineup_workspace=workspace,
-                        )
+                        if acquisition_valuation is AcquisitionValuationStrategy.CURRENT_WEEK:
+                            cached_value = (True, current_week_points)
+                        else:
+                            value = value_roster(
+                                snapshot, resulting, team_id,
+                                lineup_workspace=workspace,
+                            )
+                            cached_value = (value.is_complete, value.total_value)
                         elapsed = time.perf_counter() - started
                         evaluations += 1
                         valuation_seconds += elapsed
-                        cached_value = (value.is_complete, value.total_value)
                         values[state_key] = cached_value
                         values.move_to_end(state_key)
-                        while len(values) > 512:
+                        # A single candidate sweep can revisit the same effect
+                        # through different correction/drop paths. Keep enough
+                        # exact-state valuations to avoid early eviction during
+                        # that sweep, while retaining a bounded cache.
+                        while len(values) > 2048:
                             values.popitem(last=False)
                     else:
                         values.move_to_end(state_key)
@@ -604,7 +888,7 @@ def _enumerate_plans(
                         resulting,
                         player_id,
                         baseline.vacancy_count,
-                        after.vacancy_count,
+                        after_vacancies,
                         total_value,
                         tie_key,
                     )
@@ -616,6 +900,20 @@ def _enumerate_plans(
             reasons["ineligible_for_configured_slots"] = (
                 reasons.get("ineligible_for_configured_slots", 0) + 1
             )
+    # If the bounded shortlist cannot produce an essential legal acquisition,
+    # retry the authoritative full pool. This preserves the existing fallback
+    # for teams whose best projected players cannot actually be acquired.
+    if not plans_by_state and acquisition_search is AcquisitionSearchStrategy.PROJECTION_RANKED:
+        return _enumerate_plans(
+            snapshot, state, team_id=team_id, phase=phase,
+            lineup_workspace=workspace,
+            experimental_prepared=experimental_prepared,
+            experimental_indexed_coverage=experimental_indexed_coverage,
+            experimental_compact_corrections=experimental_compact_corrections,
+            valuation_cache=values,
+            acquisition_valuation=acquisition_valuation,
+            acquisition_search=AcquisitionSearchStrategy.EXHAUSTIVE,
+        )
     plans = tuple(plans_by_state[key] for key in sorted(plans_by_state, key=repr))
     return (
         plans,
@@ -634,6 +932,7 @@ def _enumerate_plans(
             ),
             evaluations,
             valuation_seconds,
+            tuple(CandidateRejectionSummary(reason, count) for reason, count in sorted(failure_codes.items())),
         ),
         len(legal_states),
         (tuple(legal_states[key] for key in sorted(legal_states, key=repr))),
@@ -647,6 +946,16 @@ def _choose(plans: tuple[_Plan, ...]) -> _Plan | None:
     return min(plans, key=lambda item: (-item.value, item.tie_key))
 
 
+def _validated_weekly_snapshot(function):
+    """Validate one immutable snapshot for the duration of a weekly search."""
+    @wraps(function)
+    def wrapped(snapshot, *args, **kwargs):
+        with validated_snapshot(snapshot):
+            return function(snapshot, *args, **kwargs)
+    return wrapped
+
+
+@_validated_weekly_snapshot
 @evolving_state_validation_scope
 def execute_weekly_essential_transactions(
     snapshot: LeagueSnapshot,
@@ -654,6 +963,9 @@ def execute_weekly_essential_transactions(
     policy: WeeklyTransactionPolicy,
     *,
     eligible_team_ids: tuple[int, ...] | None = None,
+    experimental_compact_acquisitions: bool = False,
+    experimental_indexed_coverage: bool = False,
+    experimental_compact_corrections: bool = False,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> WeeklyTransactionResult:
     """Execute one immutable sequential weekly waiver/free-agent window.
@@ -679,6 +991,10 @@ def execute_weekly_essential_transactions(
         raise WeeklyTransactionError(
             f"unsupported waiver boundary policy {policy.waiver_boundary!r}"
         )
+    if not isinstance(policy.acquisition_search, AcquisitionSearchStrategy):
+        raise WeeklyTransactionError("unsupported acquisition search strategy")
+    if not isinstance(policy.acquisition_valuation, AcquisitionValuationStrategy):
+        raise WeeklyTransactionError('unsupported acquisition valuation strategy')
     if not policy.reject_incomplete_valuations:
         raise WeeklyTransactionError(
             "ranking incomplete roster valuations has no approved capability policy"
@@ -713,6 +1029,7 @@ def execute_weekly_essential_transactions(
     valuation_cache: OrderedDict[
         tuple[int, EvolvingLeagueState], tuple[bool, float]
     ] = OrderedDict()
+    experimental_prepared = prepare_season(snapshot) if experimental_compact_acquisitions else None
 
     def run_phase(phase: TransactionPhase, order_factory) -> tuple[int, int]:
         nonlocal current, total_candidates, total_corrections, total_attempted
@@ -761,7 +1078,12 @@ def execute_weekly_essential_transactions(
                         team_id=team_id,
                         phase=phase,
                         lineup_workspace=lineup_workspace,
+                        experimental_prepared=experimental_prepared,
+                        experimental_indexed_coverage=experimental_indexed_coverage,
+                        experimental_compact_corrections=experimental_compact_corrections,
                         valuation_cache=valuation_cache,
+                        acquisition_valuation=policy.acquisition_valuation,
+                        acquisition_search=policy.acquisition_search,
                     )
                 )
                 total_candidates += diagnostic.candidate_players
@@ -796,6 +1118,7 @@ def execute_weekly_essential_transactions(
                             diagnostic.unresolved_plans,
                             diagnostic.rejections,
                             None,
+                            diagnostic.failure_codes,
                         )
                     )
                     continue
@@ -863,6 +1186,7 @@ def execute_weekly_essential_transactions(
                         diagnostic.unresolved_plans,
                         diagnostic.rejections,
                         selected.player_id,
+                        diagnostic.failure_codes,
                     )
                 )
                 successes += 1

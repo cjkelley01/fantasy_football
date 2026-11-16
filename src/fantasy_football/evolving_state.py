@@ -624,8 +624,14 @@ def _append(
 def _replace_availability(
     state: EvolvingLeagueState, replacement: PlayerAvailability
 ) -> EvolvingLeagueState:
-    items = [replacement if item.player_id == replacement.player_id else item for item in state.availability]
-    return replace(state, availability=_sorted_availability(items))
+    # Availability is maintained in player_id order by the validated state.
+    # Replacing one existing player's status cannot change that order; avoid
+    # sorting the entire free-agent pool for every trial add/drop.
+    items = tuple(
+        replacement if item.player_id == replacement.player_id else item
+        for item in state.availability
+    )
+    return replace(state, availability=items)
 
 
 def _validate_drop_permission(snapshot: LeagueSnapshot, player_id: int) -> str | None:
@@ -838,17 +844,67 @@ def add_player(
                 "explicit roster correction is required before acquisition",
                 TransactionErrorCode.IR_CORRECTION_REQUIRED,
             )
-    owners = {item.player_id: item.team_id for item in state.roster_entries}
-    blockers = tuple(
-        player for player in acquisition_blocking_ir_players(state, snapshot)
-        if owners[player] == team_id
-    )
+    # The state was validated at entry. Check only this team's reserve
+    # occupants instead of revalidating the entire league and rebuilding a
+    # league-wide recovered-IR list for every hypothetical acquisition.
+    # Preserve the original ascending player-ID ordering in error evidence.
+    blockers: tuple[int, ...] = ()
+    if state.ir_policy is IRPolicy.PROJECTION_BASED:
+        reserve_ids = {
+            rule.slot_id for rule in snapshot.rules.lineup_slots
+            if rule.kind is SlotKind.RESERVE
+        }
+        team_reserve_ids = {
+            entry.player_id for entry in state.roster_entries
+            if entry.team_id == team_id and entry.lineup_slot_id in reserve_ids
+        }
+        if team_reserve_ids:
+            projections = {
+                record.player_id: record.effective_projection
+                for record in snapshot.player_weeks
+                if record.scoring_week == state.scoring_week
+                and record.player_id in team_reserve_ids
+            }
+            blockers = tuple(sorted(
+                player_id for player_id in team_reserve_ids
+                if projections[player_id] > 0
+            ))
     if blockers:
         _fail(
             f"team {team_id} has projection-based recovered reserve occupant(s) {blockers}; "
             "explicit roster correction is required before acquisition",
             TransactionErrorCode.IR_CORRECTION_REQUIRED,
         )
+    # Reject capacity failures before allocating a full hypothetical state,
+    # copying the availability pool, and validating every player. These checks
+    # mirror the capacity/position invariants in validate_evolving_state.
+    slot_occupancy = sum(
+        entry.team_id == team_id and entry.lineup_slot_id == lineup_slot_id
+        for entry in state.roster_entries
+    )
+    if slot_occupancy >= slot.capacity:
+        _fail(
+            f"team {team_id} slot {lineup_slot_id} occupancy {slot_occupancy + 1} "
+            f"exceeds capacity {slot.capacity}",
+            TransactionErrorCode.SLOT_CAPACITY,
+        )
+    position_id = players[player_id].default_position_id
+    position_limit = next(
+        (rule.maximum for rule in snapshot.rules.position_limits
+         if rule.position_id == position_id), None
+    )
+    if position_limit is not None:
+        position_count = sum(
+            entry.team_id == team_id
+            and players[entry.player_id].default_position_id == position_id
+            for entry in state.roster_entries
+        )
+        if position_count >= position_limit:
+            _fail(
+                f"team {team_id} position {position_id} count {position_count + 1} "
+                f"exceeds limit {position_limit}",
+                TransactionErrorCode.POSITION_LIMIT,
+            )
     entry = RosterEntry(player_id, team_id, lineup_slot_id, team_id)
     rostered = PlayerAvailability(player_id, AcquisitionAvailability.ROSTERED, None, None, None, available.source_id)
     season_counts = dict(state.season_acquisition_counts)

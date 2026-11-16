@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import faulthandler
+import hashlib
 import json
 import logging
 import sqlite3
@@ -17,6 +18,7 @@ import tracemalloc
 from contextlib import contextmanager
 from pathlib import Path
 
+import fantasy_football.evolving_state as evolving
 import fantasy_football.season_simulator as season
 import fantasy_football.weekly_transactions as weekly
 from fantasy_football.app.contracts import BaselineAnalysisRequest
@@ -24,6 +26,13 @@ from fantasy_football.app.service import ApplicationDependencies, ApplicationSer
 from fantasy_football.snapshot_store import SnapshotStore
 
 TRACE_MEMORY = False
+OPERATION_SUMMARY = {}
+SEASON_LINEUP_SUMMARY = {"calls": 0, "seconds": 0.0}
+REUSE_SUMMARY = {"calls": 0, "identical_state_calls": 0, "distinct_states": 0, "by_week": {}}
+VALUATION_SUMMARY = {"calls": 0, "seconds": 0.0, "replacement_candidates": 0, "allocation_states": 0}
+BOUND_SUMMARY = {"calls": 0, "seconds": 0.0, "exact_seconds": 0.0, "below_best": 0, "complete": 0, "incomplete": 0, "violations": 0, "failures": 0, "potential_saved_seconds": 0.0}
+BOUND_BEST = None
+
 try:
     import psutil
 except ImportError:  # pragma: no cover - optional benchmark instrumentation
@@ -83,14 +92,26 @@ def configured_request(args) -> BaselineAnalysisRequest:
                 update={"snapshot_id": latest.metadata.snapshot_id}
             )
         })
-    if args.one_path:
+    if args.paths is not None:
         request = request.model_copy(update={
-            "simulation": request.simulation.model_copy(update={"path_count": 1}),
+            "simulation": request.simulation.model_copy(update={"path_count": args.paths}),
             "precision": request.precision.model_copy(update={
-                "minimum_paths": 1,
-                "maximum_paths": 1,
-                "evaluation_interval_paths": 1,
+                "minimum_paths": args.paths,
+                "maximum_paths": args.paths,
+                "evaluation_interval_paths": args.paths,
             }),
+        })
+    if args.acquisition_search is not None:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(update={
+                "acquisition_search": args.acquisition_search
+            })
+        })
+    if args.acquisition_valuation is not None:
+        request = request.model_copy(update={
+            "simulation": request.simulation.model_copy(update={
+                "acquisition_valuation": args.acquisition_valuation
+            })
         })
     if args.allow_incomplete:
         request = request.model_copy(update={
@@ -101,7 +122,8 @@ def configured_request(args) -> BaselineAnalysisRequest:
     return request
 
 
-def instrument(overall: float) -> None:
+def instrument(overall: float, *, max_team_searches: int = 0, shadow_bounds: bool = False) -> None:
+    completed_team_searches = 0
     def wrap(name: str, stage: str):
         original = getattr(season, name)
 
@@ -117,6 +139,29 @@ def instrument(overall: float) -> None:
 
         setattr(season, name, measured)
 
+    transaction_signatures = set()
+    original_weekly = season.execute_weekly_essential_transactions
+
+    def measured_weekly(*args, **kwargs):
+        # Diagnostic-only exact-input fingerprint. No identifiers are emitted.
+        # Include the full evolving state, policy, and participation selection.
+        state = args[1]
+        policy = args[2]
+        eligible = kwargs.get("eligible_team_ids")
+        signature = hashlib.sha256(repr((state, policy, eligible)).encode("utf-8")).digest()
+        repeated = signature in transaction_signatures
+        transaction_signatures.add(signature)
+        REUSE_SUMMARY["calls"] += 1
+        REUSE_SUMMARY["identical_state_calls"] += int(repeated)
+        REUSE_SUMMARY["distinct_states"] = len(transaction_signatures)
+        week = str(state.scoring_week)
+        entry = REUSE_SUMMARY["by_week"].setdefault(week, {"calls": 0, "identical_state_calls": 0})
+        entry["calls"] += 1
+        entry["identical_state_calls"] += int(repeated)
+        return original_weekly(*args, **kwargs)
+
+    season.execute_weekly_essential_transactions = measured_weekly
+
     for name, stage in (
         ("_preflight", "canonical_preflight"),
         ("initialize_standings", "standings_initialization"),
@@ -126,12 +171,63 @@ def instrument(overall: float) -> None:
         ("resolve_regular_season_week", "regular_matchup_transition"),
         ("initialize_postseason", "postseason_initialization"),
         ("score_frozen_postseason_week", "postseason_transition"),
+        ("advance_cycle", "weekly_state_advance"),
+        ("reset_waiver_priority", "waiver_priority_reset"),
+        ("rank_standings", "standings_ranking"),
+        ("prepare_lineup_optimization", "lineup_workspace_preparation"),
     ):
         wrap(name, stage)
+
+    # Inclusive wall-clock timings by operation, reset for each team search.
+    # Nested calls overlap: these are diagnostic costs, not additive totals.
+    def profile_operation(module, name: str, label: str) -> None:
+        original = getattr(module, name)
+
+        def measured(*args, **kwargs):
+            started = time.perf_counter()
+            try:
+                return original(*args, **kwargs)
+            finally:
+                item = OPERATION_SUMMARY.setdefault(label, [0, 0.0])
+                item[0] += 1
+                item[1] += time.perf_counter() - started
+
+        setattr(module, name, measured)
+
+    for module, name, label in (
+        (weekly, "add_player", "add_player"),
+        (weekly, "drop_player", "drop_player"),
+        (weekly, "_optimistic_coverage_possible", "optimistic_coverage_matching"),
+        (weekly, "_ordinary_slot_index", "ordinary_slot_index"),
+        (weekly, "_team_owned", "team_owned_lookup"),
+        (weekly, "optimize_starting_lineup", "lineup_optimization"),
+        (evolving, "validate_evolving_state", "state_validation"),
+        (evolving, "_replace_availability", "availability_replacement"),
+    ):
+        profile_operation(module, name, label)
+
+    # Season scoring invokes its own imported optimizer reference, separate
+    # from the transaction-search module. Attribute that cost independently.
+    original_season_lineup = season.optimize_starting_lineup
+
+    def measured_season_lineup(*args, **kwargs):
+        started = time.perf_counter()
+        try:
+            return original_season_lineup(*args, **kwargs)
+        finally:
+            SEASON_LINEUP_SUMMARY["calls"] += 1
+            SEASON_LINEUP_SUMMARY["seconds"] += time.perf_counter() - started
+
+    season.optimize_starting_lineup = measured_season_lineup
 
     original_plans = weekly._enumerate_plans
 
     def measured_plans(*args, **kwargs):
+        nonlocal completed_team_searches
+        global BOUND_BEST
+        BOUND_BEST = None
+        BOUND_SUMMARY.update(dict.fromkeys(BOUND_SUMMARY, 0))
+        OPERATION_SUMMARY.clear()
         started = time.perf_counter()
         result = original_plans(*args, **kwargs)
         diagnostic = result[1]
@@ -146,32 +242,90 @@ def instrument(overall: float) -> None:
             complete_plans=diagnostic.complete_plans,
             valuation_evaluations=diagnostic.evaluations,
             valuation_seconds=round(diagnostic.valuation_seconds, 6),
+            # Scoring week is needed to localize the expensive rejection paths.
+            # No team, player, roster, or credential identifiers are emitted.
+            relative_scoring_week=args[1].scoring_week,
+            rejections={item.reason: item.count for item in diagnostic.rejections},
+            # Aggregate error codes only: no player, team, or roster identifiers.
+            failure_codes={item.reason: item.count for item in diagnostic.failure_codes},
+            optimistic_bound_profile={key: round(value, 6) if isinstance(value, float) else value for key, value in BOUND_SUMMARY.items()},
+            operation_profile={key: {"calls": item[0], "seconds": round(item[1], 6)}
+                               for key, item in sorted(OPERATION_SUMMARY.items())},
         )
+        completed_team_searches += 1
+        if max_team_searches and completed_team_searches >= max_team_searches:
+            raise SystemExit(0)
         return result
 
     weekly._enumerate_plans = measured_plans
 
-    original_value = weekly.value_roster
+    # Instrument the actual valuation internals, without changing search behavior.
+    from fantasy_football import roster_value as roster_value_module
 
-    def measured_value(*args, **kwargs):
-        started = time.perf_counter()
-        result = original_value(*args, **kwargs)
+    for name in ("_available_pool", "_allocate_opponents",
+                 "exhaustive_allocation_oracle", "_materially_unresolved_players",
+                 "optimize_starting_lineup", "optimize_candidate_lineup"):
+        profile_operation(roster_value_module, name, "valuation_" + name)
+
+    original_weekly_executor = weekly.execute_weekly_essential_transactions
+
+    def measured_weekly_acquisitions(*args, **kwargs):
+        result = original_weekly_executor(*args, **kwargs)
         emit(
-            "roster_valuation",
-            "finished",
-            overall,
-            stage_seconds=round(time.perf_counter() - started, 6),
-            valuation_weeks=len(result.weeks),
-            replacement_candidates=sum(
-                week.replacement_candidate_count for week in result.weeks
-            ),
-            allocation_states=sum(
-                week.allocation_states_explored for week in result.weeks
-            ),
+            "transaction_acquisitions", "finished", overall,
+            relative_scoring_week=args[1].scoring_week,
+            waiver_acquisitions=result.waiver_acquisitions,
+            free_agent_acquisitions=result.free_agent_acquisitions,
+            selected_acquisitions=len(result.acquisitions),
         )
         return result
 
-    weekly.value_roster = measured_value
+    weekly.execute_weekly_essential_transactions = measured_weekly_acquisitions
+    season.execute_weekly_essential_transactions = measured_weekly_acquisitions
+
+    original_value = weekly.value_roster
+
+    from fantasy_football.transaction_value_bound import optimistic_roster_value_bound
+
+    def measured_value(*args, **kwargs):
+        global BOUND_BEST
+        bound_started = time.perf_counter()
+        try:
+            bound = optimistic_roster_value_bound(*args, **kwargs)
+        except Exception:
+            BOUND_SUMMARY["failures"] += 1
+            bound = None
+        BOUND_SUMMARY["seconds"] += time.perf_counter() - bound_started
+        BOUND_SUMMARY["calls"] += 1
+        started = time.perf_counter()
+        try:
+            result = original_value(*args, **kwargs)
+        finally:
+            duration = time.perf_counter() - started
+            VALUATION_SUMMARY["calls"] += 1
+            VALUATION_SUMMARY["seconds"] += duration
+            BOUND_SUMMARY["exact_seconds"] += duration
+        if bound is not None:
+            if bound + 1e-9 < result.total_value:
+                BOUND_SUMMARY["violations"] += 1
+            if result.is_complete:
+                BOUND_SUMMARY["complete"] += 1
+                if BOUND_BEST is not None and bound < BOUND_BEST:
+                    BOUND_SUMMARY["below_best"] += 1
+                    BOUND_SUMMARY["potential_saved_seconds"] += duration
+                BOUND_BEST = result.total_value if BOUND_BEST is None else max(BOUND_BEST, result.total_value)
+            else:
+                BOUND_SUMMARY["incomplete"] += 1
+        VALUATION_SUMMARY["replacement_candidates"] += sum(
+            week.replacement_candidate_count for week in result.weeks
+        )
+        VALUATION_SUMMARY["allocation_states"] += sum(
+            week.allocation_states_explored for week in result.weeks
+        )
+        return result
+
+    if shadow_bounds:
+        weekly.value_roster = measured_value
 
 
 def run_api_terminal(args, overall: float) -> int:
@@ -246,8 +400,16 @@ def main() -> int:
     parser.add_argument("--api-terminal", action="store_true")
     parser.add_argument("--allow-incomplete", action="store_true")
     parser.add_argument("--latest-snapshot", action="store_true")
-    parser.add_argument("--one-path", action="store_true")
+    parser.add_argument("--paths", type=int, default=None, help="Exact number of Monte Carlo paths; overrides retained request path budget")
+    parser.add_argument("--disable-coverage-filter", action="store_true")
+    parser.add_argument("--max-team-searches", type=int, default=0)
+    parser.add_argument("--acquisition-valuation", choices=("current_week", "rest_of_season"), default=None)
+    parser.add_argument("--acquisition-search", choices=("exhaustive", "projection_ranked"), default=None)
+    parser.add_argument("--shadow-bounds", action="store_true")
+    parser.add_argument("--disable-opponent-search-cache", action="store_true")
     args = parser.parse_args()
+    if args.paths is not None and args.paths < 1:
+        parser.error("--paths must be at least 1")
     global TRACE_MEMORY
     TRACE_MEMORY = args.trace_memory
     if TRACE_MEMORY:
@@ -255,6 +417,7 @@ def main() -> int:
     if args.stack_interval_seconds > 0:
         faulthandler.dump_traceback_later(args.stack_interval_seconds, repeat=True)
     overall = time.perf_counter()
+    VALUATION_SUMMARY.update(calls=0, seconds=0.0, replacement_candidates=0, allocation_states=0)
     emit("diagnostic", "started", overall)
     if args.api_terminal:
         return run_api_terminal(args, overall)
@@ -263,21 +426,57 @@ def main() -> int:
         store = SnapshotStore(args.database)
         service = ApplicationService(ApplicationDependencies(store))
         with timed("canonical_load", overall):
-            service._load(request.snapshot)
-        instrument(overall)
-        with timed("baseline_service", overall):
-            result = service.run_baseline(request)
+            loaded = service._load(request.snapshot)
+            consolation = loaded.snapshot.rules.consolation
+            if consolation.enabled is True and not any(
+                item.round_number == 1 for item in consolation.rounds
+            ):
+                raise RuntimeError(
+                    "Selected snapshot has no approved consolation first-round period. "
+                    "Publish a new snapshot with "
+                    "'python -m fantasy_football.snapshot_store "
+                    "--first-simulation-week 10 "
+                    "--manual-config config/league_rules.local.yaml', "
+                    "then rerun with --latest-snapshot. "
+                    "Do not patch an immutable published snapshot."
+                )
+        if args.disable_coverage_filter:
+            # Exact original candidate enumeration; retain all legality and
+            # valuation logic. Only disable the optimistic coverage prefilter.
+            weekly._optimistic_coverage_possible = lambda *args: True
+        instrument(overall, max_team_searches=args.max_team_searches, shadow_bounds=args.shadow_bounds)
+        from fantasy_football.roster_value import opponent_search_diagnostics
+        with opponent_search_diagnostics(cache_enabled=not args.disable_opponent_search_cache) as cache_metrics:
+            try:
+                with timed("baseline_service", overall):
+                    result = service.run_baseline(request)
+            finally:
+                emit("opponent_search_cache", "finished", overall,
+                     cache_enabled=not args.disable_opponent_search_cache,
+                     **cache_metrics)
         emit(
             "diagnostic", "completed", overall,
             completed_paths=result.completed_paths,
             incomplete_paths=result.incomplete_paths,
+            requested_paths=request.simulation.path_count,
         )
         return 0
     except Exception as exc:
-        # Only the exception class is emitted; messages can contain private IDs.
+        # Local diagnostic only: traceback may include private league identifiers.
+        import traceback
+        traceback.print_exception(type(exc), exc, exc.__traceback__)
         emit("diagnostic", "failed", overall, exception_type=type(exc).__name__)
         return 1
     finally:
+        emit("season_lineup_profile", "finished", overall,
+             calls=SEASON_LINEUP_SUMMARY["calls"],
+             seconds=round(SEASON_LINEUP_SUMMARY["seconds"], 6))
+        emit("transaction_reuse_opportunity", "finished", overall, **REUSE_SUMMARY)
+        emit("roster_valuation_summary", "finished", overall,
+             valuation_calls=VALUATION_SUMMARY["calls"],
+             valuation_seconds=round(VALUATION_SUMMARY["seconds"], 6),
+             replacement_candidates=VALUATION_SUMMARY["replacement_candidates"],
+             allocation_states=VALUATION_SUMMARY["allocation_states"])
         if args.stack_interval_seconds > 0:
             faulthandler.cancel_dump_traceback_later()
         if TRACE_MEMORY:

@@ -12,6 +12,7 @@ from fantasy_football.canonical.model import LeagueSnapshot
 from fantasy_football.canonical.serialization import snapshot_to_json
 from fantasy_football.canonical.validation import validated_snapshot
 from fantasy_football.evolving_state import EvolvingLeagueState, IRPolicy
+from fantasy_football.lineup_optimizer import LineupOptimizationWorkspace, prepare_lineup_optimization
 from fantasy_football.player_outcomes import PlayerOutcomeModel, projection_class_counts
 from fantasy_football.postseason import ConsolationLadderConfiguration
 from fantasy_football.season_simulator import (
@@ -298,6 +299,7 @@ def run_monte_carlo_path(
     path_index: int,
     *,
     retain_result: bool = False,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> tuple[MonteCarloPathSummary, DeterministicSeasonResult | None]:
     if path_index not in config.path_indices:
         raise MonteCarloError(f"path_index={path_index} is outside configured range")
@@ -314,6 +316,7 @@ def run_monte_carlo_path(
                 postseason_transaction_policy=config.postseason_transaction_policy,
                 consolation_configuration=config.consolation_configuration,
                 initial_evolving_state=config.initial_evolving_state,
+                lineup_workspace=lineup_workspace,
             )
     except ValueError as exc:
         raise MonteCarloError(f"invalid path {path_index}: {exc}") from exc
@@ -549,8 +552,9 @@ def run_monte_carlo_batch(
 ) -> MonteCarloBatchResult:
     if not getattr(model, "model_id", None) or not hasattr(model, "generate_scenario"):
         raise MonteCarloError("model does not satisfy PlayerOutcomeModel")
+    lineup_workspace = prepare_lineup_optimization(snapshot)
     paths = tuple(
-        run_monte_carlo_path(snapshot, config, model, path_index)[0]
+        run_monte_carlo_path(snapshot, config, model, path_index, lineup_workspace=lineup_workspace)[0]
         for path_index in config.path_indices
     )
     return _aggregate(snapshot, config, model, paths)

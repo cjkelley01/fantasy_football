@@ -32,6 +32,7 @@ from fantasy_football.app.contracts import (
     TeamScenarioResult,
 )
 from fantasy_football.app.service import ApplicationService, ApplicationServiceError
+from fantasy_football.app.v2_experimental import V2PreviewRequest, run_v2_preview
 from fantasy_football.postseason import PostseasonCapabilityError
 
 _ACTIVE = ("queued", "running", "cancel_requested")
@@ -645,6 +646,11 @@ class BackgroundRunCoordinator:
         self._lease_released = False
 
     def _validate(self, run_type: str, request) -> None:
+        if run_type == "v2_baseline":
+            if request.paths > self.policy.maximum_baseline_paths:
+                raise ApplicationServiceError("background_v2_path_limit_exceeded", "resource_exhausted", "Requested V2 paths exceed background policy.")
+            self.service.dependencies.store.load(request.snapshot_id)
+            return
         self.service._load(request.snapshot)
         if run_type == "action_search":
             resources = request.resources
@@ -677,7 +683,7 @@ class BackgroundRunCoordinator:
                     requested_paths=request.simulation.path_count, maximum_paths=maximum,
                 )
 
-    def submit(self, run_type: Literal["baseline", "manual_scenario", "action_search"], request) -> BackgroundRunSubmission:
+    def submit(self, run_type: Literal["baseline", "manual_scenario", "action_search", "v2_baseline"], request) -> BackgroundRunSubmission:
         self._validate(run_type, request)
         with self._lock:
             if self._closing:
@@ -690,7 +696,7 @@ class BackgroundRunCoordinator:
             run_id, event = str(uuid4()), Event()
             payload = request.model_dump_json()
             submission = self.store.create(
-                run_id, run_type, payload, request.snapshot.snapshot_id, self.service.build,
+                run_id, run_type, payload, request.snapshot_id if run_type == "v2_baseline" else request.snapshot.snapshot_id, self.service.build,
                 _now() + timedelta(seconds=self.policy.retention_seconds),
                 maximum_storage_bytes=self.policy.maximum_result_store_bytes,
             )
@@ -738,6 +744,15 @@ class BackgroundRunCoordinator:
                         run_id, item, raw, result, retained_state_ids
                     ),
                 )
+            elif run_type == "v2_baseline":
+                result = run_v2_preview(self.service.dependencies.store, request)
+                result["persisted"] = True
+                result["warning"] = "Experimental projected-score model; not calibrated or equivalent to V1. Result retained in background run storage."
+                self.store.set_progress(run_id, BackgroundProgress(
+                    run_id=run_id, status="running", stage="finalizing",
+                    simulation_paths_completed=request.paths,
+                    elapsed_seconds=result["elapsed_seconds"],
+                ))
             elif run_type == "baseline":
                 result = self.service.run_baseline(request)
             else:
@@ -751,7 +766,7 @@ class BackgroundRunCoordinator:
             else:
                 stop = getattr(result, "stop_reason", None)
                 committed = self.store.finish(
-                    run_id, "completed", result_json=result.model_dump_json(),
+                    run_id, "completed", result_json=json.dumps(result) if run_type == "v2_baseline" else result.model_dump_json(),
                     stop_reason=stop,
                     maximum_storage_bytes=self.policy.maximum_result_store_bytes,
                 )

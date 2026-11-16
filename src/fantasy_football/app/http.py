@@ -47,6 +47,7 @@ from fantasy_football.app.contracts import (
     SnapshotSummary,
 )
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
+from fantasy_football.app.v2_experimental import V2PreviewRequest, V2BackgroundRequest, run_v2_preview
 from fantasy_football.app.service import (
     ApplicationDependencies,
     ApplicationService,
@@ -256,6 +257,39 @@ def create_app(
             process_id=os.getpid(),
             launcher_run_id=launcher_run_id,
         )
+
+    @app.post("/api/v1/experimental/v2/preview")
+    def experimental_v2_preview(request: V2PreviewRequest):
+        """Explicit opt-in V2 preview; never alters V1 run storage or routes."""
+        try:
+            return run_v2_preview(snapshot_store, request)
+        except ValueError as exc:
+            raise ApplicationServiceError(
+                "v2_preview_unsupported", "unsupported_configuration",
+                "The selected snapshot or preview configuration is unsupported.",
+            ) from exc
+
+    @app.post(
+        "/api/v1/experimental/v2/runs", response_model=BackgroundRunSubmission,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def submit_v2_baseline(
+        body: V2BackgroundRequest,
+        coordinator: BackgroundRunCoordinator = Depends(runs),
+    ) -> BackgroundRunSubmission:
+        return coordinator.submit("v2_baseline", body)
+
+    @app.get("/api/v1/experimental/v2/runs/{run_id}/result")
+    def v2_run_result(
+        run_id: str, coordinator: BackgroundRunCoordinator = Depends(runs),
+    ):
+        summary = coordinator.store.result(run_id)
+        if summary.run.run_type != "v2_baseline":
+            raise ApplicationServiceError(
+                "v2_run_type_mismatch", "invalid_request",
+                "The selected run is not a V2 baseline.",
+            )
+        return summary
 
     @app.get("/api/v1/snapshots", response_model=tuple[SnapshotSummary, ...])
     def snapshots(

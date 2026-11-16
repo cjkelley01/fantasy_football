@@ -8,7 +8,7 @@ primitives plus M2.1/M2.3c scoring contracts.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from fantasy_football.canonical.model import LeagueSnapshot, SlotKind
@@ -728,7 +728,17 @@ def execute_sequential_policy_reference(
     cache: dict[
         tuple[EvolvingLeagueState, int, TransactionPhase], tuple[ReferencePlan, ...]
     ] = {}
-    current = state
+    # Normalize at the reference boundary, not on every trial transaction.
+    current = replace(
+        state,
+        roster_entries=tuple(sorted(
+            state.roster_entries,
+            key=lambda entry: (entry.team_id, entry.player_id, entry.lineup_slot_id),
+        )),
+        availability=tuple(sorted(
+            state.availability, key=lambda item: item.player_id,
+        )),
+    )
     decisions: list[tuple[str, int, int, int | None, bool]] = []
     unresolved_decisions: list[tuple[TransactionPhase, int, int, tuple[str, ...]]] = []
 

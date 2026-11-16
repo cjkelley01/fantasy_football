@@ -24,6 +24,7 @@ from fantasy_football.evolving_state import (
 )
 from fantasy_football.lineup_optimizer import (
     OptimizedLineup,
+    LineupOptimizationWorkspace,
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
@@ -435,6 +436,7 @@ def _freeze_and_score(
     scoring_week: int,
     team_ids: tuple[int, ...],
     score_index: dict[tuple[int, int], RealizedPlayerScore],
+    lineup_workspace: LineupOptimizationWorkspace,
 ) -> tuple[tuple[OptimizedLineup, ...], tuple[FrozenTeamWeek, ...]]:
     lineups = tuple(
         optimize_starting_lineup(
@@ -442,6 +444,7 @@ def _freeze_and_score(
             team_id,
             scoring_week,
             roster_entries=state.roster_entries,
+            workspace=lineup_workspace,
         )
         for team_id in sorted(team_ids)
     )
@@ -562,6 +565,7 @@ def simulate_deterministic_season(
     matchup_acquisition_counts: dict[int, int] | None = None,
     ir_eligibility_evidence: tuple[IREligibilityEvidence, ...] = (),
     initial_evolving_state: EvolvingLeagueState | None = None,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> DeterministicSeasonResult:
     """Execute one settings-driven deterministic path without network or randomness."""
 
@@ -608,7 +612,10 @@ def simulate_deterministic_season(
         evolving = initial_evolving_state
     postseason: PostseasonState | None = None
     weeks: list[SeasonWeekTransition] = []
-    lineup_workspace = prepare_lineup_optimization(snapshot)
+    if lineup_workspace is None:
+        lineup_workspace = prepare_lineup_optimization(snapshot)
+    elif lineup_workspace.snapshot is not snapshot:
+        raise SeasonSimulationError("lineup workspace belongs to a different snapshot object")
 
     for scoring_week in range(
         snapshot.first_simulation_week, snapshot.final_simulation_week + 1
@@ -743,7 +750,7 @@ def simulate_deterministic_season(
             assert postseason is not None
             team_ids = _active_postseason_teams(postseason, scoring_week)
         lineups, frozen = _freeze_and_score(
-            snapshot, evolving, scoring_week, team_ids, score_index
+            snapshot, evolving, scoring_week, team_ids, score_index, lineup_workspace
         )
         scores = _scenario_week_scores(score_index, scoring_week)
         regular_transition = None

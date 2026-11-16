@@ -134,7 +134,7 @@ export interface SnapshotSummary {
 export interface BackgroundRunRecord {
   readonly api_schema_version: "1.0";
   readonly run_id: string;
-  readonly run_type: "baseline" | "manual_scenario" | "action_search";
+  readonly run_type: "baseline" | "v2_baseline" | "manual_scenario" | "action_search";
   readonly status: RunStatus;
   readonly request_sha256: string;
   readonly snapshot_id: string;

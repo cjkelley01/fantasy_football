@@ -156,6 +156,8 @@ class SimulationConfiguration(ContractModel):
     ir_policy: Literal["projection_based", "strict"]
     waiver_boundary: Literal["unresolved", "modeled_weekly_v1"]
     reject_incomplete_valuations: bool = True
+    acquisition_valuation: Literal["current_week", "rest_of_season"] = "rest_of_season"
+    acquisition_search: Literal["exhaustive", "projection_ranked"] = "exhaustive"
     require_complete: bool = True
 
 
@@ -535,7 +537,7 @@ class SnapshotRefreshResult(ContractModel):
     unresolved_capabilities: tuple[str, ...]
 
 
-RunType = Literal["baseline", "manual_scenario", "action_search"]
+RunType = Literal["baseline", "manual_scenario", "action_search", "v2_baseline"]
 RunStatus = Literal[
     "queued", "running", "cancel_requested", "completed", "cancelled", "failed",
     "interrupted",
