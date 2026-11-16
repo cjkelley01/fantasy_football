@@ -649,7 +649,7 @@ class BackgroundRunCoordinator:
         if run_type == "v2_baseline":
             if request.paths > self.policy.maximum_baseline_paths:
                 raise ApplicationServiceError("background_v2_path_limit_exceeded", "resource_exhausted", "Requested V2 paths exceed background policy.")
-            self.service.dependencies.snapshot_store.load(request.snapshot_id)
+            self.service.dependencies.store.load(request.snapshot_id)
             return
         self.service._load(request.snapshot)
         if run_type == "action_search":
@@ -745,7 +745,7 @@ class BackgroundRunCoordinator:
                     ),
                 )
             elif run_type == "v2_baseline":
-                result = run_v2_preview(self.service.dependencies.snapshot_store, request)
+                result = run_v2_preview(self.service.dependencies.store, request)
                 result["persisted"] = True
                 result["warning"] = "Experimental projected-score model; not calibrated or equivalent to V1. Result retained in background run storage."
                 self.store.set_progress(run_id, BackgroundProgress(
