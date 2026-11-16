@@ -80,3 +80,7 @@ Follow [AGENTS.md](../AGENTS.md), [MASTER_SPEC.md](MASTER_SPEC.md), and [ROADMAP
 ## Additional transaction and waiver review gate
 
 Read [V2 model-change and specification consistency review](V2_MODEL_CHANGE_REVIEW_FOR_TIMMY.md), including the **2026-11-16 follow-up audit**. Priority items: compact preflight is not canonical authorization; the simulated weekly cycle does not itself release HOLD/WAIVERS players; unlimited repeat claims differ from the reference window's default cap; waiver/free-agent ordering, IR recovery, and missing canonical ledger updates require explicit acceptance or corrective tests. Do not treat this as a performance-only refactor. Verify the intended supported semantics and document Timmy's approval before merge.
+
+## Source-audit reconciliation (2026-11-16)
+
+The [model-change review](V2_MODEL_CHANGE_REVIEW_FOR_TIMMY.md) now contains a final V1 master-spec reconciliation and a plain-language V1/V2 comparison. **Important corrections to earlier findings:** The master spec supports repeated essential acquisitions when necessary and explicitly approves reverse frozen-order free-agent processing; these are not established V2 violations merely because a simpler reference window differs. The high-priority issues remain missing authorized release of held players, unguarded weekly waiver resets, and unproven compact-executor legality parity. The V2 scoring distribution and manager policy require explicit experimental approval. Source audit complete; live validation and independent review outstanding.
