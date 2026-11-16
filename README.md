@@ -2,7 +2,7 @@
 
 This repository contains War Room, a clean-sheet league-wide decision engine and local web application for ESPN fantasy football. It estimates season-outcome distributions and compares roster actions by their effect on championship probability while honoring configured league rules, uncertainty, and full-league consequences.
 
-## Current status
+**V2 integration review:** [Timmy merge handoff and acceptance checklist](docs/V2_TIMMY_MERGE_HANDOFF.md). V2 is experimental; the feature branch is not yet merge-accepted.\n\n## Current status
 
 M0–M8.3 and the associated consolidation checkpoints are **COMPLETE AND ACCEPTED**. M8.4 final release audit is **IMPLEMENTED — READY FOR INDEPENDENT REVIEW**. This status does not declare V1 released. The deterministic analytical engine, local application service, analytical workspaces, integrated Simulation Center, and browser-based immutable ESPN refresh workflow are implemented.
 
