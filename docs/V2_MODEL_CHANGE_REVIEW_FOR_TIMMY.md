@@ -120,3 +120,35 @@ Inspected the authoritative `docs/MASTER_SPEC.md` Sections 4–5, `AGENTS.md`, `
 **Our experimental V2 implementation:** Start from the same league snapshot, but use a compact, faster representation of rosters and transactions. Pick projected optimal lineups, generate player scores with a simpler normal-variation rule (default 35% variation), make automatic vacancy-based pickups, and simulate standings/playoffs repeatedly. It sacrifices some transaction evidence and currently omits authorized release of dropped players; it also applies weekly waiver resets without the V1 setting guard. These differences may change the forecast, not merely its speed. The UI labels it experimental.
 
 **Bottom line:** V2 is a promising faster **alternative model**, not a demonstrated equivalent or calibrated replacement for Timmy's approved V1 model. Its probabilities should be interpreted as provisional until rules, transactions, and scoring are accepted and validated.
+
+## Decision-policy audit: how V2 actually chooses pickups and drops (2026-11-16)
+
+Reviewed `v2/manager_decisions.py`, `v2/automatic_manager.py`, `v2/waiver_window.py`, and the approved Section 5.3 / V(R) policies in `docs/MASTER_SPEC.md`. This is a **material model difference**, not merely a performance optimization.
+
+| Decision | Approved V1 policy | Current V2 behavior | Assessment |
+|---|---|---|---|
+| Acquisition trigger | Only essential unfillable projected starter vacancy; require positive current-week legal lineup improvement | Exact lineup optimizer identifies vacant slots; candidates must have positive current projection | Broadly aligned trigger; precise improvement equivalence unproven |
+| Add-player ranking | Among legal necessary transactions, choose maximum resulting remaining-horizon replacement-adjusted roster value V(R) | `propose_acquisition` ranks primarily by highest `PlayerValue.current` for eligible vacancy; ties by ID | **Confirmed modeling difference; future value of addition is not in ranking** |
+| Drop selection | Minimize lost replacement-adjusted marginal roster value V(R), including position scarcity and remaining weeks | Independently select one cheapest droppable player using `max(0,current) + 0.65*max(0,future average) + 12 if temporarily unavailable` | **Confirmed heuristic substitution**, can differ from V(R) and joint add/drop optimum |
+| Future valuation | Remaining-season lineup opportunities, realistic replacement access, equal weighting of weeks | Mean of remaining available weekly projections, independent of projected starting usage and replacement access | **Confirmed simplification**; future values for *additions* not used in ranking |
+| Vacancy bonus | Positive current-week legal improvement required; no arbitrary pickup premium established in Section 5.3 | `essential_vacancy_bonus=8.0` used as threshold allowance; default `minimum_net_gain=0` | **Important nuance:** +8 is not added to candidate ordering; it can allow a transaction with negative current-minus-drop score. Explicit approval needed |
+| Temporary absence | Preserve identifiable future contributions, not generic speculative insurance | Fixed +12 drop protection if current <=0 and a future projection >0 | **Unapproved numeric policy** unless separately authorized |
+| Joint add/drop search | Evaluate complete legal candidate transactions and resulting roster V(R) | Select cheapest allowed drop first, then best current-projection eligible pickup | **Confirmed search-space difference**; can miss superior legal add/drop combinations |
+| Candidate cap | Exhaustive finite search unless explicitly approved, disclosed optional pruning | `max_candidates` exists in `ManagerPolicy` but is **not used by current proposal loop** | No observed candidate pruning in this loop; avoid claiming it truncates choices |
+| Bench destination | Legal transaction destination and full roster feasibility | Select first bench slot with space, or drop from bench when full | Feasibility-oriented, but compare legal alternative destinations in fixtures |
+
+### Concrete example (illustrative, not a measured run)
+
+A manager has an unfilled RB spot. Free agent A projects 12 points this week and 2 per future week; B projects 10 this week and 11 per future week. V2 chooses A when both are otherwise legal because it ranks by current-week projection. V1's remaining-horizon V(R) *could* prefer B after accounting for future lineup opportunities, replacement access and the actual roster; it does not automatically choose B merely from raw future averages.
+
+### Decisions and acceptance tests for Timmy
+
+- [ ] Approve the simpler V2 manager as a separately labeled experimental policy, or require V(R)-equivalent selection before engine promotion.
+- [ ] Decide whether the 0.65 future weighting, +12 temporary-absence protection, and +8 vacancy threshold allowance are acceptable; document derivation/calibration or remove.
+- [ ] Fixture: two legal pickups, stronger current-week versus stronger remaining-horizon value; record exact chosen add under both policies.
+- [ ] Fixture: several droppable bench players, one temporary absence, position scarcity, and different replacement depth; compare V1 V(R) versus V2 heuristic drop.
+- [ ] Fixture: individually cheapest drop creates worse overall transaction than an alternative drop/add combination; verify V1 exhaustive joint choice.
+- [ ] Verify that negative `current - drop_cost` with positive bonus can still satisfy the threshold and whether this violates approved positive-improvement semantics.
+- [ ] Check roster destination choices, strict eligibility, missing weekly projections, and deterministic tie-breaking.
+
+**Conclusion:** V2's player-selection policy is **not equivalent to the approved V1 V(R) optimization**. It is a consciously simpler heuristic that can materially alter future rosters and therefore seed/championship probabilities. It needs its own explicit review and approval.
