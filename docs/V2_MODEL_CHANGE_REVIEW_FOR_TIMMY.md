@@ -88,3 +88,35 @@ This is **static source inspection**, not a claim that the scenarios below have 
 6. **Persistence:** Complete V2 run, restart service, retrieve retained result; cancel mid-run and verify terminal state; check V1 results unaffected.
 
 **Recommended disposition:** Treat T1 and T2 as priority review blockers until the intended supported semantics and tests are established. T3–T6 require explicit documented acceptance as experimental behavior or corrective implementation. Do not silently modify the engine before Timmy reviews the proposed contract.
+
+## Final source-level reconciliation: canonical V1 reference (2026-11-16)
+
+Inspected the authoritative `docs/MASTER_SPEC.md` Sections 4–5, `AGENTS.md`, `evolving_state.py`, V2 `transaction_executor.py`, `waiver_window.py`, `compact_window.py`, `compact_executor.py`, `compact_cycle.py`, `simulation_batch.py`, and `app/v2_experimental.py`. **Source review is complete for the listed boundaries; empirical acceptance is not.**
+
+### Corrections and sharpened findings
+
+- **V1 is a specification/reference, not an already released production simulator.** The master spec says M8.4 is awaiting independent review and V1 is not released. Comparison is against approved V1 rules and existing canonical primitives, not a verified production-equivalent full-season V1 run.
+- **Repeated claims:** The approved master spec Section 5.3 calls for repeat essential claims as necessary until vacancies are filled. The one-success-per-phase default in the simpler `v2/waiver_window.py` is a *reference-window implementation limit*, **not proof** that V2 unlimited claims violate the approved specification. Reclassify T3 as **implementation discrepancy to test**, not a confirmed specification breach.
+- **Free-agent ordering:** Master spec Section 5.3 explicitly approves reverse order of frozen opening weekly waiver priority. `compact_window.py` matches this intended ordering; the simpler canonical-style `waiver_window.py` does not freeze and reverse the order. Reclassify T4's free-agent ordering difference as **V2 closer to approved policy**, subject to tests. Separately verify weekly waiver reset only when canonical settings authorize it.
+- **Player release:** Master spec Section 5.3 says drops can reenter in a later week after league-specific delay. Canonical `evolving_state.release_held_player` requires validated per-player/per-cycle release evidence. V2's weekly loop does not call an equivalent release operation. This is a **confirmed missing simulated transition** in the inspected path, though impact depends on whether held players would otherwise be eligible in a given snapshot. Do not fabricate release timing.
+- **Waiver reset:** Canonical `evolving_state.reset_waiver_priority` refuses reset unless `snapshot.rules.acquisition.waiver_order_resets is True`. V2 `simulation_batch.py` recomputes inverse standings every regular-season week without an equivalent setting check. **Confirmed configuration-guard mismatch**; verify whether V2 endpoint is explicitly restricted to leagues with verified weekly reset.
+- **IR and scoring:** Master spec explicitly treats positive ESPN projection as a provisional availability proxy in V1, but that does not automatically approve every V2 IR activation/drop policy or the CV=0.35 scoring distribution. Distinguish reuse of a sanctioned proxy from new unapproved manager/variance choices.
+- **Transaction authorization:** V2's fast compact executor does not call canonical V1 add/drop methods and does not append ledger entries. This is a **confirmed architectural difference**, not proof of a specific illegal accepted transaction. Differential fixtures are required to establish behavioral equivalence over supported cases.
+- **V2 preview endpoint:** `app/v2_experimental.py` explicitly marks output experimental and uncalibrated, with 1000-path synchronous cap and 10000-path background request ceiling. Thus the proposed 20000-path performance goal is **not currently reachable through that request contract**.
+
+### Timmy-facing decision summary
+
+1. **Approve experimental parallel V2 only**, or require the optimized engine to satisfy canonical V1 equivalence before promotion.
+2. Resolve the missing authorized held-player release transition and setting-gated waiver reset before claiming complete future transaction behavior.
+3. Review and explicitly approve any new CV distribution, manager policy, and IR correction semantics.
+4. Test repeat essential claims and reversed frozen free-agent ordering against Section 5.3 rather than imposing the simpler reference-window cap as an assumed requirement.
+5. Keep the six-team playoff format scoped to verified league configuration, and repair stale eight-team benchmark/documentation references.
+6. Complete real-snapshot and full-suite acceptance before merge; do not infer runtime correctness from this audit.
+
+### Plain-language explanation for the reviewers
+
+**Original V1 design:** Start with the actual ESPN league and its settings. For each simulated future week, pick the best legal starters using ESPN projections, fill only genuine starting-lineup holes through league-authorized waiver/free-agent transactions, draw uncertain player performances from the approved/calibrated model, and carry the resulting standings, rosters, and eligibility forward. Preserve detailed evidence of every authorized change. Repeat many seasons to estimate outcomes. V1 is not yet independently released.
+
+**Our experimental V2 implementation:** Start from the same league snapshot, but use a compact, faster representation of rosters and transactions. Pick projected optimal lineups, generate player scores with a simpler normal-variation rule (default 35% variation), make automatic vacancy-based pickups, and simulate standings/playoffs repeatedly. It sacrifices some transaction evidence and currently omits authorized release of dropped players; it also applies weekly waiver resets without the V1 setting guard. These differences may change the forecast, not merely its speed. The UI labels it experimental.
+
+**Bottom line:** V2 is a promising faster **alternative model**, not a demonstrated equivalent or calibrated replacement for Timmy's approved V1 model. Its probabilities should be interpreted as provisional until rules, transactions, and scoring are accepted and validated.
