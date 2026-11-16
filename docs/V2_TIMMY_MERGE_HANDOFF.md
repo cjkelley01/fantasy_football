@@ -84,3 +84,7 @@ Read [V2 model-change and specification consistency review](V2_MODEL_CHANGE_REVI
 ## Source-audit reconciliation (2026-11-16)
 
 The [model-change review](V2_MODEL_CHANGE_REVIEW_FOR_TIMMY.md) now contains a final V1 master-spec reconciliation and a plain-language V1/V2 comparison. **Important corrections to earlier findings:** The master spec supports repeated essential acquisitions when necessary and explicitly approves reverse frozen-order free-agent processing; these are not established V2 violations merely because a simpler reference window differs. The high-priority issues remain missing authorized release of held players, unguarded weekly waiver resets, and unproven compact-executor legality parity. The V2 scoring distribution and manager policy require explicit experimental approval. Source audit complete; live validation and independent review outstanding.
+
+## Timmy's decision-by-decision behavioral checklist
+
+Use [V2 vs V1 behavioral comparison and approval checklist](V2_BEHAVIORAL_COMPARISON_CHECKLIST.md) as the primary sign-off worksheet. It separates **must match V1**, **proposed experimental differences**, and **needs investigation**, with evidence status, targeted test requirements, and blank decision/reviewer fields. The detailed [model-change review](V2_MODEL_CHANGE_REVIEW_FOR_TIMMY.md) remains the supporting technical explanation. No item is pre-approved; complete decisions and acceptance evidence before declaring PR #1 merge-ready.
