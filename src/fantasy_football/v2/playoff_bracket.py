@@ -62,3 +62,48 @@ def resolve_eight_team_playoffs(
     champion = winner(*semis, championship_weeks)
     runner_up = semis[1] if champion == semis[0] else semis[0]
     return PlayoffResult(seeds, quarters, semis, champion, runner_up)
+
+
+def resolve_six_team_playoffs(
+    seeds: tuple[int, ...],
+    weekly_scores: Mapping[int, Mapping[int, float]],
+    *,
+    quarterfinal_week: int = 15,
+    semifinal_week: int = 16,
+    championship_weeks: tuple[int, int] = (17, 18),
+) -> PlayoffResult:
+    """Six qualifiers: seeds 1-2 bye; 3v6 and 4v5 in week 15.
+
+    Semifinals: 1 vs winner(4v5), 2 vs winner(3v6).
+    Championship: combined weeks 17 and 18. Exact ties favor higher seed.
+    """
+    if len(seeds) != 6 or len(set(seeds)) != 6:
+        raise ValueError("exactly six distinct seeded teams required")
+    weeks = (quarterfinal_week, semifinal_week, *championship_weeks)
+    if len(set(weeks)) != 4 or any(week < 1 for week in weeks):
+        raise ValueError("playoff weeks must be four distinct positive weeks")
+    from math import isfinite
+    if any(team not in weekly_scores.get(week, {}) or
+           not isfinite(float(weekly_scores[week][team]))
+           for week in weeks for team in seeds):
+        raise ValueError("missing or nonfinite simulated playoff score")
+    rank = {team: i for i, team in enumerate(seeds)}
+
+    def winner(a: int, b: int, scoring_weeks: tuple[int, ...]) -> int:
+        a_score = sum(float(weekly_scores[w][a]) for w in scoring_weeks)
+        b_score = sum(float(weekly_scores[w][b]) for w in scoring_weeks)
+        return a if a_score > b_score or (a_score == b_score and rank[a] < rank[b]) else b
+
+    # The quarterfinal winner tuple includes the two bye teams so callers
+    # can inspect all four semifinal participants consistently.
+    quarters = (
+        seeds[0], winner(seeds[3], seeds[4], (quarterfinal_week,)),
+        seeds[1], winner(seeds[2], seeds[5], (quarterfinal_week,)),
+    )
+    semis = (
+        winner(quarters[0], quarters[1], (semifinal_week,)),
+        winner(quarters[2], quarters[3], (semifinal_week,)),
+    )
+    champion = winner(*semis, championship_weeks)
+    runner_up = semis[1] if champion == semis[0] else semis[0]
+    return PlayoffResult(seeds, quarters, semis, champion, runner_up)
