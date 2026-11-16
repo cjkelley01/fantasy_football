@@ -152,3 +152,29 @@ A manager has an unfilled RB spot. Free agent A projects 12 points this week and
 - [ ] Check roster destination choices, strict eligibility, missing weekly projections, and deterministic tie-breaking.
 
 **Conclusion:** V2's player-selection policy is **not equivalent to the approved V1 V(R) optimization**. It is a consciously simpler heuristic that can materially alter future rosters and therefore seed/championship probabilities. It needs its own explicit review and approval.
+
+## Additional scoring, postseason, and execution-contract differences (2026-11-16)
+
+Inspected `v2/projected_scoring.py`, `v2/run_projected.py`, `v2/season_results.py`, `v2/playoff_bracket.py`, `v2/ir_correction.py`, `v2/benchmark.py`, `app/v2_experimental.py`, and the master specification. These items supplement, rather than supersede, the transaction and selection findings.
+
+| Area | Observed V2 implementation | V1/spec comparison or open decision |
+|---|---|---|
+| Score distribution shape | Independent normal draw with SD=35% of raw ESPN projection, truncated below at zero | V1 spec calls for empirically validated distributions allowing zero outcomes and realistic downside/tails. V2's exact zero probability is determined by truncation; it does not explicitly model a separate nonparticipation/zero-event component. Quantify bias and tails against V1 calibration. |
+| Draw identity | SHA-256 keyed to seed, path, player, season, week | Deterministic and roster-independent, but intentionally different from V1's random-draw contract. Paired baseline/counterfactual results are not automatically comparable across V1/V2. |
+| Unforeseen injuries | No independently generated injury events in score provider | **Not a new V2 violation:** V1 explicitly excludes surprise injuries in its baseline. Do not imply otherwise. |
+| Regular-season schedule | `canonical_schedule` derives regular games from snapshot periods and matchup records | Reuses snapshot schedule; verify complete, unique weekly pairings and treatment of unsupported/multiweek regular periods. |
+| Standings | Win/tie fraction, then points-for, then team ID | Consistent with user's known points-for tiebreak; check against actual snapshot settings for any other supported leagues. |
+| Postseason structure | Six-team fixed 1/2 byes, W15 quarters, W16 semis, W17+18 combined final; eight-team alternative | Valid only for explicitly verified formats. `resolve_season` defaults to six, and the main batch does not supply the playoff field from league configuration. |
+| Playoff tie resolution | Higher seed wins exact tied matchup | Requires evidence this is the actual ESPN bracket tie rule; not established by points-for regular-season seeding tiebreak alone. |
+| Background path ceiling | Request contract caps background at 10,000, synchronous preview at 1,000; internal runner defaults to 20,000 | Benchmarking 20,000 paths locally is possible, but not through the current app request. Separate feature decision. |
+| Regression baseline | `benchmark.py` historical 1,000-path expected playoff counts total 8,000 | Guaranteed stale for six-team 1,000-path runs; regenerate only with pinned real snapshot and recorded parameters. |
+
+### Further questions for Timmy
+
+- [ ] What verified ESPN rule resolves an exact postseason matchup tie? If unknown, mark unsupported rather than assume.
+- [ ] Should V2 remain restricted to this verified six-team league, or support settings-driven six/eight-team formats?
+- [ ] Is V2's truncated normal distribution an acceptable explicitly uncalibrated prototype, and how will it be validated?
+- [ ] Is the 10,000-path UI ceiling deliberate while the 20,000-path goal is benchmark-only?
+- [ ] Can baseline/scenario comparisons be run with common player-week shocks and documented uncertainty under the same V2 engine, without implying V1/V2 parity?
+
+**Review boundary:** This is an expanded source-level difference inventory, not proof of exhaustive repository-wide equivalence or live acceptance. Other differences may emerge from complete differential testing and Timmy's independent review.
