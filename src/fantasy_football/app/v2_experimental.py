@@ -63,7 +63,7 @@ def run_v2_preview(store: SnapshotStore, request: V2PreviewRequest | V2Backgroun
         semifinalist_counts.update(result.playoffs.semifinal_winners)
     return {
         "seed_probabilities": {
-            str(team): {str(seed): counts.get(seed, 0) / batch.paths for seed in range(1, 9)}
+            str(team): {str(seed): counts.get(seed, 0) / batch.paths for seed in range(1, 7)}
             for team, counts in seed_counts.items()
         },
         "regular_season_finish_probabilities": {
