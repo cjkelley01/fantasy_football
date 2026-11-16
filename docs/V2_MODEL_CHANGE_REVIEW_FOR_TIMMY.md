@@ -57,3 +57,34 @@
 ## Post-merge ideas (not part of this acceptance)
 
 Seed-conditional championship probabilities, playoff-round strength breakdown, Week 18 rest-risk modeling, further calibration, and manager realism improvements belong in separately approved, narrow issues.
+
+## Follow-up audit: transactions, waivers, and V1/V2 boundary (2026-11-16)
+
+This is **static source inspection**, not a claim that the scenarios below have failed in a running league. Reviewed `v2/compact_preflight.py`, `v2/compact_executor.py`, `v2/compact_window.py`, `v2/waiver_window.py`, `v2/compact_cycle.py`, `v2/transaction_state.py`, `v2/ir_correction.py`, and `app/background.py` in addition to the earlier files.
+
+### High-priority findings
+
+**T1 — Compact legality boundary is ambiguous (high; requires decision).** `compact_preflight.py` explicitly states that a `None` result means only *not rejected*, **not authorized**; nevertheless `compact_executor.execute_compact_proposal` can accept after that preflight and its own additional checks, without invoking canonical V1 `execute_proposal`. This is deliberate speed-oriented architecture but **cannot be described as canonical authorization or proven parity**. Review exact coverage of all V1 eligibility, roster, acquisition and evidence constraints; maintain fail-closed handling and differential tests. `waiver_window.py`'s canonical `process_acquisition_window` does call `execute_proposal`, but the production V2 batch uses `compact_window.py` instead.
+
+**T2 — HOLD/waiver availability release across weeks is not implemented in compact cycle (high; model-behavior risk).** `compact_cycle.advance_compact_cycle` explicitly does not release HOLD or WAIVERS players without canonical authorization. The compact executor places dropped players on HOLD. This may prevent dropped players from reentering the pool in later simulated weeks and distort waiver/FA competition. Trace whether another authorized release path is actually called by `simulation_batch.py`; its inspected weekly loop invokes `advance_compact_cycle`, IR correction, and acquisition window, with no explicit release operation. Reproduce a drop in Week N and verify availability in Week N+1 against configured rules and V1. **Do not fix by automatically releasing all HOLD players**; use the canonical timing/evidence rules.
+
+**T3 — Repeated acquisition policy differs between paths (medium/high; explicit assumption).** Canonical `waiver_window.process_acquisition_window` defaults to **one success per team per phase**; `compact_window.process_compact_acquisition_window` defaults to **unlimited successes until no progress**. `simulation_batch.simulate_paths` passes its default `None` cap through. This can change roster construction and downstream forecasts. Decide intended V2 policy and document/validate its effect rather than calling it a pure optimization.
+
+**T4 — Free-agent ordering and waiver reset require reconciliation (medium/high).** Compact window freezes a **reversed opening waiver order** for free agents and uses mutable priority for waiver claims. The separate canonical-style `waiver_window.py` processes phases using `current.current_waiver_priority` and does not show the same frozen reversed-order behavior. The V2 batch also resets inverse standings priority using wins/ties, points-for and team ID. These are observable model choices; verify actual configured rules, source provenance, tie ordering, and the intended V1 reference behavior before accepting.
+
+**T5 — IR correction is an explicit simulation assumption (medium/high).** `ir_correction.correct_recovered_ir` uses **positive current projection** to infer recovery under `IRPolicy.PROJECTION_BASED`, may drop an ordinary bench player to activate an IR player, and does not synthesize canonical transaction ledger records. This is not verified ESPN injury eligibility. Test strict versus projection-based modes, protected players, position limits, unknown evidence, and downstream ownership.
+
+**T6 — Compact state preserves old ledger but does not append accepted compact transactions (medium; observability/parity).** `CompactTransactionState.from_evolving` carries `state.ledger`; `execute_compact_proposal` clones and updates ownership/availability/counters, but does not append a canonical transaction. As a result, exporting/reconciling a compact path as if it were V1 would lose provenance. Explicitly prohibit canonical export until reconciliation is implemented and tested.
+
+**T7 — Background persistence is distinct from engine equivalence (verification gate).** `app/background.py` provides SQLite run metadata/result storage and interrupted-run handling, but source inspection alone cannot establish that V2 completion, cancellation, restart and result selection behave correctly in the actual UI. Retain real-snapshot end-to-end tests as a merge gate.
+
+### Suggested targeted tests before approval
+
+1. **Drop/release:** Drop a player in Week 10; inspect HOLD/WAIVERS/FREE_AGENT status across Weeks 11–12 under configured release rules and compare canonical V1.
+2. **Authorization differential:** Same acquisition/drop/destination against V1 executor and compact executor, including position limits, IR evidence, undroppable state, same-cycle restrictions and acquisition limits. Record mismatches as explicit unsupported cases or fix them.
+3. **Repeated claims:** Two vacant starter slots, competing managers, one and multiple legal claims; quantify how capped versus unlimited policies alter rosters.
+4. **Waiver order:** Tied standings, prior successful claims, free-agent ordering, waiver reset and consecutive-week windows; compare against snapshot rules and V1.
+5. **IR recovery:** Projection-positive but ESPN-ineligible cases, no bench room, protected drops and position-limit boundary.
+6. **Persistence:** Complete V2 run, restart service, retrieve retained result; cancel mid-run and verify terminal state; check V1 results unaffected.
+
+**Recommended disposition:** Treat T1 and T2 as priority review blockers until the intended supported semantics and tests are established. T3–T6 require explicit documented acceptance as experimental behavior or corrective implementation. Do not silently modify the engine before Timmy reviews the proposed contract.
