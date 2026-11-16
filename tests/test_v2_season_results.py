@@ -65,3 +65,29 @@ def test_six_team_bracket_byes_and_two_week_final():
     assert result.semifinal_winners == (1, 2)
     assert result.champion == 1  # 230 combined vs 210
     assert result.runner_up == 2
+
+
+def test_six_team_playoff_probability_mass_across_paths():
+    """Every simulated season contributes exactly six playoff berths and one title."""
+    from collections import Counter
+
+    teams, games, scores = fixture()
+    playoff_counts = Counter()
+    champion_counts = Counter()
+    paths = 100
+    for path in range(paths):
+        path_scores = {
+            week: {team: points + ((team * 17 + week * 11 + path * 7) % 23)
+                   for team, points in weekly.items()}
+            for week, weekly in scores.items()
+        }
+        result = resolve_season(teams, games, path_scores, first_week=1)
+        assert len(result.playoff_seeds) == 6
+        assert len(set(result.playoff_seeds)) == 6
+        assert result.playoffs.quarterfinal_winners[0] == result.playoff_seeds[0]
+        assert result.playoffs.quarterfinal_winners[2] == result.playoff_seeds[1]
+        playoff_counts.update(result.playoff_seeds)
+        champion_counts[result.playoffs.champion] += 1
+    assert sum(playoff_counts.values()) == paths * 6
+    assert sum(champion_counts.values()) == paths
+    assert sum(count / paths for count in playoff_counts.values()) == 6
