@@ -226,6 +226,13 @@ def simulate_paths(
             first_week=first_week, last_regular_week=last_regular_week,
             initial_standings=initial_standings,
         )
+        if len(result.playoff_seeds) != 6 or len(set(result.playoff_seeds)) != 6:
+            raise ValueError("V2 season must qualify exactly six distinct playoff teams")
+        if len(result.playoffs.quarterfinal_winners) != 4 or (
+            result.playoffs.quarterfinal_winners[0] != result.playoff_seeds[0]
+            or result.playoffs.quarterfinal_winners[2] != result.playoff_seeds[1]
+        ):
+            raise ValueError("V2 playoff byes must advance seeds one and two")
         champions[result.playoffs.champion] += 1
         appearances.update(result.playoff_seeds)
         if retain_results:
