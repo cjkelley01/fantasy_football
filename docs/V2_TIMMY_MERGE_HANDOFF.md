@@ -70,3 +70,9 @@ V2 projected-score variance (CV default 0.35) is an assumption, not demonstrated
 ## Handoff decision
 
 This branch is ready for **review and remaining acceptance work**, not yet a verified merge. Do not mark it merge-ready until the unchecked items above have actual evidence.
+
+## Collaboration and change-control requirements (reviewed 2026-11-16)
+
+Follow [AGENTS.md](../AGENTS.md), [MASTER_SPEC.md](MASTER_SPEC.md), and [ROADMAP.md](ROADMAP.md). The specification is authoritative; the roadmap governs sequencing and acceptance. Every future implementation PR should identify the governing spec section, approved scope, input/output and invalid-input contracts, focused plus adversarial tests, and evidence. Do not silently revise modeling assumptions, infer league settings, or claim V1 parity without proof. Changes to approved behavior require a proposed specification revision and approval first. Keep independent increments small and reviewable; Timmy's independent review/merge remains the final gate.
+
+**Review discrepancy:** [V2_IMPLEMENTATION_ACCEPTANCE_AUDIT.md](V2_IMPLEMENTATION_ACCEPTANCE_AUDIT.md) contains historical eight-team bracket descriptions. The current six-team implementation and 2026 league requirement must be reconciled in authoritative documents before merge. In particular, AGENTS.md requires deriving league mechanics from retrieved configuration rather than universal hardcoding; confirm the current six-team guard applies only to the intended league/configuration and does not inadvertently reject other supported leagues.
