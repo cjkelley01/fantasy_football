@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Mapping, Sequence
 
-from fantasy_football.v2.playoff_bracket import PlayoffResult, resolve_eight_team_playoffs
+from fantasy_football.v2.playoff_bracket import PlayoffResult, resolve_eight_team_playoffs, resolve_six_team_playoffs
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +35,7 @@ def resolve_season(
     *,
     first_week: int,
     last_regular_week: int = 14,
-    playoff_teams: int = 8,
+    playoff_teams: int = 6,
     initial_standings: Mapping[int, TeamStanding] | None = None,
 ) -> SeasonResult:
     """Rank regular season by record then points-for; resolve postseason.
@@ -93,7 +93,8 @@ def resolve_season(
         key=lambda s: (-(s.wins + s.ties / 2), -s.points_for, s.team_id),
     ))
     seeds = tuple(s.team_id for s in standings[:playoff_teams])
-    if playoff_teams != 8:
-        raise ValueError("only eight-team playoff brackets are supported")
-    playoffs = resolve_eight_team_playoffs(seeds, weekly_scores)
+    if playoff_teams not in (6, 8):
+        raise ValueError("only six- and eight-team playoff brackets are supported")
+    playoffs = (resolve_six_team_playoffs(seeds, weekly_scores) if playoff_teams == 6
+                else resolve_eight_team_playoffs(seeds, weekly_scores))
     return SeasonResult(standings, seeds, playoffs)
