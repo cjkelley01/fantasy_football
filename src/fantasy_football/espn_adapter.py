@@ -1894,7 +1894,27 @@ def retrieve_bundle(
             ),
             source_ids=(initial.source_id, pro_schedule.source_id),
         )
-        LOGGER.warning("ESPN boundary supported_week=%s", state.supported_simulation_week)
+        current_boundary_state = next(
+            item for item in state.weeks if item.scoring_week == state.current_scoring_period
+        )
+        current_boundary_games = tuple(
+            game for game in full_games
+            if game.scoring_week == state.current_scoring_period
+        )
+        status_counts = {
+            status: sum(1 for game in current_boundary_games if str(game.status) == status)
+            for status in ("scheduled", "in_progress", "completed", "postponed", "canceled", "unknown")
+        }
+        LOGGER.warning(
+            "ESPN boundary current_week=%s classification=%s game_count=%s status_counts=%s "
+            "matchup_weeks=%s supported_week=%s",
+            state.current_scoring_period,
+            current_boundary_state.status.value,
+            len(current_boundary_games),
+            status_counts,
+            state.current_matchup_period_scoring_weeks,
+            state.supported_simulation_week,
+        )
         if state.supported_simulation_week is None:
             raise EspnAdapterError(state.boundary_rationale)
         first_simulation_week = state.supported_simulation_week
