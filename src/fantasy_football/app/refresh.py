@@ -250,7 +250,8 @@ class SnapshotRefreshCoordinator:
             with self._lock:
                 # Terminal completion and its result become observable atomically.
                 self._jobs[refresh_id] = _Job(final, completed)
-        except (SettingsError, EspnAdapterError, SnapshotStoreError, ValueError):
+        except (SettingsError, EspnAdapterError, SnapshotStoreError, ValueError) as exc:
+            LOGGER.error("Snapshot refresh rejected exception_type=%s", type(exc).__name__)
             # Public state intentionally excludes upstream payloads, request URLs and secrets.
             code = "refresh_validation_failed"
             message = "ESPN retrieval or canonical validation failed before publication."
