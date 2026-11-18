@@ -1756,6 +1756,7 @@ def fetch_live_scoring_evidence_report(
         fetch_league=False,
     )
     request = league.espn_request
+    LOGGER.info("ESPN refresh stage=%s", "league_initial")
     initial_payload = request_with_retries(
         request.get_league,
         context="LW1 diagnostic league initial views=mTeam,mRoster,mMatchup,mSettings,mStandings",
@@ -1772,10 +1773,12 @@ def fetch_live_scoring_evidence_report(
     current_week = _int(
         initial_payload.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1
     )
+    LOGGER.info("ESPN refresh stage=%s", "current_player_pages")
     current_pages = _retrieve_player_pages(
         request, week=current_week, role="diagnostic-current",
         page_size=page_size, max_retries=max_retries,
     )
+    LOGGER.info("ESPN refresh stage=%s", "nfl_schedule")
     pro_payload = request_with_retries(
         request.get_pro_schedule,
         context="LW1 diagnostic request_type=nfl_schedule view=proTeamSchedules_wl",
@@ -1870,9 +1873,11 @@ def retrieve_bundle(
         view=PRO_SCHEDULE_VIEW,
         parameters=(),
     )
+    LOGGER.info("ESPN refresh stage=%s", "nfl_scoreboard")
     nfl_scoreboard = _fetch_nfl_scoreboard(settings.season, current_week)
     automatically_detected = first_simulation_week is None
     if automatically_detected:
+    LOGGER.info("ESPN refresh stage=%s", "automatic_boundary")
         periods, _, period_map = _parse_periods(initial_payload, first_week=min(all_weeks), final_week=final_week)
         del periods
         _, full_games = _translate_nfl_calendar(pro_schedule, first_week=min(all_weeks), final_week=final_week)
@@ -1889,6 +1894,7 @@ def retrieve_bundle(
         if state.supported_simulation_week is None:
             raise EspnAdapterError(state.boundary_rationale)
         first_simulation_week = state.supported_simulation_week
+    LOGGER.info("ESPN refresh stage=%s", "future_player_pages")
     future_pages = tuple(
         page
         for week in range(first_simulation_week, final_week + 1)
@@ -1897,6 +1903,7 @@ def retrieve_bundle(
             page_size=page_size, max_retries=max_retries,
         )
     )
+    LOGGER.info("ESPN refresh stage=%s", "league_reconciliation")
     reconciliation_payload = request_with_retries(
         request.get_league,
         context="league reconciliation views=mTeam,mRoster,mStandings",
@@ -1936,6 +1943,7 @@ def fetch_and_translate(
     page_size: int = 250,
     max_retries: int = 2,
 ) -> AdapterResult:
+    LOGGER.info("ESPN refresh stage=retrieve_bundle")
     bundle = retrieve_bundle(
         settings,
         first_simulation_week=first_simulation_week,
@@ -1945,6 +1953,7 @@ def fetch_and_translate(
     overrides = load_manual_rule_config(
         manual_config, league_id=settings.league_id, season=settings.season
     )
+    LOGGER.info("ESPN refresh stage=canonical_translation")
     result = translate_bundle(bundle, manual_overrides=overrides)
     if expected_team_count is not None and result.report.team_count != expected_team_count:
         raise EspnAdapterError(
