@@ -1696,6 +1696,7 @@ def build_live_scoring_evidence_report(
             if game.scoring_week == current_week:
                 key = game.status.value
                 current_status_counts[key] = current_status_counts.get(key, 0) + 1
+        LOGGER.warning("ESPN boundary step=resolve_live_scoring_state")
         state = resolve_live_scoring_state(
             current_scoring_period=current_week,
             scoring_weeks=all_weeks,
@@ -1878,8 +1879,10 @@ def retrieve_bundle(
     automatically_detected = first_simulation_week is None
     if automatically_detected:
         LOGGER.warning("ESPN refresh stage=%s", "automatic_boundary")
+        LOGGER.warning("ESPN boundary step=parse_periods")
         periods, _, period_map = _parse_periods(initial_payload, first_week=min(all_weeks), final_week=final_week)
         del periods
+        LOGGER.warning("ESPN boundary step=translate_nfl_calendar")
         _, full_games = _translate_nfl_calendar(pro_schedule, first_week=min(all_weeks), final_week=final_week)
         state = resolve_live_scoring_state(
             current_scoring_period=current_week,
@@ -1891,6 +1894,7 @@ def retrieve_bundle(
             ),
             source_ids=(initial.source_id, pro_schedule.source_id),
         )
+        LOGGER.warning("ESPN boundary supported_week=%s", state.supported_simulation_week)
         if state.supported_simulation_week is None:
             raise EspnAdapterError(state.boundary_rationale)
         first_simulation_week = state.supported_simulation_week
