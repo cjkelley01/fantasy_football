@@ -8,8 +8,8 @@
 ## Review basis
 
 - [Standing development instructions](../AGENTS.md): approved specification governs; changes to modeling assumptions require explicit approval, focused and adversarial tests, reproducible evidence, and updated authoritative docs.
-- [Master specification](MASTER_SPEC.md): authoritative intended V1 model, ESPN projection provenance, settings-driven league mechanics, V1 engine boundaries, and calibration requirements.
-- [Roadmap](ROADMAP.md): acceptance gates; V1 M8.4 still awaiting independent review.
+- [Current domain specifications](../README.md#understand-the-system): authoritative intended V1 model, ESPN projection provenance, settings-driven league mechanics, V1 engine boundaries, and calibration requirements.
+- [Development backlog](BACKLOG.md): acceptance gates; V1 M8.4 still awaiting independent review.
 - [Prior V2 acceptance audit](V2_IMPLEMENTATION_ACCEPTANCE_AUDIT.md): historical assessment, **not** current acceptance; contains obsolete eight-team assumptions.
 - Inspected current source: `v2/projected_scoring.py`, `v2/run_projected.py`, `v2/automatic_manager.py`, `v2/simulation_batch.py`, `v2/season_results.py`, `v2/playoff_bracket.py`, `v2/benchmark.py`, `app/v2_experimental.py`.
 

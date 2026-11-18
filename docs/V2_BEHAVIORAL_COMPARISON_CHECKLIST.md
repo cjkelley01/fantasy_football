@@ -1,8 +1,8 @@
 # V2 vs V1 — behavioral comparison and Timmy approval checklist
 
 **Prepared:** 2026-11-16 | **Status:** Open for independent review; no behavioral change approved by this document.  
-**Review target:** Draft PR #1, `feature/v2-compact-simulator` → `main`.  
-**Companion evidence:** [Detailed model-change audit](V2_MODEL_CHANGE_REVIEW_FOR_TIMMY.md), [Merge handoff](V2_TIMMY_MERGE_HANDOFF.md), [Master specification](MASTER_SPEC.md), [Roadmap](ROADMAP.md), [Standing instructions](../AGENTS.md).
+**Review target:** Draft PR #1, `integration/upstream-v2` → `main`.  
+**Companion evidence:** [Detailed model-change audit](V2_MODEL_CHANGE_REVIEW_FOR_TIMMY.md), [Merge handoff](V2_TIMMY_MERGE_HANDOFF.md), [Current domain specifications](../README.md#understand-the-system), [Development backlog](BACKLOG.md), [Standing instructions](../AGENTS.md).
 
 ## How to use this checklist
 

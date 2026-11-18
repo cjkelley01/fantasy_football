@@ -1,7 +1,7 @@
 # V2 War Room integration — Timmy handoff and merge gates
 
 Status: **handoff prepared; NOT YET MERGE-ACCEPTED** (2026-11-16).
-Branch: `feature/v2-compact-simulator` → proposed `main`.
+Branch: `integration/upstream-v2` → proposed `main`.
 Review the existing [integration notes](V2_WAR_ROOM_INTEGRATION.md) and [acceptance audit](V2_IMPLEMENTATION_ACCEPTANCE_AUDIT.md) as historical snapshots; several status statements there predate the current implementation and must not be treated as current release evidence.
 
 ## Scope and architecture
@@ -33,6 +33,27 @@ On 2026-11-16, after pulling commit `8587adf`:
 - jsdom canvas `getContext` warnings occurred but did not fail tests.
 
 These are **targeted** checks. They are not evidence of a full backend suite, a new real-snapshot run, post-restart persistence, or V1/V2 semantic parity.
+
+## Integration verification ? 2026-11-18
+
+The integration branch incorporates upstream `main` and has been
+tested locally against a real ESPN refresh.
+
+- Backend integration tests: 94 passed.
+- Targeted V2 tests: 219 passed.
+- Frontend production build: passed.
+- ESPN refresh: completed and published a canonical snapshot.
+- Local simulation execution: completed successfully.
+- Full backend suite: 1,896 passed, 8 failed.
+
+The original eight failures comprised seven documentation/inventory
+verification failures and one historical V1 fingerprint mismatch.
+The documentation-link tests have subsequently passed (35 passed);
+the remaining failures have not yet been rerun together.
+The fingerprint discrepancy remains unresolved and requires review.
+
+These results establish local execution, not V1/V2 behavioral
+equivalence or full merge acceptance.
 
 ## Merge-blocking verification checklist
 
@@ -73,7 +94,7 @@ This branch is ready for **review and remaining acceptance work**, not yet a ver
 
 ## Collaboration and change-control requirements (reviewed 2026-11-16)
 
-Follow [AGENTS.md](../AGENTS.md), [MASTER_SPEC.md](MASTER_SPEC.md), and [ROADMAP.md](ROADMAP.md). The specification is authoritative; the roadmap governs sequencing and acceptance. Every future implementation PR should identify the governing spec section, approved scope, input/output and invalid-input contracts, focused plus adversarial tests, and evidence. Do not silently revise modeling assumptions, infer league settings, or claim V1 parity without proof. Changes to approved behavior require a proposed specification revision and approval first. Keep independent increments small and reviewable; Timmy's independent review/merge remains the final gate.
+Follow [AGENTS.md](../AGENTS.md), [current domain specifications](../README.md#understand-the-system), and [BACKLOG.md](BACKLOG.md). The specification is authoritative; the roadmap governs sequencing and acceptance. Every future implementation PR should identify the governing spec section, approved scope, input/output and invalid-input contracts, focused plus adversarial tests, and evidence. Do not silently revise modeling assumptions, infer league settings, or claim V1 parity without proof. Changes to approved behavior require a proposed specification revision and approval first. Keep independent increments small and reviewable; Timmy's independent review/merge remains the final gate.
 
 **Review discrepancy:** [V2_IMPLEMENTATION_ACCEPTANCE_AUDIT.md](V2_IMPLEMENTATION_ACCEPTANCE_AUDIT.md) contains historical eight-team bracket descriptions. The current six-team implementation and 2026 league requirement must be reconciled in authoritative documents before merge. In particular, AGENTS.md requires deriving league mechanics from retrieved configuration rather than universal hardcoding; confirm the current six-team guard applies only to the intended league/configuration and does not inadvertently reject other supported leagues.
 
