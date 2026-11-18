@@ -24,7 +24,7 @@ from espn_api.requests.espn_requests import (
 )
 from requests import get as requests_get
 from requests import ConnectionError as RequestsConnectionError
-from requests import RequestException, Timeout
+from requests import RequestException, Timeout, get as http_get
 
 from fantasy_football.canonical.model import (
     SCHEMA_VERSION,
@@ -82,6 +82,7 @@ LOGGER = logging.getLogger(__name__)
 LEAGUE_VIEWS = ("mTeam", "mRoster", "mMatchup", "mSettings", "mStandings")
 PLAYER_VIEW = "kona_player_info"
 PRO_SCHEDULE_VIEW = "proTeamSchedules_wl"
+NFL_SCOREBOARD_ENDPOINT = "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard"
 POOL_STATUSES = ("FREEAGENT", "WAIVERS", "ONTEAM")
 EXPECTED_NFL_TEAM_COUNT = 32
 _TRANSIENT_HTTP = re.compile(r"HTTP 5\d\d\b")
@@ -137,6 +138,7 @@ class EspnSourceBundle:
     league_reconciliation: CapturedResponse
     nfl_scoreboard: CapturedResponse | None = None
     simulation_week_automatically_detected: bool = False
+    nfl_scoreboard: CapturedResponse | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,9 +217,58 @@ class LiveScoringEvidenceReport:
     unresolved_capabilities: tuple[str, ...]
     source_request_count: int
     limitations: tuple[str, ...]
+    game_record_structures: tuple[dict[str, object], ...] = ()
+    player_stat_record_structure: tuple[tuple[str, tuple[str, ...], int], ...] = ()
+    stat_source_split_counts: tuple[tuple[str, str, int], ...] = ()
+    stat_scoring_period_counts: tuple[tuple[str, int], ...] = ()
+    stat_applied_total_presence: tuple[tuple[str, int], ...] = ()
+    previous_configured_period: int | None = None
+    previous_period_actual_record_count: int = 0
+    previous_period_explicit_zero_actual_count: int = 0
+    current_matchup_record_structure: tuple[tuple[str, tuple[str, ...], int], ...] = ()
+    roster_entry_record_structure: tuple[tuple[str, tuple[str, ...], int], ...] = ()
+    player_wrapper_record_structure: tuple[tuple[str, tuple[str, ...], int], ...] = ()
+    current_lineup_slot_counts: tuple[tuple[int, int], ...] = ()
+    current_matchup_record_count: int = 0
+    lock_field_boolean_counts: tuple[tuple[str, str, int, int, int], ...] = ()
+    matchup_score_field_counts: tuple[tuple[str, int, int, int], ...] = ()
+    matchup_projection_equality_counts: tuple[tuple[str, int, int], ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
+
+
+def _sanitized_field_structure(
+    records: Sequence[Mapping[str, Any]],
+) -> tuple[tuple[str, tuple[str, ...], int], ...]:
+    """Describe field names, types, and presence without retaining field values."""
+
+    observed: dict[str, tuple[set[str], int]] = {}
+    opaque_dynamic_maps = {
+        "draftRanksByRankType",
+        "outlooksByWeek",
+        "rankings",
+        "scoreByStat",
+        "stats",
+    }
+
+    def visit(value: Any, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                child_path = f"{path}.{key}" if path else str(key)
+                types, count = observed.get(child_path, (set(), 0))
+                types.add(type(child).__name__)
+                observed[child_path] = (types, count + 1)
+                if isinstance(child, Mapping) and str(key) not in opaque_dynamic_maps:
+                    visit(child, child_path)
+            return
+
+    for record in records:
+        visit(record, "")
+    return tuple(
+        (path, tuple(sorted(types)), count)
+        for path, (types, count) in sorted(observed.items())
+    )
 
 
 def _fail(context: str, field: str, message: str) -> None:
@@ -512,7 +563,7 @@ _SCOREBOARD_STATES = {
 }
 
 
-def _scoreboard_statuses(
+def _validate_current_week_scoreboard(
     scoreboard: CapturedResponse, schedule_games: Sequence[NFLGame], *, current_week: int,
 ) -> dict[str, NFLGameStatus]:
     """Require exact NFL event ID and team identity reconciliation for current week."""
@@ -561,7 +612,7 @@ def _apply_scoreboard_statuses(
 ) -> tuple[NFLGame, ...]:
     if scoreboard is None:
         return tuple(games)
-    statuses = _scoreboard_statuses(scoreboard, games, current_week=current_week)
+    statuses = _validate_current_week_scoreboard(scoreboard, games, current_week=current_week)
     return tuple(
         replace(game, status=statuses[game.game_id], status_source_id=scoreboard.source_id)
         if game.game_id in statuses else game for game in games
@@ -755,6 +806,14 @@ def _translate_rules(
     consolation_enabled = None if consolation_flag is None else not _bool(consolation_flag, "schedule settings", "consolationLadderDisabled")
     seeding_raw = _freeze_json(schedule.get("playoffSeedingRule"), "playoffSeedingRule")
     interpretations = (
+        RuleInterpretation(
+            "matchup_period_configuration",
+            "settings.scheduleSettings.matchupPeriods",
+            _freeze_json(all_period_map, "scheduleSettings.matchupPeriods"),
+            _freeze_json(all_period_map, "scheduleSettings.matchupPeriods"),
+            InterpretationStatus.UNDERSTOOD,
+            source_id,
+        ),
         RuleInterpretation(
             "acquisition_type", "settings.acquisitionSettings.acquisitionType", acquisition_type,
             "traditional_waiver_priority" if acquisition_type == "WAIVERS_TRADITIONAL" else None,
@@ -1156,12 +1215,49 @@ def _translate_live_observations(
     return tuple(sorted(result, key=lambda item: item.player_id))
 
 
+def _scoreboard_statuses(source: CapturedResponse | None) -> dict[str, NFLGameStatus]:
+    if source is None:
+        return {}
+    result: dict[str, NFLGameStatus] = {}
+    for index, value in enumerate(_list(source.payload.get("events"), "NFL scoreboard.events")):
+        event = _mapping(value, f"NFL scoreboard.events[{index}]")
+        raw_game_id = event.get("id")
+        if not isinstance(raw_game_id, str) or not raw_game_id.isdigit() or int(raw_game_id) <= 0:
+            _fail(f"NFL scoreboard event {index}", "id", f"must be a positive numeric string; observed {raw_game_id!r}")
+        game_id = raw_game_id
+        status = _mapping(event.get("status"), f"NFL scoreboard game {game_id}.status")
+        status_type = _mapping(status.get("type"), f"NFL scoreboard game {game_id}.status.type")
+        token = _text(status_type.get("name"), f"NFL scoreboard game {game_id}", "status.type.name")
+        if token not in _GAME_STATUSES:
+            raise EspnAdapterError(f"NFL scoreboard game {game_id}: unsupported status token {token!r}")
+        canonical = _GAME_STATUSES[token]
+        completed = status_type.get("completed")
+        state = status_type.get("state")
+        expected = {
+            NFLGameStatus.SCHEDULED: (False, "pre"),
+            NFLGameStatus.IN_PROGRESS: (False, "in"),
+            NFLGameStatus.COMPLETED: (True, "post"),
+        }.get(canonical)
+        if expected is not None and (completed, state) != expected:
+            raise EspnAdapterError(
+                f"NFL scoreboard game {game_id}: status token {token!r} conflicts with "
+                f"completed/state evidence {(completed, state)!r}"
+            )
+        previous = result.get(game_id)
+        if previous is not None and previous is not canonical:
+            raise EspnAdapterError(f"NFL scoreboard game {game_id}: duplicate status records disagree")
+        result[game_id] = canonical
+    return result
+
+
 def _translate_nfl_calendar(
-    source: CapturedResponse, *, first_week: int, final_week: int
+    source: CapturedResponse, *, first_week: int, final_week: int,
+    scoreboard: CapturedResponse | None = None,
 ) -> tuple[tuple[NFLTeam, ...], tuple[NFLGame, ...]]:
     settings = _mapping(source.payload.get("settings"), "pro schedule.settings")
     teams: list[NFLTeam] = []
     games: dict[str, NFLGame] = {}
+    scoreboard_by_game = _scoreboard_statuses(scoreboard)
     for index, value in enumerate(_list(settings.get("proTeams"), "pro schedule.settings.proTeams")):
         team = _mapping(value, f"proTeams[{index}]")
         team_id = _int(team.get("id"), f"proTeams[{index}]", "id", minimum=0)
@@ -1193,14 +1289,32 @@ def _translate_nfl_calendar(
                 kickoff = None if kickoff_raw is None else datetime.fromtimestamp(
                     _int(kickoff_raw, f"NFL game {game_id}", "date", minimum=1) / 1000, timezone.utc
                 )
+                if "status" in game:
+                    status = _game_status(game, game_id=game_id)
+                    status_source_id = source.source_id
+                elif game_id in scoreboard_by_game:
+                    status = scoreboard_by_game[game_id]
+                    status_source_id = scoreboard.source_id if scoreboard is not None else None
+                else:
+                    official = game.get("statsOfficial")
+                    if not isinstance(official, bool):
+                        raise EspnAdapterError(
+                            f"NFL game {game_id}: statsOfficial must be boolean when status is absent"
+                        )
+                    status = NFLGameStatus.COMPLETED if official else NFLGameStatus.UNKNOWN
+                    status_source_id = source.source_id
+                if game.get("statsOfficial") is True and status is not NFLGameStatus.COMPLETED:
+                    raise EspnAdapterError(
+                        f"NFL game {game_id}: statsOfficial=true conflicts with {status.value} status"
+                    )
                 canonical = NFLGame(
                     game_id=game_id,
                     scoring_week=week,
                     home_nfl_team_id=_int(game.get("homeProTeamId"), f"NFL game {game_id}", "homeProTeamId", minimum=1),
                     away_nfl_team_id=_int(game.get("awayProTeamId"), f"NFL game {game_id}", "awayProTeamId", minimum=1),
                     kickoff_utc=kickoff,
-                    status=_game_status(game, game_id=game_id),
-                    status_source_id=source.source_id,
+                    status=status,
+                    status_source_id=status_source_id,
                 )
                 previous = games.get(game_id)
                 if previous is not None and previous != canonical:
@@ -1410,11 +1524,8 @@ def translate_bundle(
     _ownership_reconciliation(players, rosters, bundle.current_player_pages)
     all_weeks = tuple(sorted({week for weeks in period_map.values() for week in weeks}))
     nfl_teams, nfl_games = _translate_nfl_calendar(
-        bundle.pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks)
-    )
-    nfl_games = _apply_scoreboard_statuses(
-        nfl_games, bundle.nfl_scoreboard,
-        current_week=_int(initial.get('scoringPeriodId'), 'league response', 'scoringPeriodId', minimum=1),
+        bundle.pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks),
+        scoreboard=bundle.nfl_scoreboard,
     )
     try:
         live_scoring = resolve_live_scoring_state(
@@ -1429,7 +1540,12 @@ def translate_bundle(
                     "league response", "scoringPeriodId", minimum=1,
                 ),
             ),
-            source_ids=(bundle.league_initial.source_id, bundle.pro_schedule.source_id, *((bundle.nfl_scoreboard.source_id,) if bundle.nfl_scoreboard else ()), *(page.response.source_id for page in bundle.current_player_pages)),
+            source_ids=(
+                bundle.league_initial.source_id,
+                bundle.pro_schedule.source_id,
+                *((bundle.nfl_scoreboard.source_id,) if bundle.nfl_scoreboard else ()),
+                *(page.response.source_id for page in bundle.current_player_pages),
+            ),
             manual_override=None if bundle.simulation_week_automatically_detected else bundle.first_simulation_week,
         )
     except LiveScoringError as exc:
@@ -1590,6 +1706,31 @@ def _retrieve_player_pages(
     raise EspnAdapterError(f"{role} week={week}: pagination exceeded 100 full pages")
 
 
+def _retrieve_nfl_scoreboard(
+    *, season: int, week: int, max_retries: int, source_id: str,
+) -> CapturedResponse:
+    params = {"dates": season, "seasontype": 2, "week": week}
+
+    def retrieve() -> Mapping[str, Any]:
+        response = http_get(NFL_SCOREBOARD_ENDPOINT, params=params, timeout=30)
+        response.raise_for_status()
+        return _mapping(response.json(), "NFL scoreboard response")
+
+    payload = request_with_retries(
+        retrieve,
+        context=f"request_type=nfl_scoreboard season={season} week={week}",
+        max_retries=max_retries,
+    )
+    return capture_response(
+        payload,
+        source_id=source_id,
+        request_type="nfl_scoreboard",
+        endpoint=NFL_SCOREBOARD_ENDPOINT,
+        view="scoreboard",
+        parameters=(("dates", season), ("seasontype", 2), ("week", week)),
+    )
+
+
 def build_live_scoring_evidence_report(
     *,
     league_id: int,
@@ -1597,6 +1738,8 @@ def build_live_scoring_evidence_report(
     league_initial: CapturedResponse,
     current_player_pages: tuple[PlayerPage, ...],
     pro_schedule: CapturedResponse,
+    previous_player_pages: tuple[PlayerPage, ...] = (),
+    nfl_scoreboard: CapturedResponse | None = None,
 ) -> LiveScoringEvidenceReport:
     """Build a player-anonymous LW1 evidence report without claiming participation."""
 
@@ -1620,9 +1763,33 @@ def build_live_scoring_evidence_report(
     )
     period_rows = tuple(period_map.values())
     all_weeks = tuple(sorted(week for period in period_rows for week in period))
+    current_period_ids = tuple(
+        period_id for period_id, weeks in period_map.items() if current_week in weeks
+    )
+    if len(current_period_ids) != 1:
+        raise EspnAdapterError(
+            f"current scoring period {current_week} must belong to exactly one matchup period"
+        )
+    current_matchup_rows = tuple(
+        _mapping(value, "league schedule matchup")
+        for value in _list(initial.get("schedule"), "league.schedule")
+        if _mapping(value, "league schedule matchup").get("matchupPeriodId")
+        == current_period_ids[0]
+    )
+    roster_entry_rows: list[Mapping[str, Any]] = []
+    lineup_slot_counts: dict[int, int] = {}
+    for team_value in _list(initial.get("teams"), "league.teams"):
+        team = _mapping(team_value, "league team")
+        roster = _mapping(team.get("roster"), "league team.roster")
+        for entry_value in _list(roster.get("entries"), "league team.roster.entries"):
+            entry = _mapping(entry_value, "league roster entry")
+            roster_entry_rows.append(entry)
+            slot_id = _int(entry.get("lineupSlotId"), "league roster entry", "lineupSlotId", minimum=0)
+            lineup_slot_counts[slot_id] = lineup_slot_counts.get(slot_id, 0) + 1
 
     pro_settings = _mapping(pro_schedule.payload.get("settings"), "nfl schedule.settings")
     raw_tokens_by_game: dict[str, str] = {}
+    raw_games_by_id: dict[str, Mapping[str, Any]] = {}
     bye_teams: set[int] = set()
     for value in _list(pro_settings.get("proTeams"), "nfl schedule.proTeams"):
         team = _mapping(value, "nfl schedule.proTeam")
@@ -1647,6 +1814,7 @@ def build_live_scoring_evidence_report(
                         f"NFL game {game_id}: duplicate schedule records disagree on status"
                     )
                 raw_tokens_by_game[game_id] = token
+                raw_games_by_id.setdefault(game_id, game)
     token_counts: dict[str, int] = {}
     for token in raw_tokens_by_game.values():
         token_counts[token] = token_counts.get(token, 0) + 1
@@ -1654,7 +1822,91 @@ def build_live_scoring_evidence_report(
         sorted(token for token in token_counts if token not in _GAME_STATUSES)
     )
 
+    game_record_structures: list[dict[str, object]] = []
+    game_contexts = (
+        ("past", tuple(game for game in raw_games_by_id.values() if game.get("scoringPeriodId", -1) < current_week)),
+        ("current", tuple(game for game in raw_games_by_id.values() if game.get("scoringPeriodId") == current_week)),
+        ("future", tuple(game for game in raw_games_by_id.values() if game.get("scoringPeriodId", current_week) > current_week)),
+    )
+    for context, games_in_context in game_contexts:
+        if games_in_context:
+            game_record_structures.append({
+                "context": context,
+                "record_count": len(games_in_context),
+                "fields": _sanitized_field_structure(games_in_context),
+                "boolean_value_counts": tuple(
+                    (
+                        field,
+                        sum(game.get(field) is True for game in games_in_context),
+                        sum(game.get(field) is False for game in games_in_context),
+                        sum(field not in game for game in games_in_context),
+                    )
+                    for field in ("statsOfficial", "validForLocking", "startTimeTBD")
+                ),
+            })
+    if nfl_scoreboard is not None:
+        scoreboard_events = tuple(
+            _mapping(value, "NFL scoreboard event")
+            for value in _list(nfl_scoreboard.payload.get("events"), "NFL scoreboard.events")
+        )
+        game_record_structures.append({
+            "context": "scoreboard_current",
+            "record_count": len(scoreboard_events),
+            "fields": _sanitized_field_structure(scoreboard_events),
+        })
+
     current, _ = _parse_pool_pages(current_player_pages, label="current player pool")
+    lock_counts: list[tuple[str, str, int, int, int]] = []
+    for scope, rows, paths in (
+        ("player_pool", tuple(current.values()), ("lineupLocked", "rosterLocked", "tradeLocked")),
+        (
+            "roster_entry",
+            tuple(roster_entry_rows),
+            (
+                "playerPoolEntry.lineupLocked",
+                "playerPoolEntry.rosterLocked",
+                "playerPoolEntry.tradeLocked",
+            ),
+        ),
+    ):
+        for path in paths:
+            parts = path.split(".")
+            values: list[Any] = []
+            for row in rows:
+                value: Any = row
+                for part in parts:
+                    value = value.get(part) if isinstance(value, Mapping) else None
+                values.append(value)
+            lock_counts.append((
+                scope,
+                path,
+                sum(value is True for value in values),
+                sum(value is False for value in values),
+                sum(not isinstance(value, bool) for value in values),
+            ))
+    matchup_score_counts: list[tuple[str, int, int, int]] = []
+    projection_equality_counts: list[tuple[str, int, int]] = []
+    for side in ("home", "away"):
+        sides = tuple(
+            _mapping(row.get(side), f"current matchup.{side}")
+            for row in current_matchup_rows
+        )
+        for field in ("totalPoints", "totalProjectedPoints", "totalProjectedPointsLive"):
+            values = tuple(row.get(field) for row in sides)
+            matchup_score_counts.append((
+                f"{side}.{field}",
+                sum(isinstance(value, Real) and not isinstance(value, bool) for value in values),
+                sum(isinstance(value, Real) and not isinstance(value, bool) and float(value) == 0.0 for value in values),
+                sum(value is None for value in values),
+            ))
+        projection_equality_counts.append((
+            side,
+            sum(
+                row.get("totalProjectedPoints") == row.get("totalProjectedPointsLive")
+                for row in sides
+            ),
+            len(sides),
+        ))
     actual_count = zero_count = rostered_actual = unrostered_actual = 0
     rostered_count = bye_count = bye_actual = 0
     observations = _translate_live_observations(
@@ -1681,16 +1933,56 @@ def build_live_scoring_evidence_report(
         unrostered_actual += int(not rostered and has_actual)
         bye_actual += int(on_bye and has_actual)
 
+    previous_week = current_week - 1 if current_week > min(all_weeks) else None
+    stat_rows: list[Mapping[str, Any]] = []
+    source_split_counts: dict[tuple[str, str], int] = {}
+    scoring_period_counts: dict[str, int] = {}
+    applied_presence: dict[str, int] = {}
+    previous_actual_count = previous_zero_count = 0
+    for pages in (current_player_pages, previous_player_pages):
+        for page in pages:
+            for wrapper_value in _list(page.response.payload.get("players"), "diagnostic players"):
+                wrapper = _mapping(wrapper_value, "diagnostic player wrapper")
+                player = _mapping(wrapper.get("player"), "diagnostic player")
+                for stat_value in _list(player.get("stats", []), "diagnostic player.stats"):
+                    stat = _mapping(stat_value, "diagnostic player.stat")
+                    stat_rows.append(stat)
+                    source = str(stat.get("statSourceId", "<missing>"))
+                    split = str(stat.get("statSplitTypeId", "<missing>"))
+                    source_split_counts[(source, split)] = source_split_counts.get((source, split), 0) + 1
+                    period = str(stat.get("scoringPeriodId", "<missing>"))
+                    scoring_period_counts[period] = scoring_period_counts.get(period, 0) + 1
+                    if "appliedTotal" not in stat:
+                        presence = "missing"
+                    elif isinstance(stat["appliedTotal"], bool) or not isinstance(stat["appliedTotal"], Real):
+                        presence = f"present_{type(stat['appliedTotal']).__name__}"
+                    else:
+                        presence = "present_numeric"
+                    applied_presence[presence] = applied_presence.get(presence, 0) + 1
+                    if (
+                        previous_week is not None
+                        and stat.get("seasonId") == season
+                        and stat.get("scoringPeriodId") == previous_week
+                        and stat.get("statSourceId") == 0
+                        and stat.get("statSplitTypeId") == 1
+                        and presence == "present_numeric"
+                    ):
+                        previous_actual_count += 1
+                        previous_zero_count += int(float(stat["appliedTotal"]) == 0.0)
+
     current_status_counts: dict[str, int] = {}
     next_unplayed: int | None = None
     supported_week: int | None = None
     boundary_rationale = (
         "Unsupported or missing NFL game-status tokens prevent boundary classification."
     )
-    unresolved = ["verified_live_game_status_tokens", "actual_score_participation_scope"]
-    if not unsupported_tokens:
+    unresolved = ["actual_score_participation_scope"]
+    if nfl_scoreboard is None:
+        unresolved.append("verified_live_game_status_tokens")
+    if nfl_scoreboard is not None or not unsupported_tokens:
         _, games = _translate_nfl_calendar(
-            pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks)
+            pro_schedule, first_week=min(all_weeks), final_week=max(all_weeks),
+            scoreboard=nfl_scoreboard,
         )
         for game in games:
             if game.scoring_week == current_week:
@@ -1731,13 +2023,36 @@ def build_live_scoring_evidence_report(
         supported_simulation_week=supported_week,
         boundary_rationale=boundary_rationale,
         unresolved_capabilities=tuple(sorted(set(unresolved))),
-        source_request_count=2 + len(current_player_pages),
+        source_request_count=(
+            2 + len(current_player_pages) + len(previous_player_pages)
+            + int(nfl_scoreboard is not None)
+        ),
         limitations=(
             "An actual-score record does not prove lineup participation or active NFL status.",
             "A missing actual-score record cannot distinguish inactivity from delayed or absent data.",
             "The diagnostic does not establish official fantasy-matchup or standings settlement.",
-            "Observed status tokens remain unverified until compared with authorized live evidence.",
+            "proTeamSchedules_wl has no status token; statsOfficial=false is not unplayed evidence.",
+            "Only scoreboard-observed game IDs receive scheduled or in-progress status.",
         ),
+        game_record_structures=tuple(game_record_structures),
+        player_stat_record_structure=_sanitized_field_structure(stat_rows),
+        stat_source_split_counts=tuple(
+            (source, split, count)
+            for (source, split), count in sorted(source_split_counts.items())
+        ),
+        stat_scoring_period_counts=tuple(sorted(scoring_period_counts.items())),
+        stat_applied_total_presence=tuple(sorted(applied_presence.items())),
+        previous_configured_period=previous_week,
+        previous_period_actual_record_count=previous_actual_count,
+        previous_period_explicit_zero_actual_count=previous_zero_count,
+        current_matchup_record_structure=_sanitized_field_structure(current_matchup_rows),
+        roster_entry_record_structure=_sanitized_field_structure(roster_entry_rows),
+        player_wrapper_record_structure=_sanitized_field_structure(tuple(current.values())),
+        current_lineup_slot_counts=tuple(sorted(lineup_slot_counts.items())),
+        current_matchup_record_count=len(current_matchup_rows),
+        lock_field_boolean_counts=tuple(lock_counts),
+        matchup_score_field_counts=tuple(matchup_score_counts),
+        matchup_projection_equality_counts=tuple(projection_equality_counts),
     )
 
 
@@ -1776,6 +2091,14 @@ def fetch_live_scoring_evidence_report(
         request, week=current_week, role="diagnostic-current",
         page_size=page_size, max_retries=max_retries,
     )
+    previous_week = current_week - 1 if current_week > 1 else None
+    previous_pages = (
+        _retrieve_player_pages(
+            request, week=previous_week, role="diagnostic-previous",
+            page_size=page_size, max_retries=max_retries,
+        )
+        if previous_week is not None else ()
+    )
     pro_payload = request_with_retries(
         request.get_pro_schedule,
         context="LW1 diagnostic request_type=nfl_schedule view=proTeamSchedules_wl",
@@ -1789,12 +2112,20 @@ def fetch_live_scoring_evidence_report(
         view=PRO_SCHEDULE_VIEW,
         parameters=(),
     )
+    scoreboard = _retrieve_nfl_scoreboard(
+        season=settings.season,
+        week=current_week,
+        max_retries=max_retries,
+        source_id="lw1-diagnostic-nfl-scoreboard",
+    )
     return build_live_scoring_evidence_report(
         league_id=settings.league_id,
         season=settings.season,
         league_initial=initial,
         current_player_pages=current_pages,
         pro_schedule=pro_schedule,
+        previous_player_pages=previous_pages,
+        nfl_scoreboard=scoreboard,
     )
 
 
@@ -1870,12 +2201,20 @@ def retrieve_bundle(
         view=PRO_SCHEDULE_VIEW,
         parameters=(),
     )
-    nfl_scoreboard = _fetch_nfl_scoreboard(settings.season, current_week)
+    scoreboard = _retrieve_nfl_scoreboard(
+        season=settings.season,
+        week=current_week,
+        max_retries=max_retries,
+        source_id="nfl-scoreboard-current",
+    )
     automatically_detected = first_simulation_week is None
     if automatically_detected:
         periods, _, period_map = _parse_periods(initial_payload, first_week=min(all_weeks), final_week=final_week)
         del periods
-        _, full_games = _translate_nfl_calendar(pro_schedule, first_week=min(all_weeks), final_week=final_week)
+        _, full_games = _translate_nfl_calendar(
+            pro_schedule, first_week=min(all_weeks), final_week=final_week,
+            scoreboard=scoreboard,
+        )
         state = resolve_live_scoring_state(
             current_scoring_period=current_week,
             scoring_weeks=(week for weeks in period_map.values() for week in weeks),
@@ -1884,7 +2223,7 @@ def retrieve_bundle(
             observations=_translate_live_observations(
                 current_pages, season=settings.season, current_week=current_week,
             ),
-            source_ids=(initial.source_id, pro_schedule.source_id),
+            source_ids=(initial.source_id, pro_schedule.source_id, scoreboard.source_id),
         )
         if state.supported_simulation_week is None:
             raise EspnAdapterError(state.boundary_rationale)
@@ -1922,8 +2261,8 @@ def retrieve_bundle(
         future_player_pages=future_pages,
         pro_schedule=pro_schedule,
         league_reconciliation=reconciliation,
-        nfl_scoreboard=nfl_scoreboard,
         simulation_week_automatically_detected=automatically_detected,
+        nfl_scoreboard=scoreboard,
     )
 
 

@@ -46,6 +46,9 @@ from fantasy_football.app.contracts import (
 )
 from fantasy_football.evolving_state import AcquisitionAvailability, IRPolicy, initialize_evolving_state
 from fantasy_football.canonical.model import SlotKind
+from fantasy_football.canonical.validation import (
+    authoritative_current_matchup_period_scoring_weeks,
+)
 from fantasy_football.monte_carlo import MonteCarloConfig
 from fantasy_football.live_scoring import BoundaryMethod, has_safe_v1_boundary
 from fantasy_football.monte_carlo_precision import (
@@ -267,7 +270,12 @@ class ApplicationService:
             for capability in gap.affected_capabilities
         )
         live = snapshot.live_scoring
-        live_ready = live is not None and has_safe_v1_boundary(live)
+        live_ready = live is not None and has_safe_v1_boundary(
+            live,
+            authoritative_current_matchup_period_scoring_weeks=(
+                authoritative_current_matchup_period_scoring_weeks(snapshot)
+            ),
+        )
         live_summary = None if live is None else LiveScoringSummary(
             current_scoring_period=live.current_scoring_period,
             last_fully_completed_period=live.last_fully_completed_period,

@@ -31,7 +31,7 @@ class PlayerOutcomeError(ValueError):
 
 
 class PlayerOutcomeModel(Protocol):
-    """Small swappable boundary between score draws and league mechanics."""
+    """Score-generation boundary; canonical MISSING records must score exactly 0.0."""
 
     @property
     def model_id(self) -> str: ...
@@ -336,6 +336,7 @@ class ProvisionalNormalModel:
 
     ``sigma = base_stddev + projection_scale * abs(effective_projection)``.
     Both values are explicit provisional assumptions, not calibrated estimates.
+    Canonical MISSING observations bypass dispersion and produce exactly 0.0.
     """
 
     base_stddev: float
@@ -361,10 +362,18 @@ class ProvisionalNormalModel:
 
     @property
     def model_id(self) -> str:
-        return self.version
+        # Version corrected semantics without perturbing the established draw key.
+        return f"{self.version}:missing-projection-zero-v1"
 
     @property
     def parameters(self) -> tuple[tuple[str, str | int | float | bool], ...]:
+        return self._draw_parameters + (
+            ("missing_projection_outcome", "deterministic-zero-v1"),
+        )
+
+    @property
+    def _draw_parameters(self) -> tuple[tuple[str, str | int | float | bool], ...]:
+        """The three historical parameters; public policy must not alter draws."""
         return (
             ("base_stddev", float(self.base_stddev)),
             ("projection_scale", float(self.projection_scale)),
@@ -388,8 +397,8 @@ class ProvisionalNormalModel:
                 player_id,
                 season,
                 scoring_week,
-                self.model_id,
-                self.parameters,
+                self.version,
+                self._draw_parameters,
             ),
             separators=(",", ":"),
             ensure_ascii=True,
@@ -428,15 +437,18 @@ class ProvisionalNormalModel:
             if key in seen:
                 raise PlayerOutcomeError(f"duplicate canonical player-week {key}")
             seen.add(key)
-            mean = float(player_week.effective_projection)
-            sigma = self.base_stddev + self.projection_scale * abs(mean)
-            points = mean + sigma * self._standard_normal(
-                master_seed=master_seed,
-                path_index=path_index,
-                player_id=player_week.player_id,
-                season=player_week.season,
-                scoring_week=player_week.scoring_week,
-            )
+            if player_week.projection_class is ProjectionClass.MISSING:
+                points = 0.0
+            else:
+                mean = float(player_week.effective_projection)
+                sigma = self.base_stddev + self.projection_scale * abs(mean)
+                points = mean + sigma * self._standard_normal(
+                    master_seed=master_seed,
+                    path_index=path_index,
+                    player_id=player_week.player_id,
+                    season=player_week.season,
+                    scoring_week=player_week.scoring_week,
+                )
             if not math.isfinite(points):
                 raise PlayerOutcomeError(f"nonfinite generated score for player-week {key}")
             scores.append(
@@ -463,7 +475,7 @@ class ProvisionalNormalModel:
 
 
 def projection_class_counts(snapshot: LeagueSnapshot) -> tuple[tuple[str, int], ...]:
-    """Report source classes without changing their common provisional draw rule."""
+    """Report source classes independently of outcome generation."""
 
     counts = {item.value: 0 for item in ProjectionClass}
     for item in snapshot.player_weeks:

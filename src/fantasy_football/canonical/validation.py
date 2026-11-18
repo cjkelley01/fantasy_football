@@ -147,6 +147,55 @@ def validated_snapshot(snapshot: LeagueSnapshot):
         _VALIDATED_SNAPSHOT.reset(token)
 
 
+def authoritative_current_matchup_period_scoring_weeks(
+    snapshot: LeagueSnapshot,
+) -> tuple[int, ...] | None:
+    """Return independently stored, validated ESPN schedule membership when present."""
+
+    live = snapshot.live_scoring
+    if live is None:
+        return None
+    evidence = next(
+        (item for item in snapshot.rules.interpretations
+         if item.rule_id == "matchup_period_configuration"),
+        None,
+    )
+    if (
+        evidence is None
+        or evidence.raw_field != "settings.scheduleSettings.matchupPeriods"
+        or evidence.status is not InterpretationStatus.UNDERSTOOD
+        or evidence.source_id not in {item.source_id for item in snapshot.sources}
+        or evidence.source_id not in live.source_ids
+        or not isinstance(evidence.raw_value, JsonObject)
+        or not isinstance(evidence.normalized_value, JsonObject)
+        or evidence.raw_value != evidence.normalized_value
+    ):
+        return None
+    memberships: list[tuple[int, ...]] = []
+    try:
+        for raw_period_id, raw_weeks in evidence.normalized_value.items:
+            period_id = int(raw_period_id)
+            if str(period_id) != raw_period_id or period_id <= 0:
+                return None
+            if not isinstance(raw_weeks, JsonArray):
+                return None
+            weeks = tuple(raw_weeks.values)
+            if (
+                not weeks
+                or any(isinstance(week, bool) or not isinstance(week, int) or week <= 0 for week in weeks)
+                or tuple(sorted(set(weeks))) != weeks
+            ):
+                return None
+            memberships.append(weeks)
+    except (TypeError, ValueError):
+        return None
+    containing = tuple(weeks for weeks in memberships if live.current_scoring_period in weeks)
+    flattened = tuple(week for weeks in memberships for week in weeks)
+    if len(containing) != 1 or len(flattened) != len(set(flattened)):
+        return None
+    return containing[0]
+
+
 def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
     """Validate supported canonical structure and cross-entity invariants without mutation."""
 
@@ -566,6 +615,7 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
                 _fail("NFLTeam", team_id, "schedule coverage", f"has neither game nor bye in required week {week}")
 
     if live is not None:
+        authoritative_period_weeks = authoritative_current_matchup_period_scoring_weeks(snapshot)
         _integer(live.current_scoring_period, entity="LiveScoringState", identifier="current", field="current_scoring_period", minimum=1)
         _tuple(live.weeks, entity="LiveScoringState", identifier="current", field="weeks")
         _tuple(live.observations, entity="LiveScoringState", identifier="current", field="observations")
@@ -651,6 +701,11 @@ def _validate_snapshot(snapshot: LeagueSnapshot) -> None:
                 _fail(
                     "LiveScoringState", "current", "current_matchup_period_scoring_weeks",
                     "references a week absent from live scoring evidence",
+                )
+            if authoritative_period_weeks is not None and period_weeks != authoritative_period_weeks:
+                _fail(
+                    "LiveScoringState", "current", "current_matchup_period_scoring_weeks",
+                    f"does not agree with authoritative schedule settings {authoritative_period_weeks!r}",
                 )
         if live.supported_simulation_week is not None and live.supported_simulation_week != snapshot.first_simulation_week:
             _fail("LiveScoringState", "current", "supported_simulation_week", "must equal the canonical first_simulation_week")

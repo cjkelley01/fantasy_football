@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 
 from fantasy_football.canonical.model import (
@@ -11,8 +13,12 @@ from fantasy_football.canonical.model import (
     LeagueSnapshot,
     MatchupEntryStatus,
     MatchupPhase,
+    SlotKind,
 )
-from fantasy_football.canonical.validation import validate_snapshot
+from fantasy_football.canonical.validation import (
+    authoritative_current_matchup_period_scoring_weeks,
+    validate_snapshot,
+)
 from fantasy_football.evolving_state import (
     EvolvingLeagueState,
     IREligibilityEvidence,
@@ -23,17 +29,32 @@ from fantasy_football.evolving_state import (
     validate_evolving_state,
 )
 from fantasy_football.lineup_optimizer import (
+    LineupAssignment,
+    LineupVacancy,
     OptimizedLineup,
     LineupOptimizationWorkspace,
+    StartingSlot,
+    VacancyReason,
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
 from fantasy_football.live_scoring import has_safe_v1_boundary
+from fantasy_football.partial_week import (
+    DeterministicPlayerValue,
+    EvidenceAuthority,
+    PartialWeekEvidence,
+    PartialWeekScoreComposition,
+    ProposedLineupAssignment,
+    compose_partial_week_scores,
+)
+from fantasy_football.partial_week_serialization import partial_week_to_json
 from fantasy_football.postseason import (
     ConsolationLadderConfiguration,
     MatchupStatus,
     PostseasonError,
     PostseasonState,
+    WeeklyTeamScore,
+    apply_postseason_team_scores,
     final_positions_complete,
     initialize_postseason,
     score_frozen_postseason_week,
@@ -94,6 +115,16 @@ DEFAULT_POSTSEASON_TRANSACTION_POLICY = PostseasonTransactionParticipationPolicy
 class DeterministicScoreScenario:
     scenario_id: str
     scores: tuple[RealizedPlayerScore, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class DeterministicPartialWeekInput:
+    """Explicit first-week evidence and realizations; no implicit live actions."""
+
+    evidence: PartialWeekEvidence
+    lineup: tuple[ProposedLineupAssignment, ...]
+    values: tuple[DeterministicPlayerValue, ...]
+    prior_postseason_scores: tuple[WeeklyTeamScore, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -222,9 +253,19 @@ def _preflight(
     transaction_policy: WeeklyTransactionPolicy,
     postseason_transaction_policy: PostseasonTransactionParticipationPolicy,
     consolation_configuration: ConsolationLadderConfiguration | None,
+    partial_week: DeterministicPartialWeekInput | None = None,
 ) -> dict[tuple[int, int], RealizedPlayerScore]:
     validate_snapshot(snapshot)
-    if snapshot.live_scoring is not None and not has_safe_v1_boundary(snapshot.live_scoring):
+    if (
+        partial_week is None
+        and snapshot.live_scoring is not None
+        and not has_safe_v1_boundary(
+            snapshot.live_scoring,
+            authoritative_current_matchup_period_scoring_weeks=(
+                authoritative_current_matchup_period_scoring_weeks(snapshot)
+            ),
+        )
+    ):
         raise SeasonSimulationError(
             "snapshot live-scoring evidence does not establish a safe fully unplayed V1 boundary"
         )
@@ -263,7 +304,10 @@ def _preflight(
             raise SeasonSimulationError(
                 "verified ESPN postseason transaction-participation evidence is not currently implemented"
             )
-        if participation.provenance is not ParticipationProvenance.MANUAL_VALIDATED_CONFIGURATION:
+        if (
+            participation.provenance
+            is not ParticipationProvenance.MANUAL_VALIDATED_CONFIGURATION
+        ):
             raise SeasonSimulationError(
                 "active-participant postseason transactions require validated manual configuration provenance"
             )
@@ -303,7 +347,7 @@ def _preflight(
         for item in snapshot.matchup_periods
         if snapshot.first_simulation_week in item.scoring_weeks
     )
-    if any(
+    if partial_week is None and any(
         item.matchup_period_id == first_period.matchup_period_id
         and item.entry_status is MatchupEntryStatus.PARTIAL
         for item in snapshot.fantasy_matchups
@@ -353,6 +397,7 @@ def _postseason_transaction_participants(
         PostseasonTransactionParticipationMode.UNRESOLVED,
     }:
         return None
+
     def remaining_obligations(matchups, graph):
         unresolved_rounds = tuple(
             item.round_number
@@ -386,22 +431,20 @@ def _postseason_transaction_participants(
             }:
                 continue
             if (
-                (matchup.purpose, "winner") in future_sources
-                and matchup.winner_team_id is not None
-            ):
+                matchup.purpose,
+                "winner",
+            ) in future_sources and matchup.winner_team_id is not None:
                 participants.add(matchup.winner_team_id)
             if (
-                (matchup.purpose, "loser") in future_sources
-                and matchup.loser_team_id is not None
-            ):
+                matchup.purpose,
+                "loser",
+            ) in future_sources and matchup.loser_team_id is not None:
                 participants.add(matchup.loser_team_id)
         return participants
 
     participants = remaining_obligations(
         state.championship_matchups, state.championship_graph
-    ) | remaining_obligations(
-        state.consolation_matchups, state.consolation_graph
-    )
+    ) | remaining_obligations(state.consolation_matchups, state.consolation_graph)
     known = {item.team_id for item in snapshot.teams}
     if not participants <= known:
         raise SeasonSimulationError(
@@ -551,6 +594,295 @@ def _team_records(
     )
 
 
+def _prepare_partial_week(
+    snapshot: LeagueSnapshot,
+    scenario: DeterministicScoreScenario,
+    partial: DeterministicPartialWeekInput,
+):
+    if not isinstance(partial, DeterministicPartialWeekInput):
+        raise SeasonSimulationError(
+            "partial_week must be DeterministicPartialWeekInput"
+        )
+    evidence = partial.evidence
+    if (
+        snapshot.live_scoring is not None
+        and snapshot.live_scoring.current_scoring_period != evidence.scoring_period
+    ):
+        raise SeasonSimulationError(
+            "partial input cannot omit a different live current scoring period"
+        )
+    if (
+        snapshot.live_scoring is not None
+        and authoritative_current_matchup_period_scoring_weeks(snapshot) is None
+    ):
+        raise SeasonSimulationError(
+            "partial input requires independently supported live matchup-period membership"
+        )
+    if not all(
+        isinstance(items, tuple)
+        for items in (partial.lineup, partial.values, partial.prior_postseason_scores)
+    ):
+        raise SeasonSimulationError("partial-week collections must be immutable tuples")
+    if evidence.authority not in {
+        EvidenceAuthority.VERIFIED_BY_TESTS,
+        EvidenceAuthority.VERIFIED_LIVE,
+    }:
+        raise SeasonSimulationError(
+            "partial-week execution requires verified evidence authority"
+        )
+    if evidence.scoring_period != snapshot.first_simulation_week:
+        raise SeasonSimulationError(
+            "partial input must describe the first simulation week"
+        )
+    paired_teams = {
+        team
+        for item in evidence.matchups
+        for team in (item.home_team_id, item.away_team_id)
+    }
+    bye_teams = {
+        item.home_team_id
+        for item in snapshot.fantasy_matchups
+        if item.matchup_period_id == evidence.matchup_period_id
+        and item.entry_status is MatchupEntryStatus.BYE
+    }
+    if any(item.team_id not in paired_teams | bye_teams for item in evidence.lineups):
+        raise SeasonSimulationError(
+            "partial input requires current matchup or explicit bye evidence for rostered teams"
+        )
+    composition = compose_partial_week_scores(
+        snapshot, evidence, partial.lineup, partial.values
+    )
+    cutoff = evidence.standings_cutoff
+    period_start = evidence.matchup_period_scoring_weeks[0]
+    if cutoff.through_scoring_week != period_start - 1:
+        raise SeasonSimulationError(
+            "standings cutoff must end immediately before the current matchup period"
+        )
+    historical = {
+        item.matchup_period_id
+        for item in snapshot.matchup_periods
+        if max(item.scoring_weeks) < period_start
+    }
+    if not historical <= set(cutoff.settled_matchup_period_ids):
+        raise SeasonSimulationError(
+            "standings cutoff omits known historical matchup periods"
+        )
+    if any(
+        item.matchup_period_id in cutoff.settled_matchup_period_ids
+        and max(item.scoring_weeks) >= period_start
+        for item in snapshot.matchup_periods
+    ):
+        raise SeasonSimulationError(
+            "standings cutoff marks a current or future matchup period settled"
+        )
+    if any(item.scoring_week == evidence.scoring_period for item in scenario.scores):
+        raise SeasonSimulationError(
+            "partial first-week scores must be supplied only through partial realizations"
+        )
+    period = next(
+        item
+        for item in snapshot.matchup_periods
+        if item.matchup_period_id == evidence.matchup_period_id
+    )
+    if period.phase is MatchupPhase.REGULAR:
+        if len(evidence.matchup_period_scoring_weeks) != 1:
+            raise SeasonSimulationError(
+                "multiweek regular-season matchup resolution is unsupported"
+            )
+        if partial.prior_postseason_scores:
+            raise SeasonSimulationError(
+                "regular-season partial input cannot contain postseason history"
+            )
+    # Full content identity supplements, rather than changes, V1 provenance/fingerprints.
+    identity = hashlib.sha256(
+        json.dumps(
+            {
+                "evidence": partial_week_to_json(evidence),
+                "lineup": sorted(
+                    (asdict(item) for item in partial.lineup),
+                    key=lambda item: item["player_id"],
+                ),
+                "values": sorted(
+                    (asdict(item) for item in partial.values),
+                    key=lambda item: item["player_id"],
+                ),
+                "history": sorted(
+                    (asdict(item) for item in partial.prior_postseason_scores),
+                    key=lambda item: (item["scoring_week"], item["team_id"]),
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+    return composition, identity
+
+
+def _restore_partial_postseason(
+    snapshot: LeagueSnapshot,
+    state: PostseasonState,
+    partial: DeterministicPartialWeekInput,
+) -> PostseasonState:
+    evidence = partial.evidence
+    current = evidence.scoring_period
+    weeks = evidence.matchup_period_scoring_weeks
+    active = tuple(
+        item
+        for item in state.championship_matchups + state.consolation_matchups
+        if item.status not in {MatchupStatus.BYE, MatchupStatus.COMPLETE}
+    )
+    if any(item.matchup_period_id != evidence.matchup_period_id for item in active):
+        raise SeasonSimulationError(
+            "partial postseason start requires reconstructible first-round bracket history"
+        )
+    expected_pairs = {
+        frozenset((item.home_team_id, item.away_team_id)) for item in active
+    }
+    observed_pairs = {
+        frozenset((item.home_team_id, item.away_team_id)) for item in evidence.matchups
+    }
+    if expected_pairs != observed_pairs:
+        raise SeasonSimulationError(
+            "partial postseason matchup evidence differs from seeded bracket participants"
+        )
+
+    def restore(matchup):
+        return replace(matchup, scoring_weeks=weeks) if matchup in active else matchup
+
+    state = replace(
+        state,
+        championship_matchups=tuple(map(restore, state.championship_matchups)),
+        consolation_matchups=tuple(map(restore, state.consolation_matchups)),
+    )
+    previous = tuple(week for week in weeks if week < current)
+    teams = {team for pair in expected_pairs for team in pair}
+    indexed = {}
+    for score in partial.prior_postseason_scores:
+        if (
+            not isinstance(score, WeeklyTeamScore)
+            or isinstance(score.points, bool)
+            or not isinstance(score.points, (float, int))
+            or not math.isfinite(score.points)
+        ):
+            raise SeasonSimulationError(
+                "prior postseason history requires finite WeeklyTeamScore records"
+            )
+        key = (score.scoring_week, score.team_id)
+        if key in indexed:
+            raise SeasonSimulationError(
+                "duplicate prior postseason team/week contribution"
+            )
+        indexed[key] = score
+    if set(indexed) != {(week, team) for week in previous for team in teams}:
+        raise SeasonSimulationError(
+            "prior postseason scores must cover exactly every preceding current-period team/week"
+        )
+    for matchup in evidence.matchups:
+        for team, carry in (
+            (matchup.home_team_id, matchup.home_verified_carry_in),
+            (matchup.away_team_id, matchup.away_verified_carry_in),
+        ):
+            if math.fsum(indexed[(week, team)].points for week in previous) != (
+                carry or 0.0
+            ):
+                raise SeasonSimulationError(
+                    f"team {team} postseason history does not reconcile to verified carry-in"
+                )
+    for week in previous:
+        state = apply_postseason_team_scores(
+            snapshot,
+            state,
+            week,
+            tuple(indexed[(week, team)] for team in sorted(teams)),
+        )
+    return state
+
+
+def _partial_week_lineups(
+    snapshot: LeagueSnapshot,
+    composition: PartialWeekScoreComposition,
+    team_ids: tuple[int, ...],
+):
+    composed = {item.team_id: item for item in composition.teams}
+    if not set(team_ids) <= set(composed):
+        raise SeasonSimulationError("partial composition omits scheduled teams")
+    slots = tuple(
+        StartingSlot(rule.slot_id, index)
+        for rule in sorted(snapshot.rules.lineup_slots, key=lambda item: item.slot_id)
+        if rule.kind is SlotKind.STARTER
+        for index in range(1, rule.capacity + 1)
+    )
+    projections = {
+        item.player_id: item.effective_projection
+        for item in snapshot.player_weeks
+        if item.scoring_week == composition.scoring_period
+    }
+    lineups, frozen, scores = [], [], []
+    for team_id in sorted(team_ids):
+        team = composed[team_id]
+        available = list(slots)
+        assignments = []
+        for player in team.starters:
+            slot = next(
+                item
+                for item in available
+                if item.lineup_slot_id == player.lineup_slot_id
+            )
+            available.remove(slot)
+            assignments.append(
+                LineupAssignment(slot, player.player_id, projections[player.player_id])
+            )
+            scores.append(
+                RealizedPlayerScore(
+                    player.player_id,
+                    snapshot.season,
+                    composition.scoring_period,
+                    player.final_points,
+                )
+            )
+        owned = {
+            item.player_id
+            for item in snapshot.roster_entries
+            if item.team_id == team_id
+        }
+        vacancies = tuple(
+            LineupVacancy(
+                slot,
+                VacancyReason.OBSERVED_UNFILLED_SLOT
+                if any(
+                    player.player_id in owned
+                    and slot.lineup_slot_id in player.eligible_lineup_slot_ids
+                    for player in snapshot.players
+                )
+                else VacancyReason.NO_ROSTERED_ELIGIBLE_PLAYER,
+            )
+            for slot in available
+        )
+        lineup = OptimizedLineup(
+            team_id,
+            snapshot.season,
+            composition.scoring_period,
+            tuple(assignments),
+            math.fsum(item.effective_projection for item in assignments),
+            len(slots),
+            len(assignments),
+            len(vacancies),
+            vacancies,
+            not vacancies,
+        )
+        lineups.append(lineup)
+        # Carry-in is replayed separately into the postseason accumulator exactly once.
+        frozen.append(
+            FrozenTeamWeek(
+                team_id,
+                lineup,
+                math.fsum(player.final_points for player in team.starters),
+            )
+        )
+    return tuple(lineups), tuple(frozen), tuple(scores)
+
+
 def simulate_deterministic_season(
     snapshot: LeagueSnapshot,
     scenario: DeterministicScoreScenario,
@@ -566,6 +898,7 @@ def simulate_deterministic_season(
     ir_eligibility_evidence: tuple[IREligibilityEvidence, ...] = (),
     initial_evolving_state: EvolvingLeagueState | None = None,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
+    partial_week: DeterministicPartialWeekInput | None = None,
 ) -> DeterministicSeasonResult:
     """Execute one settings-driven deterministic path without network or randomness."""
 
@@ -575,11 +908,19 @@ def simulate_deterministic_season(
         transaction_policy,
         postseason_transaction_policy,
         consolation_configuration,
+        partial_week,
     )
+    partial_composition = None
+    if partial_week is not None:
+        partial_composition, partial_identity = _prepare_partial_week(
+            snapshot, scenario, partial_week
+        )
     participation_reference = postseason_transaction_policy.reference or "unresolved"
     configuration_provenance = (
         f"postseason_transactions:{postseason_transaction_policy.provenance.value}:{participation_reference}",
     )
+    if partial_week is not None:
+        configuration_provenance += (f"partial_week:v1:{partial_identity}",)
     phases = _phase_by_week(snapshot)
     initial_standings = initialize_standings(snapshot)
     standings = initial_standings
@@ -593,10 +934,13 @@ def simulate_deterministic_season(
             ir_eligibility_evidence=ir_eligibility_evidence,
         )
     else:
-        if any(
-            item is not None
-            for item in (season_acquisition_counts, matchup_acquisition_counts)
-        ) or ir_eligibility_evidence:
+        if (
+            any(
+                item is not None
+                for item in (season_acquisition_counts, matchup_acquisition_counts)
+            )
+            or ir_eligibility_evidence
+        ):
             raise SeasonSimulationError(
                 "initial_evolving_state cannot be combined with acquisition-count or IR-evidence overrides"
             )
@@ -610,6 +954,20 @@ def simulate_deterministic_season(
                 "initial evolving state IR policy does not match requested policy"
             )
         evolving = initial_evolving_state
+    if partial_week is not None:
+        if evolving.roster_entries != snapshot.roster_entries or evolving.ledger:
+            raise SeasonSimulationError(
+                "partial-week execution does not support hypothetical initial transactions or rosters"
+            )
+        slots = {item.player_id: item.lineup_slot_id for item in partial_week.lineup}
+        evolving = replace(
+            evolving,
+            roster_entries=tuple(
+                replace(item, lineup_slot_id=slots[item.player_id])
+                for item in evolving.roster_entries
+            ),
+        )
+        validate_evolving_state(evolving, snapshot)
     postseason: PostseasonState | None = None
     weeks: list[SeasonWeekTransition] = []
     if lineup_workspace is None:
@@ -668,6 +1026,13 @@ def simulate_deterministic_season(
                     standings,
                     consolation_configuration=consolation_configuration,
                 )
+                if (
+                    partial_week is not None
+                    and scoring_week == snapshot.first_simulation_week
+                ):
+                    postseason = _restore_partial_postseason(
+                        snapshot, postseason, partial_week
+                    )
             except PostseasonError as exc:
                 raise SeasonSimulationError(
                     f"postseason initialization failed: {exc}"
@@ -685,6 +1050,11 @@ def simulate_deterministic_season(
                 postseason_transaction_policy,
             )
         )
+        is_partial_week = (
+            partial_week is not None and scoring_week == snapshot.first_simulation_week
+        )
+        if is_partial_week:
+            eligible_team_ids = ()
         transaction_result = execute_weekly_essential_transactions(
             snapshot,
             evolving,
@@ -749,10 +1119,16 @@ def simulate_deterministic_season(
         else:
             assert postseason is not None
             team_ids = _active_postseason_teams(postseason, scoring_week)
-        lineups, frozen = _freeze_and_score(
-            snapshot, evolving, scoring_week, team_ids, score_index, lineup_workspace
-        )
-        scores = _scenario_week_scores(score_index, scoring_week)
+        if is_partial_week:
+            lineups, frozen, scores = _partial_week_lineups(
+                snapshot, partial_composition, team_ids
+            )
+        else:
+            lineups, frozen = _freeze_and_score(
+                snapshot, evolving, scoring_week, team_ids,
+                score_index, lineup_workspace
+            )
+            scores = _scenario_week_scores(score_index, scoring_week)
         regular_transition = None
         if phase is MatchupPhase.REGULAR:
             regular_transition = resolve_regular_season_week(
@@ -762,18 +1138,32 @@ def simulate_deterministic_season(
                 lineups,
                 scores,
                 roster_entries=evolving.roster_entries,
+                require_projected_availability=not is_partial_week,
             )
             standings = regular_transition.standings
         else:
             assert postseason is not None
-            postseason = score_frozen_postseason_week(
-                snapshot,
-                postseason,
-                scoring_week,
-                lineups,
-                scores,
-                roster_entries=evolving.roster_entries,
-            )
+            if is_partial_week:
+                postseason = apply_postseason_team_scores(
+                    snapshot,
+                    postseason,
+                    scoring_week,
+                    tuple(
+                        WeeklyTeamScore(
+                            scoring_week, item.team_id, item.realized_points
+                        )
+                        for item in frozen
+                    ),
+                )
+            else:
+                postseason = score_frozen_postseason_week(
+                    snapshot,
+                    postseason,
+                    scoring_week,
+                    lineups,
+                    scores,
+                    roster_entries=evolving.roster_entries,
+                )
         weeks.append(
             SeasonWeekTransition(
                 scoring_week,

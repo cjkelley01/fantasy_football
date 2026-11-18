@@ -6,6 +6,8 @@ import pytest
 
 from fantasy_football.canonical.model import (
     InterpretationStatus,
+    JsonArray,
+    JsonObject,
     LineupSlotNamespace,
     LineupSlotRule,
     MatchupEntryStatus,
@@ -26,6 +28,7 @@ from fantasy_football.live_scoring import (
     LiveScoringState,
     ScoringPeriodStatus,
     ScoringWeekState,
+    resolve_live_scoring_state,
 )
 from fantasy_football.postseason import (
     BracketGraph,
@@ -146,6 +149,43 @@ def test_partial_current_week_cannot_be_silently_omitted_from_simulation() -> No
         match="does not establish a safe fully unplayed V1 boundary",
     ):
         _run(replace(snapshot, live_scoring=unsafe_live))
+
+
+def test_v1_cannot_start_in_second_week_of_authoritative_matchup_period() -> None:
+    from fantasy_football.espn_adapter import translate_bundle
+    from tests.adapter_fixtures import source_bundle
+
+    snapshot = translate_bundle(source_bundle()).snapshot
+    assert snapshot.live_scoring is not None
+    period_evidence = JsonObject((
+        ("1", JsonArray((1, 2))),
+        ("2", JsonArray((3,))),
+    ))
+    interpretations = tuple(
+        replace(item, raw_value=period_evidence, normalized_value=period_evidence)
+        if item.rule_id == "matchup_period_configuration" else item
+        for item in snapshot.rules.interpretations
+    )
+    live = resolve_live_scoring_state(
+        current_scoring_period=2,
+        scoring_weeks=(1, 2, 3),
+        games=snapshot.nfl_games,
+        matchup_period_scoring_weeks=((1, 2), (3,)),
+        observations=snapshot.live_scoring.observations,
+        source_ids=snapshot.live_scoring.source_ids,
+    )
+    unsafe_start = replace(
+        snapshot,
+        snapshot_id="second-week-unreconciled",
+        rules=replace(snapshot.rules, interpretations=interpretations),
+        live_scoring=live,
+    )
+
+    with pytest.raises(
+        SeasonSimulationError,
+        match="does not establish a safe fully unplayed V1 boundary",
+    ):
+        _run(unsafe_start, _scenario(unsafe_start))
 
 
 ACTIVE_PARTICIPATION_RULE_ID = "fixture-active-participants"

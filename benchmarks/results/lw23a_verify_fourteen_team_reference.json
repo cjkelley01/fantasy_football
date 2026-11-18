@@ -1,0 +1,90 @@
+{
+  "environment": {
+    "logical_cpus": 16,
+    "platform": "Windows-11-10.0.26300-SP0",
+    "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "python": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]"
+  },
+  "equivalence": [
+    {
+      "partial_detail": "6f88902f2fee8706edfdd7201246e29dd9057369a5fc024304a2a68d96582e95",
+      "path": 0,
+      "summary": "5a930218869d218a2e1b83b2b10ebc77b0df5c149698c168426749e0bb29cf6d",
+      "v1_detail": "d6a683f532735b0a4f8fee20ef12f2726d6783c120e60de34a964ae208540c57"
+    },
+    {
+      "partial_detail": "5af7181bb83d5f9b4033c98af980360b219619eb9f673d2340cea812c2246b43",
+      "path": 1,
+      "summary": "efd7f9096d62de843780d7fdb3923d162cec0cc73bf4253ec8a1c1f011a3cf84",
+      "v1_detail": "3042a59793ee679e4725f20cbaed3e26413af9c67dec4f5a29887f50ae145067"
+    },
+    {
+      "partial_detail": "7ab76a35817becd3774b76e07191c9276f96a3bbe047e062a5a2db439b229b45",
+      "path": 2,
+      "summary": "57f326b7dfc7813a89d332c4b77caf5e9a6df1399481cacc4e06a54cc66c2189",
+      "v1_detail": "e4f6a8d04f34cb3888f648cfa3a759825e67799f6961d9dc36ef542148edae33"
+    },
+    {
+      "partial_detail": "1b14173654f354fc11a117004095507a54ad91ce15fdc7233361fb74627e91fd",
+      "path": 3,
+      "summary": "5e1408d5dd6b17d9c160fd32fda727fab049cf026f6cf1d415884e6c0b3867df",
+      "v1_detail": "3dfe078cf9524e3f3c3ad4a85bc6fa0bccb912c0b99583355d01be8975a73309"
+    },
+    {
+      "partial_detail": "657248a097ad52cdbdcee0c0db2aee6a43bdd887f89367056491cb6dfc4a4b08",
+      "path": 4,
+      "summary": "077d8f2b78e492078c386c4bc679297b14a4fadb4520dbf2cd92b9fe9932d873",
+      "v1_detail": "cf181f14c3992351bac4b70138b904bb617fe11ffe2ab3d51fa5ac23b869ad7a"
+    },
+    {
+      "partial_detail": "39cb04a988a4dd57f5cbd1a1cc2017d331402bf87a7a751d1eb79cbf3795b981",
+      "path": 5,
+      "summary": "5a9f71408f8b63c3201b0ec5e7b3f673f313aa25657d870a4ff8e8dda2114594",
+      "v1_detail": "c8be04433b08cd48cd48aad1052b0ee0767d016f123e7ae19907fee4fc70e386"
+    },
+    {
+      "partial_detail": "b976a4fd08c635bed119f0dd810c48d0e445e9797b2ac4efd178e82b1883b48d",
+      "path": 6,
+      "summary": "430190af4804299cb54a4cf3a0037e2d49ef50c0546cd5469e2ab055f2a240c7",
+      "v1_detail": "83e58874f285fbb03aed407137988dd46e21253b1f418ca1252b668fcd8e4aeb"
+    },
+    {
+      "partial_detail": "f31b93cb6e9814916db3391bd79ca587170cf769c357d156b46e2ae956e06209",
+      "path": 7,
+      "summary": "cddf0ce657273585c5034de8bfe85c8b92d6c206f47bfc3c37eefd7f531a4081",
+      "v1_detail": "8d79d493fccaeaac0381933c451d1b983493742a4a056996d61dba827294dd63"
+    },
+    {
+      "partial_detail": "e668c7511089a8aba9d5b79a5a15476ef7db99abc58311104058d5306c912c5d",
+      "path": 8,
+      "summary": "26a167f3e9f61f72e4ba2319404c442825b4e627465578dbfe4b55b17908967d",
+      "v1_detail": "416019bbc259e47a609387613c8e47b72469e2a0c38ce843843b250c1f5e6dec"
+    },
+    {
+      "partial_detail": "f511a8a7ec9b1fbb105cdbc5eaf2b0d620811ba3a5ae9c7dbf208aed1e3af0e7",
+      "path": 9,
+      "summary": "ce4cc0ea06a50ed4fe8d26a31e810427b6dcf7c5d7d11f69269285f94ca9324c",
+      "v1_detail": "cf2a94107d61436ad5468dd4a3d06d4ab5169e5180fc42cf680824bc343e3bba"
+    }
+  ],
+  "fixture": {
+    "player_weeks": 56,
+    "players": 14,
+    "seed": 12345,
+    "teams": 14,
+    "weeks": [
+      15,
+      18
+    ]
+  },
+  "production_source_sha256": {
+    "monte_carlo": "fde028e1ffe463362a45aa93d52e3e78143ffc79deb598f3a695f36b11d476da",
+    "partial_week": "06ebc6554b89fa65c1d6303b987a677c6fa327c31d40bde264d1c50004f4eb4b",
+    "season_simulator": "c348126da825272852d88cc7922cea67dc5dc2e37c5d89cee41ee4183c06ece2"
+  },
+  "reference": true,
+  "revision": "86189da",
+  "samples": [],
+  "summary": [],
+  "workload": "fourteen_team"
+}

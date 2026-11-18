@@ -37,6 +37,7 @@ class LineupAssignment:
 
 
 class VacancyReason(StrEnum):
+    OBSERVED_UNFILLED_SLOT = "observed_unfilled_slot"
     NO_ROSTERED_ELIGIBLE_PLAYER = "no_rostered_eligible_player"
     ELIGIBLE_PLAYERS_ON_RESERVE = "eligible_players_on_reserve"
     NO_POSITIVE_PROJECTION = "no_positive_projection"

@@ -239,6 +239,8 @@ def _validate_lineups(
     lineups: tuple[OptimizedLineup, ...],
     participating_team_ids: set[int],
     roster_entries: tuple[RosterEntry, ...],
+    *,
+    require_projected_availability: bool = True,
 ) -> dict[int, OptimizedLineup]:
     if not isinstance(lineups, tuple):
         raise WeeklyEngineError("frozen lineups must be an immutable tuple")
@@ -316,7 +318,7 @@ def _validate_lineups(
                 )
             player_week = player_weeks[assignment.player_id]
             if (
-                not player_week.projected_lineup_available
+                (require_projected_availability and not player_week.projected_lineup_available)
                 or assignment.effective_projection != player_week.effective_projection
             ):
                 raise WeeklyEngineError(
@@ -451,6 +453,7 @@ def resolve_regular_season_week(
     realized_scores: tuple[RealizedPlayerScore, ...],
     *,
     roster_entries: tuple[RosterEntry, ...] | None = None,
+    require_projected_availability: bool = True,
 ) -> WeeklyTransition:
     """Resolve one canonical regular-season scoring week deterministically."""
 
@@ -474,7 +477,10 @@ def resolve_regular_season_week(
     }
     modeled_roster = snapshot.roster_entries if roster_entries is None else roster_entries
     validate_roster_state(snapshot, modeled_roster)
-    frozen = _validate_lineups(snapshot, scoring_week, lineups, participating, modeled_roster)
+    frozen = _validate_lineups(
+        snapshot, scoring_week, lineups, participating, modeled_roster,
+        require_projected_availability=require_projected_availability,
+    )
     score_values = _score_index(snapshot, scoring_week, realized_scores)
 
     team_scores: dict[int, TeamWeeklyScore] = {}

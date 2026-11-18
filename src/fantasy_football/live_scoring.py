@@ -75,10 +75,19 @@ class LiveScoringError(ValueError):
     """Raised when scoring-state evidence cannot support a requested boundary."""
 
 
-def has_safe_v1_boundary(state: LiveScoringState) -> bool:
+def has_safe_v1_boundary(
+    state: LiveScoringState,
+    *,
+    authoritative_current_matchup_period_scoring_weeks: tuple[int, ...] | None = None,
+) -> bool:
     """Return whether stored LW1 evidence can authorize the unchanged V1 engine."""
 
-    if not state.current_matchup_period_scoring_weeks:
+    if (
+        not state.current_matchup_period_scoring_weeks
+        or authoritative_current_matchup_period_scoring_weeks is None
+        or state.current_matchup_period_scoring_weeks
+        != authoritative_current_matchup_period_scoring_weeks
+    ):
         return False
     current = next(
         (item for item in state.weeks if item.scoring_week == state.current_scoring_period),

@@ -5,28 +5,64 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from enum import Enum
 
-from fantasy_football.canonical.model import LeagueSnapshot
+from fantasy_football.canonical.model import (
+    LeagueSnapshot,
+    MatchupEntryStatus,
+    SlotKind,
+)
 from fantasy_football.canonical.serialization import snapshot_to_json
 from fantasy_football.canonical.validation import validated_snapshot
 from fantasy_football.evolving_state import EvolvingLeagueState, IRPolicy
 from fantasy_football.lineup_optimizer import LineupOptimizationWorkspace, prepare_lineup_optimization
+from fantasy_football.partial_week import (
+    DeterministicPlayerValue,
+    PartialWeekEvidence,
+    PlayerScoreState,
+    ProposedLineupAssignment,
+    RemainingContributionStatus,
+    require_executable_partial_week_evidence,
+    validate_proposed_lineup,
+)
+from fantasy_football.partial_week_serialization import partial_week_to_json
 from fantasy_football.player_outcomes import PlayerOutcomeModel, projection_class_counts
-from fantasy_football.postseason import ConsolationLadderConfiguration
+from fantasy_football.postseason import ConsolationLadderConfiguration, WeeklyTeamScore
 from fantasy_football.season_simulator import (
     DEFAULT_POSTSEASON_TRANSACTION_POLICY,
+    DeterministicPartialWeekInput,
+    DeterministicScoreScenario,
     DeterministicSeasonResult,
     PostseasonTransactionParticipationPolicy,
     SeasonCompletionStatus,
     simulate_deterministic_season,
 )
+from fantasy_football.weekly_engine import RealizedPlayerScore
 from fantasy_football.weekly_transactions import WeeklyTransactionPolicy
 
 
 class MonteCarloError(ValueError):
     """Raised for invalid configuration, path execution, or reconciliation."""
+
+
+@dataclass(frozen=True, slots=True)
+class MonteCarloPartialWeekInput:
+    """Pregame evidence and legal assignments; realizations come from existing draws."""
+
+    evidence: PartialWeekEvidence
+    lineup: tuple[ProposedLineupAssignment, ...]
+    prior_postseason_scores: tuple[WeeklyTeamScore, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.evidence, PartialWeekEvidence):
+            raise MonteCarloError("partial-week input requires PartialWeekEvidence")
+        if not isinstance(self.lineup, tuple) or not isinstance(
+            self.prior_postseason_scores, tuple
+        ):
+            raise MonteCarloError(
+                "partial-week assignments and history must be immutable tuples"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,11 +78,22 @@ class MonteCarloConfig:
     consolation_configuration: ConsolationLadderConfiguration | None = None
     require_complete: bool = True
     initial_evolving_state: EvolvingLeagueState | None = None
+    partial_week: MonteCarloPartialWeekInput | None = None
 
     def __post_init__(self) -> None:
+        if self.partial_week is not None and not isinstance(
+            self.partial_week, MonteCarloPartialWeekInput
+        ):
+            raise MonteCarloError(
+                "partial_week must be MonteCarloPartialWeekInput or None"
+            )
         if isinstance(self.master_seed, bool) or not isinstance(self.master_seed, int):
             raise MonteCarloError("master_seed must be an integer")
-        if isinstance(self.path_count, bool) or not isinstance(self.path_count, int) or self.path_count <= 0:
+        if (
+            isinstance(self.path_count, bool)
+            or not isinstance(self.path_count, int)
+            or self.path_count <= 0
+        ):
             raise MonteCarloError("path_count must be a positive integer")
         if (
             isinstance(self.first_path_index, bool)
@@ -69,7 +116,9 @@ class MonteCarloConfig:
 
     @property
     def path_indices(self) -> tuple[int, ...]:
-        return tuple(range(self.first_path_index, self.first_path_index + self.path_count))
+        return tuple(
+            range(self.first_path_index, self.first_path_index + self.path_count)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +205,9 @@ def _deterministic_value(value):
         }
     if value is None or isinstance(value, (str, int, float, bool)):
         if isinstance(value, float) and not math.isfinite(value):
-            raise MonteCarloError("configuration fingerprint cannot contain nonfinite values")
+            raise MonteCarloError(
+                "configuration fingerprint cannot contain nonfinite values"
+            )
         return value
     raise MonteCarloError(
         f"configuration fingerprint does not support {type(value).__name__}"
@@ -250,6 +301,25 @@ def simulation_configuration_fingerprint(
         payload["initial_evolving_state"] = _deterministic_value(
             config.initial_evolving_state
         )
+    if config.partial_week is not None:
+        _validate_pregame_partial_week(snapshot, config.partial_week)
+        payload["partial_week"] = {
+            "contract": "lw2.3a-unstarted-partial-week-v1",
+            "evidence": partial_week_to_json(config.partial_week.evidence),
+            "lineup": _deterministic_value(
+                tuple(
+                    sorted(config.partial_week.lineup, key=lambda item: item.player_id)
+                )
+            ),
+            "prior_postseason_scores": _deterministic_value(
+                tuple(
+                    sorted(
+                        config.partial_week.prior_postseason_scores,
+                        key=lambda item: (item.scoring_week, item.team_id),
+                    )
+                )
+            ),
+        }
     encoded = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode("utf-8")
@@ -292,6 +362,123 @@ def _scenario_digest(result) -> str:
     ).hexdigest()
 
 
+def _validate_pregame_partial_week(
+    snapshot: LeagueSnapshot, partial: MonteCarloPartialWeekInput
+) -> None:
+    if not isinstance(partial.lineup, tuple) or not isinstance(
+        partial.prior_postseason_scores, tuple
+    ):
+        raise MonteCarloError(
+            "partial-week assignments and history must be immutable tuples"
+        )
+    evidence = partial.evidence
+    if evidence.scoring_period != snapshot.first_simulation_week:
+        raise MonteCarloError(
+            "Monte Carlo partial input must describe the first simulation week"
+        )
+    # Gate the supported semantics before asking the outcome model for any draws.
+    rostered = {item.player_id for item in snapshot.roster_entries}
+    projections = {
+        item.player_id: item
+        for item in snapshot.player_weeks
+        if item.scoring_week == evidence.scoring_period
+    }
+    for state in evidence.players:
+        if state.player_id not in rostered:
+            continue
+        if (
+            state.score_state is not PlayerScoreState.UNSTARTED
+            or state.remaining_status is not RemainingContributionStatus.APPROVED
+        ):
+            raise MonteCarloError(
+                f"LW2.3A requires unstarted players with approved full-game projections; player {state.player_id} has {state.score_state!r}"
+            )
+        projection = projections.get(state.player_id)
+        if (
+            projection is None
+            or projection.raw_projection is None
+            or state.full_game_projection != projection.effective_projection
+        ):
+            raise MonteCarloError(
+                f"player {state.player_id}: approved full-game projection must match the nonmissing canonical draw mean"
+            )
+    require_executable_partial_week_evidence(snapshot, evidence)
+    validate_proposed_lineup(snapshot, evidence, partial.lineup)
+
+
+def _partial_week_draws(
+    snapshot: LeagueSnapshot,
+    partial: MonteCarloPartialWeekInput,
+    scenario: DeterministicScoreScenario,
+):
+    if not isinstance(scenario, DeterministicScoreScenario) or not isinstance(
+        scenario.scores, tuple
+    ):
+        raise MonteCarloError(
+            "outcome model must return a deterministic scenario with immutable score records"
+        )
+    current = partial.evidence.scoring_period
+    first_scores = {}
+    known_players = {item.player_id for item in snapshot.players}
+    for score in scenario.scores:
+        if not isinstance(score, RealizedPlayerScore):
+            raise MonteCarloError(
+                "outcome model returned an invalid realized score record"
+            )
+        if score.scoring_week != current:
+            continue
+        if (
+            score.player_id not in known_players
+            or score.player_id in first_scores
+            or score.season != snapshot.season
+            or isinstance(score.points, bool)
+            or not isinstance(score.points, (int, float))
+            or not math.isfinite(score.points)
+        ):
+            raise MonteCarloError(
+                f"invalid or duplicate current-week draw for player {score.player_id}"
+            )
+        first_scores[score.player_id] = score.points
+    # Proposed starters may use any configured starter slot, including a previously empty one.
+    starter_slots = {
+        item.slot_id
+        for item in snapshot.rules.lineup_slots
+        if item.kind is SlotKind.STARTER
+    }
+    bye_teams = {
+        item.home_team_id
+        for item in snapshot.fantasy_matchups
+        if item.matchup_period_id == partial.evidence.matchup_period_id
+        and item.entry_status is MatchupEntryStatus.BYE
+    }
+    required = tuple(
+        item.player_id
+        for item in partial.lineup
+        if item.lineup_slot_id in starter_slots and item.team_id not in bye_teams
+    )
+    missing = set(required) - set(first_scores)
+    if missing:
+        raise MonteCarloError(
+            f"partial-week starters lack generated current-week draws: {sorted(missing)}"
+        )
+    deterministic = DeterministicPartialWeekInput(
+        partial.evidence,
+        partial.lineup,
+        tuple(
+            DeterministicPlayerValue(
+                player_id, unstarted_realized_points=first_scores[player_id]
+            )
+            for player_id in sorted(required)
+        ),
+        partial.prior_postseason_scores,
+    )
+    future = replace(
+        scenario,
+        scores=tuple(item for item in scenario.scores if item.scoring_week != current),
+    )
+    return future, deterministic
+
+
 def run_monte_carlo_path(
     snapshot: LeagueSnapshot,
     config: MonteCarloConfig,
@@ -305,18 +492,26 @@ def run_monte_carlo_path(
         raise MonteCarloError(f"path_index={path_index} is outside configured range")
     try:
         with validated_snapshot(snapshot):
+            if config.partial_week is not None:
+                _validate_pregame_partial_week(snapshot, config.partial_week)
             scenario = model.generate_scenario(
                 snapshot, master_seed=config.master_seed, path_index=path_index
             )
+            season_scenario, partial = (
+                (scenario, None)
+                if config.partial_week is None
+                else _partial_week_draws(snapshot, config.partial_week, scenario)
+            )
             season = simulate_deterministic_season(
                 snapshot,
-                scenario,
+                season_scenario,
                 ir_policy=config.ir_policy,
                 transaction_policy=config.transaction_policy,
                 postseason_transaction_policy=config.postseason_transaction_policy,
                 consolation_configuration=config.consolation_configuration,
                 initial_evolving_state=config.initial_evolving_state,
                 lineup_workspace=lineup_workspace,
+                partial_week=partial,
             )
     except ValueError as exc:
         raise MonteCarloError(f"invalid path {path_index}: {exc}") from exc
@@ -355,8 +550,12 @@ def _aggregate(
     team_ids = tuple(sorted(item.team_id for item in snapshot.teams))
     for path in paths:
         _validate_path_summary(snapshot, path)
-    complete = tuple(item for item in paths if item.status is SeasonCompletionStatus.COMPLETE)
-    incomplete = tuple(item for item in paths if item.status is SeasonCompletionStatus.INCOMPLETE)
+    complete = tuple(
+        item for item in paths if item.status is SeasonCompletionStatus.COMPLETE
+    )
+    incomplete = tuple(
+        item for item in paths if item.status is SeasonCompletionStatus.INCOMPLETE
+    )
     complete_output = len(complete) == len(paths)
     aggregates = []
     for team_id in team_ids:
@@ -366,7 +565,9 @@ def _aggregate(
         )
         placements = tuple(item.final_placement for item in outcomes)
         if any(item is None for item in placements):
-            raise MonteCarloError(f"complete paths lack final placement for team {team_id}")
+            raise MonteCarloError(
+                f"complete paths lack final placement for team {team_id}"
+            )
         placement_counts = tuple(
             (place, sum(value == place for value in placements))
             for place in range(1, len(team_ids) + 1)
@@ -388,7 +589,8 @@ def _aggregate(
                 if outcomes
                 else None,
                 math.fsum(item.final_regular_rank for item in outcomes) / len(outcomes)
-                if outcomes and all(item.final_regular_rank is not None for item in outcomes)
+                if outcomes
+                and all(item.final_regular_rank is not None for item in outcomes)
                 else None,
                 math.fsum(item.regular_wins for item in outcomes) / len(outcomes)
                 if outcomes
@@ -402,10 +604,16 @@ def _aggregate(
         if sum(item.championship_wins for item in aggregates) != len(complete):
             raise MonteCarloError("championship totals do not reconcile")
         for place in range(1, len(team_ids) + 1):
-            if sum(dict(item.placement_counts)[place] for item in aggregates) != len(complete):
+            if sum(dict(item.placement_counts)[place] for item in aggregates) != len(
+                complete
+            ):
                 raise MonteCarloError(f"placement {place} totals do not reconcile")
         qualifier_count = snapshot.rules.championship.qualifier_count
-        if qualifier_count is None or sum(item.playoff_qualifications for item in aggregates) != len(complete) * qualifier_count:
+        if (
+            qualifier_count is None
+            or sum(item.playoff_qualifications for item in aggregates)
+            != len(complete) * qualifier_count
+        ):
             raise MonteCarloError("playoff qualification totals do not reconcile")
     capabilities: dict[str, int] = {}
     for path in incomplete:
@@ -468,9 +676,11 @@ def _validate_path_summary(
             raise MonteCarloError(
                 f"path {path.path_index} team {item.team_id} has invalid regular wins"
             )
-        if not isinstance(item.regular_points_for, (int, float)) or isinstance(
-            item.regular_points_for, bool
-        ) or not math.isfinite(item.regular_points_for):
+        if (
+            not isinstance(item.regular_points_for, (int, float))
+            or isinstance(item.regular_points_for, bool)
+            or not math.isfinite(item.regular_points_for)
+        ):
             raise MonteCarloError(
                 f"path {path.path_index} team {item.team_id} has invalid points for"
             )
@@ -497,16 +707,16 @@ def _validate_path_summary(
                 f"path {path.path_index} team {item.team_id} has invalid final placement"
             )
     available_placements = tuple(
-        item.final_placement
-        for item in path.teams
-        if item.final_placement is not None
+        item.final_placement for item in path.teams if item.final_placement is not None
     )
     if len(available_placements) != len(set(available_placements)):
         raise MonteCarloError(f"path {path.path_index} has duplicate final placements")
     if path.status is SeasonCompletionStatus.INCOMPLETE:
         return
     if path.status is not SeasonCompletionStatus.COMPLETE:
-        raise MonteCarloError(f"path {path.path_index} has unsupported status {path.status!r}")
+        raise MonteCarloError(
+            f"path {path.path_index} has unsupported status {path.status!r}"
+        )
     if any(item.final_regular_rank is None for item in path.teams):
         raise MonteCarloError(f"complete path {path.path_index} lacks regular ranks")
     if {item.final_regular_rank for item in path.teams} != set(
@@ -521,7 +731,9 @@ def _validate_path_summary(
         )
     qualifiers = tuple(item for item in path.teams if item.playoff_qualified is True)
     if any(item.playoff_qualified is None for item in path.teams):
-        raise MonteCarloError(f"complete path {path.path_index} lacks qualifier results")
+        raise MonteCarloError(
+            f"complete path {path.path_index} lacks qualifier results"
+        )
     expected_qualifiers = snapshot.rules.championship.qualifier_count
     if expected_qualifiers is None or len(qualifiers) != expected_qualifiers:
         raise MonteCarloError(
@@ -586,14 +798,23 @@ def combine_monte_carlo_batches(
     expected_run = _run_identity(expected_config, config.master_seed)
     for batch in batches:
         if batch.simulation_config_sha256 != expected_config:
-            raise MonteCarloError("combined batch simulation configuration does not match")
+            raise MonteCarloError(
+                "combined batch simulation configuration does not match"
+            )
         if batch.run_identity_sha256 != expected_run:
             raise MonteCarloError("combined batch run identity does not match")
-    paths = tuple(sorted((path for batch in batches for path in batch.paths), key=lambda item: item.path_index))
+    paths = tuple(
+        sorted(
+            (path for batch in batches for path in batch.paths),
+            key=lambda item: item.path_index,
+        )
+    )
     if len({item.path_index for item in paths}) != len(paths):
         raise MonteCarloError("combined batches contain duplicate path IDs")
     if tuple(item.path_index for item in paths) != config.path_indices:
-        raise MonteCarloError("combined batches do not exactly cover configured path range")
+        raise MonteCarloError(
+            "combined batches do not exactly cover configured path range"
+        )
     for batch in batches:
         if (
             batch.snapshot_id != snapshot.snapshot_id

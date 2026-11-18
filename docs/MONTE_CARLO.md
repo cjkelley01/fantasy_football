@@ -1,294 +1,162 @@
-# Provisional Repeated Season Simulation and Probability Precision
+# Monte Carlo execution, inference and recovery
 
-M2.6 is implemented by `fantasy_football.monte_carlo`. It sequentially generates
-path-indexed score scenarios and passes each one to the accepted, unchanged M2.5
-`simulate_deterministic_season()` coordinator.
+This reference owns path identity, probability estimators, paired inference, precision and numerical checkpoint execution. [Outcome models](PLAYER_OUTCOME_MODEL.md) own score generation; [Season](SEASON_SIMULATOR.md) and [Transactions](TRANSACTIONS.md) own each path's league mechanics; [PARTIAL_WEEK](PARTIAL_WEEK.md) owns opt-in evidence/permission. [APPLICATION_SERVICE](APPLICATION_SERVICE.md) owns HTTP jobs/result persistence and [INTERFACE](INTERFACE.md#analytical-presentation-and-units) owns presentation.  Approved requirements in this domain and linked [BACKLOG](BACKLOG.md) obligations remain binding under [engineering governance](../AGENTS.md#authority-and-precedence).
 
-## Public contract
+- [Configuration, run and path identity](#configuration-run-and-path-identity)
+- [Aggregation and probability estimators](#aggregation-and-probability-estimators)
+- [Precision and stopping](#precision-and-stopping)
+- [Paired scenario inference](#paired-scenario-inference)
+- [Progressive search and multiplicity](#progressive-search-and-multiplicity)
+- [Workers and bounded execution](#workers-and-bounded-execution)
+- [Checkpoints and recovery](#checkpoints-and-recovery)
+- [Performance evidence](#performance-evidence)
+- [Review obligations](#review-obligations)
 
-`MonteCarloConfig` validates the master seed, positive path count, first path
-index, IR policy, weekly transaction policy, postseason participation policy,
-optional consolation configuration, and complete-result requirement.
+## Configuration, run and path identity
 
-- `run_monte_carlo_path()` reconstructs one configured path and can optionally
-  retain its detailed deterministic result.
-- `run_monte_carlo_batch()` runs the explicit contiguous range sequentially and
-  retains compact per-path summaries rather than full season states.
-- `combine_monte_carlo_batches()` requires exact, duplicate-free coverage of the
-  requested range and matching snapshot/model/seed identity before deterministic
-  aggregation.
+`MonteCarloConfig` requires an integer master_seed, positive path_count, nonnegative first_path_index, explicit IR/weekly-transaction policies and complete-result behavior; Boolean values do not substitute for integer counts/seeds. The exact fields are master_seed, path_count, first_path_index, ir_policy, transaction_policy, postseason_transaction_policy, consolation_configuration, require_complete, initial_evolving_state and partial_week. Each path starts from the same immutable canonical snapshot, generates the full score universe once and reconstructs independent ownership, counters, standings and brackets through `simulate_deterministic_season()`. Nothing retrieves ESPN.
 
-Every path starts from the same immutable snapshot. Ownership, transactions,
-standings, and postseason state are independently recreated and never leak into
-another path. Execution performs no ESPN request.
+`run_monte_carlo_path()` can retain a detailed deterministic result; `run_monte_carlo_batch()` retains compact path summaries. `combine_monte_carlo_batches()`/`aggregate_monte_carlo_paths()` require exact unique coverage of the requested contiguous range [first_path_index, first_path_index + path_count), correct per-path invariants and compatible identities. Reject gaps, overlaps, duplicates, unknown teams and incompatible snapshots/models/policies/seeds rather than filling or dropping paths.
 
-## Results and reconciliation
+| Identity | Included / excluded |
+|---|---|
+| `canonical_snapshot_fingerprint()` | Order-normalized canonical content, retaining exact material values and provenance |
+| `simulation_configuration_fingerprint()` | m2.6-simulation-config-v1; snapshot UUID/league/season/schema/content digest; public model_id and complete ordered parameters; IR/weekly/postseason policies; consolation mapping/source/approval; require_complete; SIMULATION_SEMANTICS; supplied initial evolving state |
+| Partial-only configuration entry | lw2.3a-unstarted-partial-week-v1; complete serialized companion, sorted supplied lineup and prior postseason scores. Absent partial input adds no key. [PARTIAL_WEEK](PARTIAL_WEEK.md#monte-carlo-subset) owns validation/routing. |
+| `monte_carlo_run_identity()` | m2.6-run-identity-v1 plus simulation configuration SHA-256 and master seed |
+| Exact range | Path IDs/count are separate coverage inputs, excluded from configuration/run identities so compatible partitions can combine |
+| Path scenario ID / score digest | Public model label/seed/path versus SHA-256 of ordered player/season/week/points. Ownership does not alter draws; identical scenario labels alone do not prove equal model parameters or score content. |
+| Precision / execution identity | Separate precision configuration/analysis and execution-policy hashes; stricter durable replay scope below |
 
-`MonteCarloBatchResult` records snapshot/league/season identity, model identity
-and parameters, seed, exact path IDs, complete/incomplete/invalid counts,
-projection-class coverage, assumptions, compact replay metadata, capability
-diagnostics, and one aggregate for every configured team.
+Path outcomes are invariant under supported batch partition, completion order and worker assignment at identical snapshot/model/policies/seed/path IDs. A changed adaptive look schedule may select a different final path count; equality of seeds alone is not equality of estimates from different ranges.
 
-Every result also retains two SHA-256 identities. The simulation-configuration
-fingerprint covers snapshot UUID, league/season/schema and order-independent
-canonical-content digest; model ID and every parameter; IR, weekly transaction,
-and postseason participation policies; complete optional consolation mapping
-including source/approval provenance; complete-result policy; and named material
-semantics versions. Path range and path count are deliberately excluded so valid
-partitions share the fingerprint. The run identity adds the master seed. Current
-M2.6 does not accept acquisition-count or IR-evidence overrides; those must be
-added to this contract before such inputs can be supported.
+[WR-022](PLAYER_OUTCOME_MODEL.md#identity-and-compatibility) intentionally distinguishes corrected Normal public policy identity from preserved nonmissing draw bytes. Earlier Normal checkpoints are incompatible, even for all-nonmissing inputs or colliding custom model IDs. No fingerprint algorithm/schema or stored historical result is rewritten. Partial opt-in compatibility and those historical Normal policy changes are separate boundaries; old “V1 unchanged” partial goldens remain tested using the frozen historical model.
 
-Batch combination requires both identities to match the requested configuration
-before inspecting results. Exact path coverage must then be contiguous,
-duplicate-free, and complete. Thus batches with different transaction, IR,
-participation, consolation, outcome-model, seed, snapshot identity, or snapshot
-content cannot be combined, while disjoint ranges under one configuration can.
+## Aggregation and probability estimators
 
-For a fully complete batch, team aggregates contain championships, playoff
-qualifications, runner-up finishes, every placement count, and averages for
-placement, regular rank, wins, and points for. Frequencies use all requested
-paths. Reconciliation requires one champion and one owner of every placement per
-path, the configured championship qualifier count, known team IDs, and complete
-per-team placement distributions.
+For N requested, fully complete paths, define binary indicators C_it (team t is champion), Q_it (qualifies for championship playoffs) and F_itk (finishes at placement k). Then:
 
-Reconciliation is first performed independently for every path. Each complete
-path must contain exactly one record for every configured team, no unknown or
-duplicate IDs, one champion, the exact `1..team_count` placement permutation,
-the configured number of championship qualifiers, a qualified champion, and
-finite structurally valid regular-season fields. An incomplete path retains the
-same team-identity and numeric checks but may omit unresolved qualification or
-placement values. Only after every path passes are league-wide totals reconciled.
-Malformed paths never become capability-incomplete paths and cannot offset one
-another through aggregate totals.
+`p_champ(t) = sum_i C_it / N`
 
-A capability-incomplete path is retained with its path ID and reason. If any
-requested path is incomplete, unconditional championship and playoff frequencies
-are `None`; observed complete counts are not renormalized. `require_complete=True`
-instead fails on the first incomplete path. Domain-invalid paths fail immediately
-with the path ID and are never silently replaced. Programming exceptions are not
-swallowed.
+`p_playoff(t) = sum_i Q_it / N`
 
-## M3.4 probability precision contract
+`p_place(t,k) = sum_i F_itk / N`
 
-`fantasy_football.monte_carlo_precision` adds an immutable analysis and stopping
-layer over the accepted M2.6 batches. `analyze_monte_carlo_precision()` analyzes
-an already reconciled batch. `run_monte_carlo_to_precision()` executes contiguous
-path-indexed chunks, combines them with `combine_monte_carlo_batches()`, and checks
-precision only at the configured checkpoints. Its `MonteCarloConfig.path_count`
-must equal the explicit maximum path count; path identities and the simulation
-fingerprint otherwise retain the M2.6 contract.
+Counts and denominators are authoritative. Runner-up is placement 2; final regular rank, wins and points-for means are summaries, not additional probability estimands. Per complete path require every configured team exactly once, exactly one qualified champion, the configured qualifier count and the complete placement permutation 1..T. Reconcile each path before league totals, so malformed paths cannot cancel each other through aggregate counts.
 
-`PrecisionConfiguration` requires a family confidence level, absolute target
-half-width, minimum and maximum path counts, and positive evaluation interval.
-At least the minimum is run before the first decision. Subsequent checks occur at
-that interval and at the maximum. A result records every checkpoint and exactly
-one stopping reason: `precision_reached`, `maximum_paths_reached`, or
-`incomplete_capabilities`.
+Capability-incomplete paths retain IDs/reasons and valid team/numeric structure. If **any** requested path is incomplete, unconditional championship/playoff frequencies and precision probabilities/intervals are None; do not renormalize over complete paths. require_complete=True raises at the incomplete path; False permits an explicitly incomplete batch. Structural/domain-invalid paths fail immediately with path context and are not converted to incomplete or replacement paths; successful batch invalid_paths remains zero.
 
-For every configured team, the analysis reports championship, playoff
-qualification, and every exact final-placement probability. Counts remain the
-authoritative M2.6 counts. With `T` teams the monitored family contains
-`T * (T + 2)` binomial estimands: two outcomes and `T` placements for each team.
-The number of planned looks is derived exactly from the minimum, maximum, and
-evaluation interval. Each interval is a two-sided Wilson score interval using
-Bonferroni allocation across every metric and every planned look:
+The implementation retains observed complete-path counts and descriptive averages over complete paths when available. Those averages/placement counts are not unconditional forecasts from the full requested universe. Precision estimates for every exact placement are suppressed when reconciliation is incomplete. Zero observed successes in a complete batch is a real estimated frequency 0 with a nonzero uncertainty range; unavailable estimation is None, never a fabricated zero. See [INTERFACE](INTERFACE.md) for display units/null rules.
 
-`alpha_interval = (1 - family_confidence_level) / (monitored_metric_count * planned_look_count)`
+## Precision and stopping
 
-The reported interval confidence is `1 - alpha_interval`; endpoint events retain
-exact logical bounds of zero or one. Half-width is `(upper - lower) / 2`. This is
-a conservative family-wise policy over league outcomes and the entire configured
-sequential checking schedule; it does not require the league outcomes to be
-independent. League-wide convergence requires every monitored
-interval, for every team, to meet the configured half-width after the minimum
-path count. A single converged manager or outcome cannot stop the run.
+The governing default target is **95% family confidence and at most 0.5 probability-point half-width** (`C=0.95`, `h=0.005`), subject to the documented minimum/budget and representative benchmarking/calibration gate. This requirement is not replaced by looser editable execution or UI presets. Baseline monitors the accepted all-metric family below, which includes every team's championship probability; scenario stopping separately targets every team's paired championship delta. Keep confidence, absolute versus paired target, initial/increment limits, path ceiling and timing controls independently meaningful. Current explicit/profile choices and lack of a native profile wall-clock field are implementation scope, not proof every governing default/control is delivered. [WR-021](BACKLOG.md#wr-021-output-provenance-and-numerical-lifecycle) retains the outstanding default/evidence/time-control obligations. A maximum-path/time stop must report actual exposure and unmet targets rather than precision convergence.
 
-If any path is capability-incomplete, no unconditional probability or interval
-is emitted for any team and no complete-only denominator is substituted. With
-`require_complete=False`, the precision runner returns
-`incomplete_capabilities`; with `require_complete=True`, the underlying accepted
-M2.6 fail-fast behavior raises at the incomplete path. Invalid structural paths
-continue to fail rather than becoming a stopping result.
+`PrecisionConfiguration` requires confidence C strictly between 0 and 1, target absolute probability half-width h strictly between 0 and 1, positive minimum n_min, maximum n_max >= n_min and evaluation_interval d. Its fields are confidence_level (C), target_half_width (h), minimum_paths (n_min), maximum_paths (n_max) and evaluation_interval (d). It is caller configuration, not a league constant. `analyze_monte_carlo_precision()` analyzes a reconciled batch; `run_monte_carlo_to_precision()` executes contiguous chunks, first n_min then increments d capped at n_max. The simulation path_count must equal n_max. All configured teams are monitored.
 
-The precision configuration and complete analysis each have deterministic
-SHA-256 identities. Whole-range and partition-combined batches produce identical
-estimates and identities.
+There are `M = T * (T + 2)` estimands: championship, qualification and T placements per team. Planned looks:
 
-## M3.5 bounded parallel execution
+`L = 1 + ceil((n_max - n_min) / d)`
 
-`fantasy_football.monte_carlo_parallel` preserves the sequential M2.6 runner as
-the correctness reference and adds `run_monte_carlo_batch_parallel()`. Its
-`ParallelExecutionConfiguration` requires positive worker and paths-per-task
-limits plus an explicitly supported multiprocessing start method. The portable
-default is `spawn`; one effective worker deliberately uses the exact sequential
-implementation.
+`alpha_interval = (1 - C) / (M * L)`
 
-Workers receive the immutable snapshot, full run configuration, and outcome
-model once through the process initializer. Tasks contain only bounded tuples of
-path IDs, and workers return compact `MonteCarloPathSummary` tuples. The parent
-sorts asynchronously completed results by path ID, requires exact unique
-coverage, and delegates reconciliation to the same M2.6 aggregator. Inputs must
-be process-serializable; unsupported inputs fail before workers launch. Worker
-exceptions, invalid paths, and incomplete-capability behavior retain sequential
-fail-closed semantics.
+`z = NormalDist().inv_cdf(1 - alpha_interval / 2)`
 
-`ParallelMonteCarloExecutor` keeps one bounded pool alive across M3.4 precision
-checkpoints, avoiding repeated serialization and startup for the same immutable
-run. Each checkpoint still produces an ordinary `MonteCarloBatchResult` and is
-combined through the accepted identity and coverage checks. Worker count, chunk
-size, and completion order do not enter simulation fingerprints and cannot alter
-path-indexed draws. Runtime diagnostics are observational and are not part of
-deterministic result identity. Durable resume and distributed execution remain
-out of scope.
+For successes s and trials N, let p=s/N and D=1+z²/N. The implemented two-sided Wilson score interval is:
 
-## Evidence classification and limitations
+`center = (p + z²/(2*N)) / D`
 
-All output probabilities remain provisional structural Monte Carlo results, not
-fully calibrated forecasts. Wilson intervals quantify only finite path-sampling
-uncertainty under the selected outcome model. They do not quantify model-family,
-parameter, endpoint-revision, or calibration uncertainty. Player-weeks are conditionally
-independent and future availability is governed only by the existing deterministic
-engine and its explicit policies. The empirical model's historical pregame
-provenance limitation remains explicit. Durable checkpoints, paired trade
-scenarios, stochastic injuries, and correlations are deferred.
+`radius = z * sqrt(p*(1-p)/N + z²/(4*N²)) / D`
 
-## Initial performance baseline
+`lower = 0 if s=0 else max(0, center-radius)`
 
-Benchmarks ran sequentially under Python 3.12 on the development workstation.
-They are synthetic fixtures, not live-league forecasts:
+`upper = 1 if s=N else min(1, center+radius)`
 
-| Workload | Paths | Uninstrumented runtime | Throughput | Traced peak memory |
-|---|---:|---:|---:|---:|
-| 4 teams, no essential acquisition | 100 | 1.444 s | 69.3 paths/s | 548 KiB |
-| 14 teams, supported postseason | 20 | 1.064 s | 18.8 paths/s | 289 KiB |
-| 4 teams, transaction-active pool | 20 | 0.499 s | 40.1 paths/s | 114 KiB |
+`half_width = (upper-lower)/2`
 
-`tracemalloc` increased runtimes to 33.523, 15.697, and 10.492 seconds
-respectively and is reported only as memory instrumentation. Separately, 1,000
-14-team score-universe generations took 0.282 seconds (0.282 ms/path), showing
-that deterministic season mechanics—not key generation—dominate these fixtures.
-Exact M2.3 valuation can be substantially more expensive in larger contested
-transaction universes; no candidate truncation or legality shortcut was added.
+The method is wilson_score_bonferroni_familywise_v1; the reported per-interval confidence is 1-alpha_interval. Bonferroni allocation covers the planned league metric/look family without assuming independent team outcomes; Wilson remains the implemented score-interval approximation, not a newly proved exact finite-sample guarantee.
 
-The final identity/reconciliation benchmark combined two validated 50-path
-partitions 1,000 times in 4.095 seconds, or 4.10 ms per 100-path combination on
-the same workstation. This remains small beside complete path simulation.
+League-wide precision requires **every** monitored interval to meet h after the minimum, not one manager's convergence. Incomplete capability suppresses unconditional probabilities/intervals and convergence, with no complete-only denominator. Stopping reasons include precision_reached, maximum_paths_reached and incomplete_capabilities; the execution-profile layer also reports in_progress/cancelled. A finished/capped run need not meet its target. Report actual paths, method, confidence, achieved widths, stop reason and unmet metrics.
 
-M3.4's interval analysis of a reconciled synthetic four-team batch monitors 24
-metrics. Repeating the analysis 1,000 times took 0.269 seconds, or about 269
-microseconds per analysis. Retaining all 1,000 immutable results under
-`tracemalloc` peaked at 7.82 MiB (1.446 seconds instrumented). This isolates
-analysis overhead; it is not a live ESPN or complete-season throughput claim.
+All intervals quantify Monte Carlo path-sampling uncertainty **under the assumed model**, not forecast calibration, model/parameter uncertainty, ESPN revision risk or acceptance/claim probabilities.
 
-## M3.5 profiling and benchmark evidence
+## Paired scenario inference
 
-Before parallelization, `cProfile` on 20 synthetic four-team paths measured
-0.965 seconds and about 3.41 million calls. Path execution accounted for 0.960
-seconds cumulatively and the deterministic season coordinator for 0.957 seconds;
-snapshot validation reached through lineup and transaction mechanics was the
-dominant measured subcost. This supported independent path processes without
-changing accepted mechanics.
+`compare_completed_scenario_batches()` requires complete reconciled baseline/scenario batches with exactly equal path IDs and score-scenario SHA-256 for every pair. Equal model/player/week/seed/path draws are common random numbers; configuration/run identities may differ because ownership/state differs. Never discard unmatched paths or use independent samples as if paired.
 
-Run the reproducible synthetic matrix with:
+For a binary outcome define `d_i = scenario_i - baseline_i` in {-1,0,1}, with a improved, b worsened and N-a-b unchanged paths:
 
-```powershell
-python benchmarks/benchmark_monte_carlo_execution.py --path-multiplier 5
-```
+`delta = fsum(d_i)/N = (a-b)/N = p_scenario - p_baseline`
 
-Uninstrumented Python 3.12 results used five paths per task:
+Bound improvement probability a/N and worsening probability b/N separately using the Wilson method above, each allocated `alpha_direction = (1-C)/(2*M)` for the full one-comparison league metric family. If their intervals are [L_a,U_a] and [L_b,U_b], return:
 
-| Workload | Paths | 1 worker | 2 workers | 4 workers |
-|---|---:|---:|---:|---:|
-| 4 teams, no essential acquisition | 200 | 65.37 paths/s | 93.56 paths/s | 75.56 paths/s |
-| 4 teams, transaction-active | 100 | 31.16 paths/s | 50.64 paths/s | 38.47 paths/s |
-| 14 teams, supported postseason | 100 | 14.28 paths/s | 25.94 paths/s | 28.90 paths/s |
+`delta_lower = max(-1, L_a-U_b)`
 
-Small 40/20/20-path runs show startup costs: one worker achieved
-62.09/27.81/15.27 paths/s, two achieved 37.70/19.27/14.33, and four achieved
-19.03/9.34/9.29. Parallel mode is configurable, never an automatic speedup.
-On the 100-path 14-team fixture with two workers, chunks of 1, 5, and 20 achieved
-17.39, 28.03, and 19.04 paths/s. The benchmark exposes workload, worker, chunk,
-and path-multiplier controls.
+`delta_upper = min(1, U_a-L_b)`
 
-Optional `--trace-parent-memory` reports only parent Python allocations and
-explicitly makes its timings incomparable; it cannot measure aggregate child
-resident memory. The small traced matrix observed parent peaks below 0.55 MiB,
-but no total multiprocess memory claim is made without OS-level measurement.
-These are sanitized synthetic fixtures, not live ESPN forecasts.
+`paired_half_width = (delta_upper-delta_lower)/2`
 
-## M3.6 execution profiles and recovery
+This paired_discordance_wilson_bonferroni_familywise_v1 interval preserves small-sample/zero-discordance uncertainty. It is **not** constructed by subtracting standalone scenario/baseline Wilson endpoints. Standalone precision analyses remain separate. The one-comparison paired allocator uses M, not the standalone M*L schedule; repeated-look implications are below.
 
-`fantasy_football.monte_carlo_execution` adds runtime policy without placing
-execution choices in canonical league data. `QUICK_PROFILE` uses a 95% family
-confidence level, 3-percentage-point target half-width, 100 minimum and 1,000
-maximum paths, 100-path checks, two workers, and 25 paths per task.
-`DETAILED_PROFILE` uses 95%, 1 percentage point, 1,000 minimum and 10,000
-maximum paths, 500-path checks, four workers, and 50 paths per task. These are
-editable convenience profiles, not league rules or different statistical
-models. `SimulationExecutionProfile` supports fully explicit custom policies.
+Engine probabilities, deltas and widths are fractions: delta 0.02 is +2 **probability points**; h=0.005 is 0.5 probability points. Mathematical conversion to probability points multiplies a fraction by 100 exactly once. The existing API is a separate compatibility boundary: `*_probability_points` response values and `target_paired_half_width_probability_points` currently pass through engine values **without service-side scaling**; there is no conversion in that adapter. Baseline `target_half_width_probability` is an absolute fraction. Preserve the published DTO/storage behavior and [INTERFACE](INTERFACE.md) presentation contract; do not insert a new conversion during documentation transfer. [WR-017 unit compatibility review](BACKLOG.md#wr-017-query-export-and-unit-compatibility) retains the distinction between mathematical units and those legacy field names. [APPLICATION_SERVICE](APPLICATION_SERVICE.md#public-dtos-units-and-validation) owns actual public shape/units.
 
-`execute_monte_carlo_profile()` reuses M3.4 analysis and M3.5 workers. After
-each complete configured path range it reconciles the entire prefix, calculates
-the simultaneous league-wide intervals, and emits a
-`ProgressiveExecutionUpdate`. Intermediate updates carry `in_progress` and
-`is_final=False`; they never imply convergence. Final reasons are precision,
-maximum paths, incomplete capability, or explicit cancellation. The callback
-runs only after reconciliation and any configured durable checkpoint write.
+Every scenario reports all teams' championship/qualification/placement deltas. The requesting manager controls the ranking objective, not which teams are sampled or the all-team convergence requirement. [Manual scenarios](MANUAL_SCENARIOS.md#identity-and-evaluation) own roster completion/transaction meaning, not another estimator.
 
-`MonteCarloCheckpointStore` writes deterministic JSON beneath an explicitly
-approved local root (`outputs/` by default). It writes and flushes a temporary
-file, calls `fsync`, and atomically replaces the prior checkpoint. The compact
-document contains path summaries and precision history, not the canonical
-snapshot, ESPN payloads, credentials, or research rows. Custom roots are an
-explicit caller approval; normal private checkpoints remain beneath ignored
-`outputs/` and must not be committed.
+## Progressive search and multiplicity
 
-Recovery verifies the envelope SHA-256; schema; snapshot, league, and season;
-simulation and seed-bearing run identities; model ID and complete parameters;
-precision and execution-policy fingerprints; configured range; exact contiguous
-path prefix; every path invariant; and every saved precision checkpoint against
-a fresh calculation from its path evidence. Corruption, missing or overlapping
-paths, incompatible seeds/models/policies/workers/chunks, and malformed history
-fail before new paths run. A cancelled or externally interrupted run loses at
-most the currently executing range; the preceding atomic checkpoint remains
-recoverable. Resumed and uninterrupted runs retain identical final batches,
-intervals, checkpoint histories, stopping decisions, and analysis identities.
-M3.6 adds no cross-run completed-scenario cache or distributed recovery.
+`run_progressive_trade_search()` and family-neutral `evaluate_progressive_state_groups()` reuse paired evaluation. A completed initial stage gives every selected unique completed state the same path exposure against the shared baseline. Subsequent batches refine promising/ambiguous states, preserving common-path prefixes; no arrival-order precision advantage is approved. Generation coverage, state evaluation coverage, individual/all-team precision and ranking resolution are distinct.
 
-A reusable M3.5 worker pool is also bound to the seed-bearing run identity, not
-only the partition-compatible simulation fingerprint. This prevents a later
-batch from claiming a different master seed while workers still hold the seed
-installed at pool initialization. Path subsets may vary within the initialized
-range; the model, simulation policy, snapshot, and master seed may not.
+For K selected unique states and an initial/refinement/max path policy, use planned looks `L_search = 1 + ceil((maximum_paths_per_state - initial_paths) / refinement_batch_paths)`. Candidate-versus-leader comparisons use `A = max(1, K*(K-1)/2 * L_search)` unordered-pair/looks and allocate each discordance direction (1-C)/(2*A). Compare the requester's paired championship indicators on exact shared path prefixes, not overlapping standalone CIs. Keep at least minimum_finalist_states plus candidates whose candidate-minus-leader upper bound is >=0; reevaluate after refinement. Retain unresolved competitors instead of equating a noisy lead with a confirmed best.
 
-## M4 paired manual scenarios
+Finalist convergence checks **all teams' paired championship deltas** against target_paired_half_width; it does not require qualification/placement precision even though these are reported. State budgets/cancellation/path caps retain actual exposure, not invented scores for unevaluated states. Report competitive/finalist IDs and statuses (not_evaluated, initial, selected_for_refinement, precision_converged, maximum_paths_reached), evaluation_complete, precision_complete and ranking_resolved independently. Fully known/evaluated coverage is needed for a global ranking claim; a cap can leave all-team precision or ranking unresolved. The fixed-batch unified adapter makes no adaptive ranking/precision claim.
 
-`MonteCarloConfig.initial_evolving_state` optionally supplies a complete,
-validated first-week roster/availability state. Its full deterministic content
-is part of the simulation fingerprint. The season coordinator rejects a snapshot,
-week, IR-policy, or override mismatch before simulation. Baseline and completed
-manual scenarios therefore have distinct configuration/run identities while the
-M3.3 score keys remain identical for equal model, seed, path, player, season, and
-week.
+**Source-inspected inference gap:** progressive all-team paired precision repeatedly calls the one-comparison M4 interval with 2*M allocation; it does not add a planned-look or across-state multiplier to those displayed paired intervals. The separate candidate-selection contrasts do use 2*A. Therefore the latter policy cannot certify simultaneous repeated-look coverage of the former stopping/display intervals. The governing inference contract requires defensible sequential checking/finalist inference; [WR-025](BACKLOG.md#numerical-and-partial-evidence-obligations) retains this discrepancy for independent statistical review. D6 neither changes accepted mathematics nor declares that guarantee proven.
 
-M4 verifies equal score-scenario digests for every paired path and reports the
-mean binary path difference for championship, playoff qualification, and every
-final placement. Paired intervals conservatively difference simultaneous Wilson
-bounds for the improvement and worsening probabilities, with a Bonferroni family
-across both directions and all league metrics. They are reported separately from
-M3.4's standalone Wilson probability intervals. Both quantify path-sampling uncertainty only. Full details
-are in `MANUAL_SCENARIOS.md`.
+## Workers and bounded execution
 
-The reproducible recovery benchmark is:
+`run_monte_carlo_batch_parallel()` uses `ParallelExecutionConfiguration`: positive worker_count/paths_per_task, supported start_method (portable default spawn), optional positive max_in_flight_tasks. Effective workers cannot exceed task count; one effective worker uses the sequential reference. Snapshot/config/model must be process-serializable before launch.
 
-```powershell
-python benchmarks/benchmark_monte_carlo_recovery.py
-```
+`ParallelMonteCarloExecutor` initializes immutable inputs once per worker; tasks carry bounded path-ID tuples and return compact summaries. The parent sorts asynchronous results, checks exact coverage and delegates to the same aggregator. The reusable pool is bound to the seed-bearing **run identity**, not merely configuration identity; subsets may vary within its initialized range, but changing seed/model/snapshot/policy fails. Worker exceptions and invalid evidence fail closed.
 
-On the development workstation, a synthetic 100-path/five-checkpoint sequential
-run took 2.005 seconds without persistence and 2.400 seconds with persistence
-(0.394 seconds measured overhead). Its final checkpoint was 72,558 bytes. Full
-validation and recovery of all 100 paths took 0.029 seconds, executed zero new
-paths, and reproduced the final precision result exactly. These measurements are
-synthetic and filesystem-specific.
+Worker count/task size/completion order do not enter mathematical simulation fingerprints; supported sequential/parallel paths remain identical. Runtime timings are observational. An explicit positive max_in_flight_tasks limits pending submitted futures; None permits submission of every task in the finite batch. Worker count limits process concurrency, not queue size. The batch/checkpoint still retains compact per-path outcomes, so memory scales with path/team counts plus per-worker immutable copies. This is not a distributed execution system or constant-memory sufficient-statistic-only implementation.
+
+## Checkpoints and recovery
+
+`execute_monte_carlo_profile()` reuses precision analysis and the same sequential/pool paths. QUICK_PROFILE is editable C=0.95, h=0.03, minimum/maximum 100/1000, interval 100, two workers/25 paths per task. DETAILED_PROFILE is 0.95, 0.01, 1000/10000, interval 500, four workers/50 paths per task. Custom profiles are explicit. These convenience settings do not replace the governing [precision](#precision-and-stopping) default target of 0.5 probability points or its benchmarking/calibration gate; no rigid-mode/model distinction is introduced.
+
+After each complete range, reconcile the prefix, calculate precision and save any checkpoint before calling the progress observer. Intermediate updates are in_progress/is_final=False, never convergence. Cancellation is cooperative at completed-range boundaries; a hard interruption may lose the current range but must not double-count the retained prefix.
+
+`MonteCarloCheckpointStore` writes schema **1** deterministic JSON within an explicitly approved local root (ignored outputs/ by default): temporary file, flush/fsync, os.replace. Its SHA-256 envelope contains compact path summaries and precision history, not snapshots, raw ESPN responses, credentials or research rows. A hash detects stored integrity, not independent source authenticity.
+
+Before any new paths/writes, recovery checks envelope/schema, snapshot/league/season, simulation and seed-bearing run identities, full public model parameters, precision and execution-policy hashes, first path/max range, exact contiguous prefix, path invariants and every saved precision checkpoint recomputed from its prefix. Reject corruption, missing/duplicate paths, altered history and incompatible seed/model/partial evidence/policies.
+
+Execution-policy identity includes profile name, precision and complete parallel configuration (workers, task size, start method and in-flight limit). Thus two worker counts can produce equal mathematical paths yet be **incompatible for checkpoint resume**. Resume requires the saved execution policy, not just equal seed or path content. Compatible resumed and uninterrupted final batches, interval histories, stopping decisions and analysis identities agree. Loading an already final compatible checkpoint executes zero new paths.
+
+Durable **engine-level** resume is implemented; automatic restart/resume of interrupted HTTP analysis jobs is not. Application startup marks abandoned active jobs interrupted; [APPLICATION_SERVICE](APPLICATION_SERVICE.md) owns that lifecycle. The profile itself has path caps and a cancellation callback, not a native wall-clock-budget parameter; application timing limits are separate. The numerical store does not automatically delete successful checkpoints or expire abandoned ones; governing retention/cleanup requirements remain [WR-021 obligations](BACKLOG.md#numerical-and-partial-evidence-obligations). No cross-run completed-scenario cache is authorized.
+
+## Performance evidence
+
+The independently accepted LW2.3A checkpoint at d630887 retained production code after comparing accepted 86189da. No prepared-input cache/validation bypass was justified. Historical measurements are **Verified by tests**/synthetic benchmarks, not new live evidence or runtime promises.
+
+Python 3.12.10, Windows 11 build 26300, AMD64/16 logical CPUs; four-team fixture: 5 players/15 player-weeks/3 weeks; fourteen-team fixture: 14 players/56 player-weeks/4 postseason weeks with byes. Three repeats for 100/500/1000 paths, sequential and two spawn workers, tasks of 25; alternating V1/partial order and excluded warmup. Parallel timing includes startup/shutdown; host scheduling/power/background activity was uncontrolled.
+
+| 1000-path median | V1 seconds | Partial seconds | Partial overhead |
+|---|---:|---:|---:|
+| Four teams, sequential | 6.174 | 5.940 | -3.78% |
+| Four teams, two workers | 4.216 | 4.124 | -2.17% |
+| Fourteen teams, sequential | 18.009 | 17.017 | -5.51% |
+| Fourteen teams, two workers | 10.237 | 10.179 | -0.56% |
+
+The fourteen-team 100-path parallel case was +11.56%, versus +0.02% at 500 paths; startup/scheduling was not isolated. A 500-path sequential sample range of 5.124–11.543 seconds shows substantial noise. Full [four-team](../benchmarks/results/lw23a_baseline_four.json)/[fourteen-team](../benchmarks/results/lw23a_baseline_fourteen.json) artifacts retain all 72 timed batches, rates, repetitions and outliers.
+
+Separate cProfile runs overlap inclusive times: structural partial validation was ~3–5% of profiled partial path time; composition self time 0.0058/0.0113 seconds per 100 four-/fourteen-team paths. Repeated validations, lineup checks, indexing and companion serialization were real costs, but a hypothetical half-reduction targeted only ~1.5–2.5% before replacement guard costs. First-week partial execution also skips ordinary optimization/transactions. No arbitrary indexing attribution or sustained net slowdown was established.
+
+At 1000 paths sampled parent-plus-child RSS was 55.74–60.94 MiB sequential, 129.13–137.01 MiB with two workers; sampling every 10ms can miss peaks/double-count shared pages and is not USS or incremental allocation. Earlier draw-only empirical evidence (5000 scenarios/0.784 seconds, 7.42 MiB traced retained results) is not season throughput. Earlier MC/recovery/startup measurements remain [immutable historical context](https://github.com/tdkelley2001/fantasy_football/blob/06b408f818d3debd52c6a86793f21dfd697f50f8/docs/MONTE_CARLO.md), not universal estimates.
+
+The [benchmark harness](../benchmarks/benchmark_partial_week.py) and [detailed reference](../benchmarks/results/lw23a_verify_four_team_reference.json)/[retained](../benchmarks/results/lw23a_verify_four_team_retained.json) artifacts preserve exact path/score/standings/postseason/draw comparisons. These pre-WR-022 hashes belong to their recorded code/model; loading three old coordinator modules alone does not restore an old outcome model. Historical replay needs the recorded implementation, not relabeling corrected Normal output as old. Representative full-pool/transaction-heavy profiling must precede any run/worker-lifetime preparation proposal (WR-008). No D6 benchmark or optimization is claimed.
+
+## Review obligations
+
+[BACKLOG](BACKLOG.md#numerical-and-partial-evidence-obligations) preserves sequential paired-coverage review (WR-025), numerical checkpoint retention and pre-run/runtime/precision release gates (WR-021), and source-authenticated model evaluation (WR-019). No output probability is a calibrated release forecast merely because tests pass or sampling intervals are narrow. D6 preserves all historical goldens and does not change distributions, inference, worker policy, checkpoint schemas or numerical identities.
+
+Implementation: [Monte Carlo](../src/fantasy_football/monte_carlo.py), [precision](../src/fantasy_football/monte_carlo_precision.py), [workers](../src/fantasy_football/monte_carlo_parallel.py), [recovery](../src/fantasy_football/monte_carlo_execution.py), [paired comparison](../src/fantasy_football/scenario_evaluator.py), [progressive state evaluation](../src/fantasy_football/trade_search.py). [CONTRIBUTING](../CONTRIBUTING.md#change-based-verification-matrix) selects actual regression suites; the PR records this package's commands/results.
