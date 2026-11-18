@@ -1877,7 +1877,7 @@ def retrieve_bundle(
     nfl_scoreboard = _fetch_nfl_scoreboard(settings.season, current_week)
     automatically_detected = first_simulation_week is None
     if automatically_detected:
-    LOGGER.info("ESPN refresh stage=%s", "automatic_boundary")
+        LOGGER.info("ESPN refresh stage=%s", "automatic_boundary")
         periods, _, period_map = _parse_periods(initial_payload, first_week=min(all_weeks), final_week=final_week)
         del periods
         _, full_games = _translate_nfl_calendar(pro_schedule, first_week=min(all_weeks), final_week=final_week)
