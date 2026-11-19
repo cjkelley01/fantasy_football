@@ -858,7 +858,7 @@ def test_search_reference_explains_source_resource_and_index_lifetime_boundaries
         "bounded backpressure",
         "last ID",
         "garbage collection is only a safety net",
-        "Later evaluation/observer/export failures",
+        "the coordinator closes the index before propagating the original exception",
         "WR-026",
         "no promise of constant total memory",
         "not a durable checkpoint",
@@ -868,7 +868,7 @@ def test_search_reference_explains_source_resource_and_index_lifetime_boundaries
         assert boundary in document, boundary
     backlog = read("docs/BACKLOG.md")
     assert "## Search orchestration cleanup review" in backlog
-    assert "separately approve" in backlog.lower()
+    assert "Coordinator cleanup and fault-injection verification await independent acceptance." in backlog
 
 
 def test_current_navigation_evidence_homes_and_execution_limits_remain_explicit() -> (

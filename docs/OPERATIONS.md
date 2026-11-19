@@ -116,7 +116,7 @@ The projection/outcome model remains provisional. Matching draws reduce comparis
 | `outputs/runtime/war-room-shutdown.txt` | Run-specific shutdown control. |
 | `frontend/dist` | Generated frontend, not analytical persistence. |
 
-Databases can have WAL/SHM sidecars. An output directory is **not disposable**: snapshots and completed results persist after stop, subject to separate run-retention policy. Refresh history is process-local; numerical checkpoints and temporary search indexes are separate from durable app results. Browser localStorage holds selection; clearing it does not delete server data. Temporary search files are owned/closed by execution, not substitutes for snapshot backups.
+Databases can have WAL/SHM sidecars. An output directory is **not disposable**: snapshots and completed results persist after stop, subject to separate run-retention policy. Refresh history is process-local; numerical checkpoints and temporary search indexes are separate from durable app results. Browser localStorage holds selection; clearing it does not delete server data. War Room closes and removes temporary search indexes and sidecars when a search fails or after the application consumes the returned result.
 
 Keep `.env`, rule files, databases/sidecars, reports, research rows, checkpoints, logs/runtime data and user results private and out of Git. Protect custom paths too. Review staged filenames and sanitize shared evidence. Back up both databases using SQLite-safe practices with the application stopped. Never edit immutable snapshots, copy an actively written database or delete a live lease as a shortcut.
 
