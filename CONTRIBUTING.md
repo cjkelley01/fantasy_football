@@ -66,7 +66,7 @@ Merging upstream into a shared branch is the default; rebasing or rewriting publ
 
 ## Development environment and checks
 
-Use the sole [prerequisites and user setup](docs/OPERATIONS.md#installation-and-prerequisites) reference: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.19.0** for the full locked frontend toolchain. WR-003's broader installer/version-policy mismatch remains open. User configuration and launcher/CLI precedence live in [OPERATIONS](docs/OPERATIONS.md#league-configuration); do not duplicate them here.
+Use the sole [prerequisites and user setup](docs/OPERATIONS.md#installation-and-prerequisites) reference: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.x from 24.15.0** for the full locked frontend toolchain, with **24.19.0** as the contributor reference version. User configuration and launcher/CLI precedence live in [OPERATIONS](docs/OPERATIONS.md#league-configuration); do not duplicate them here.
 
 For contributor-controlled dependency installation from the repository root, the setup script's locked operations can also be run explicitly:
 

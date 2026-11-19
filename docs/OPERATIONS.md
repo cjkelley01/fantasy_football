@@ -11,7 +11,7 @@ War Room runs on a trusted local Windows machine and retrieves ESPN data **read-
 
 ## Installation and prerequisites
 
-Use Windows with PowerShell 5.1 or 7, Git, a private writable checkout, and 64-bit Python 3.12 with the `py` launcher. Python **3.12.10** and Node **24.19.0** are the previously tested contributor environment, not a claim about all versions or a new clean-machine pass. Node/npm must support the full locked frontend toolchain. The installer accepts a broader range than that toolchain supports: **WR-003 remains unresolved**. Do not update locks, force installation or bypass engine checks as a setup fix.
+Use Windows with PowerShell 5.1 or 7, Git, a private writable checkout, and 64-bit Python 3.12 with the `py` launcher. Use **Node.js 24.x, starting at 24.15.0**, with `npm.cmd` for the locked frontend build and tests. Setup checks these prerequisites before installing dependencies. Python **3.12.10** and Node **24.19.0** are the contributor reference versions. Do not update locks, force installation or bypass engine checks as a setup fix.
 
 From a fresh checkout:
 
@@ -142,7 +142,7 @@ Foreground development servers are not launcher-owned: stop them with Ctrl+C in 
 
 | Symptom | Safe next step |
 |---|---|
-| Wrong Python / Node or dependency error | Check the prerequisite versions above; preserve the error and rerun locked setup. Do not force installs or regenerate locks. WR-003 remains open. |
+| Wrong Python / Node or dependency error | Check the prerequisite versions above; preserve the error and rerun locked setup. Do not force installs or regenerate locks. |
 | Windows npm native-file lock | Close your own Vite/test processes normally before setup; do not kill unknown processes. |
 | Missing environment/frontend build | Run setup; `-VerifyOnly` checks existing assets but does not install/build. Match custom environment/start paths. |
 | Port occupied / ownership mismatch | Choose an available loopback port or stop the verified owned instance. No foreign process should be terminated. |
@@ -159,4 +159,4 @@ Foreground development servers are not launcher-owned: stop them with Ctrl+C in 
 
 Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1), [ownership helpers](../scripts/local-runtime.ps1), [settings](../src/fantasy_football/config.py), [server](../src/fantasy_football/app/server.py), [refresh](../src/fantasy_football/app/refresh.py), [publication](../src/fantasy_football/snapshot_store.py) and [inspection](../src/fantasy_football/snapshot_cli.py). They are not a new clean-machine/live/process certification. Previously observed versions are historical evidence; D2 does not install dependencies or certify new environments.
 
-WR-003, fresh-machine acceptance under WR-021, missing live/rule evidence and provisional projections remain limitations. Synthetic checks use isolated temporary stores, not a browser demo or live proof. See [current capabilities](../README.md#current-capabilities), [backlog](BACKLOG.md) and [verification tiers](../CONTRIBUTING.md#tier-1-fast-local-checks). No release-policy or configuration change is implied.
+Fresh-machine acceptance under WR-021, missing live/rule evidence and provisional projections remain limitations. Synthetic checks use isolated temporary stores, not a browser demo or live proof. See [current capabilities](../README.md#current-capabilities), [backlog](BACKLOG.md) and [verification tiers](../CONTRIBUTING.md#tier-1-fast-local-checks). No release-policy or configuration change is implied.
