@@ -13,26 +13,7 @@ War Room runs on a trusted local Windows machine and retrieves ESPN data **read-
 
 Use Windows with PowerShell 5.1 or 7, Git, a private writable checkout, and 64-bit Python 3.12 with the `py` launcher. Python **3.12.10** and Node **24.19.0** are the previously tested contributor environment, not a claim about all versions or a new clean-machine pass. Node/npm must support the full locked frontend toolchain. The installer accepts a broader range than that toolchain supports: **WR-003 remains unresolved**. Do not update locks, force installation or bypass engine checks as a setup fix.
 
-From a fresh checkout:
-
-```powershell
-git clone https://github.com/tdkelley2001/fantasy_football.git
-cd fantasy_football
-py -3.12 --version
-node --version
-npm.cmd --version
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\setup-local.ps1
-```
-
-Run subsequent commands from the repository root. The execution-policy option applies to that process only; it does not require administrator rights or change permanent policy. Respect organizational restrictions. Installation downloads dependencies unless cached; it is not an offline check. ESPN credentials are unnecessary for installation/startup.
-
-Setup creates `.venv`, installs `requirements.lock`, installs this package with `--no-deps`, runs `npm ci --no-audit --no-fund`, builds `frontend/dist`, creates private output/log/runtime directories and checks import/assets. Repeating it reinstalls/rebuilds without deleting SQLite data. Coordinate use of the checkout and close your own Vite processes normally before rerunning it on Windows.
-
-```powershell
-.\scripts\setup-local.ps1 -VerifyOnly
-```
-
-This checks an existing import/build and creates output directories; it neither installs/builds nor proves a clean-machine setup. Optional setup parameters are `-PythonLauncher` and `-VirtualEnvironment`; a custom environment requires the matching `-PythonExecutable` on start. Contributor dependency commands are in [development environment](../CONTRIBUTING.md#development-environment-and-checks).
+Follow the single [user installation/launch procedure](USER_GUIDE.md#install-and-launch-safely), with [developer installation and VerifyOnly/custom-environment details](../CONTRIBUTING.md#development-environment-and-checks). Those procedures preserve the locked setup, private directories, process-only execution-policy option, credential-free startup and non-destructive rerun boundaries. They are source-verified, not a new clean-machine execution. The contracts below remain authoritative pending final adoption; use USER_GUIDE for operating steps rather than maintaining another setup recipe here.
 
 ## League configuration
 

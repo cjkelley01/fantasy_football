@@ -66,7 +66,7 @@ Merging upstream into a shared branch is the default; rebasing or rewriting publ
 
 ## Development environment and checks
 
-Use the sole [prerequisites and user setup](docs/OPERATIONS.md#installation-and-prerequisites) reference: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.19.0** for the full locked frontend toolchain. WR-003's broader installer/version-policy mismatch remains open. User configuration and launcher/CLI precedence live in [OPERATIONS](docs/OPERATIONS.md#league-configuration); do not duplicate them here.
+Use the [prerequisites and user setup](docs/USER_GUIDE.md#install-and-launch-safely) procedure: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.19.0** for the full locked frontend toolchain. WR-003's broader installer/version-policy mismatch remains open. User configuration and launcher/CLI precedence are explained in [USER_GUIDE](docs/USER_GUIDE.md#configure-your-espn-league); OPERATIONS retains its authority pending final adoption.
 
 For contributor-controlled dependency installation from the repository root, the setup script's locked operations can also be run explicitly:
 
@@ -79,6 +79,40 @@ npm.cmd --prefix frontend run build
 ```
 
 No activation is needed with explicit interpreter paths. These commands download/install dependencies and generate assets; they are not routine offline verification. Close your own Vite processes first. Do not freshly resolve extras, regenerate locks, upgrade packages or bypass engine checks as an incidental repair. A failed import/build is evidence to diagnose, not permission to change dependencies.
+
+The setup wrapper repeats these locked installs/builds without deleting SQLite data. `scripts/setup-local.ps1 -VerifyOnly` instead checks the existing package import/frontend assets and creates private output directories; it neither installs nor builds. Optional `-PythonLauncher` selects the launcher used with `-3.12`; `-VirtualEnvironment` selects the environment directory. Pass its matching `-PythonExecutable` to `start-local.ps1` when using a custom environment. These are source-verified procedures, not a newly executed clean-machine installation.
+
+### Reproducing research evaluations
+
+After separately authorized data preparation, the pure in-memory workflow is:
+
+```python
+from fantasy_football.historical_dataset import (
+    build_historical_research_dataset,
+    historical_research_dataset_to_json,
+)
+from fantasy_football.outcome_distribution_research import (
+    outcome_distribution_report_to_json,
+    research_outcome_distributions,
+)
+
+dataset = build_historical_research_dataset(samples, sources)
+report = research_outcome_distributions(dataset, configuration)
+dataset_bytes = historical_research_dataset_to_json(dataset)
+report_bytes = outcome_distribution_report_to_json(report)
+```
+
+Construct and validate `samples`, `sources` and `configuration` explicitly using the [T2 research interfaces](docs/TECHNICAL_REFERENCE.md#research-source-and-dataset-interfaces). This is not a runnable empty-data example or a promotion recipe; the caller controls private writes. [RESEARCH](docs/RESEARCH.md#reproduction-and-artifacts) retains the governing reproduction contract.
+
+Historical materialization is **NETWORKED**, read-only retrieval requiring explicit authorization for the selected league, seasons and private output. It is not part of credential-free verification. Only within that authorized scope, from the repository root:
+
+```powershell
+.venv\Scripts\python.exe -m fantasy_football.historical_research_workflow --plan docs/examples/m32_historical_research_plan.json --output-dir outputs/m32-evidence-local
+```
+
+Review the required [plan](docs/examples/m32_historical_research_plan.json): it explicitly selects season/week samples, observation windows, pagination and research configuration. Choose an absent or empty **child of ignored `outputs/`**; the workflow rejects other/nonempty destinations rather than overwriting evidence. It writes `historical-research-dataset.json`, `outcome-distribution-report.json`, `raw-player-pages-<season>-<week>.json`, `raw-scoring-<season>.json` and `retrieval-manifest.json`. The manifest records the normalized plan/digest, dataset/report identities and source request context; raw captures preserve parsed player/scoring responses, filters, UTC retrieval and scoring signatures. See [T2](docs/TECHNICAL_REFERENCE.md#evaluation-and-report-interfaces) for serialization/provenance boundaries.
+
+The coverage-only `historical_projection_audit` diagnostic does **not** materialize this dataset/report bundle. Neither selected observation windows nor retrospective retrieval authenticate pregame forecasts or calibrate a production model. [DATA D2](docs/DATA.md#research-source-trust) and [VALIDATION V3/V4](docs/VALIDATION.md#empirical-validity) retain those evidence and independent promotion limits. Keep credentials, raw responses, private player/league rows and generated outputs out of Git, including shared reports/screenshots. This procedure grants no retrieval authorization and records no new live execution. Credential-free [workflow tests](tests/test_historical_research_workflow.py) and [research tests](tests/test_outcome_distribution_research.py) establish implementation behavior only.
 
 ### Backend and Vite
 

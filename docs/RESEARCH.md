@@ -72,27 +72,7 @@ Promotion requires a reproducible decision record and independent acceptance aft
 
 ## Reproduction and artifacts
 
-Pure in-memory path after separately authorized data preparation:
-
-```python
-from fantasy_football.historical_dataset import build_historical_research_dataset, historical_research_dataset_to_json
-from fantasy_football.outcome_distribution_research import research_outcome_distributions, outcome_distribution_report_to_json
-
-dataset = build_historical_research_dataset(samples, sources)
-report = research_outcome_distributions(dataset, configuration)
-dataset_bytes = historical_research_dataset_to_json(dataset)
-report_bytes = outcome_distribution_report_to_json(report)
-```
-
-Sources/samples/configuration must be explicitly constructed and validated; this is not a fabricated sample or runnable empty-data promotion recipe. The caller controls private writes.
-
-The read-only **networked** materialization workflow is separately authorized work, not an offline verification command:
-
-```powershell
-.venv\Scripts\python.exe -m fantasy_football.historical_research_workflow --plan docs/examples/m32_historical_research_plan.json --output-dir outputs/m32-evidence-local
-```
-
-The plan chooses every season/week/window/configuration explicitly. The workflow reuses paginated historical parsing, captures canonical player/scoring responses, filters, UTC retrievals and scoring signatures, builds dataset then evaluates. Output must be a new/empty child under ignored outputs; it writes historical-research-dataset.json, outcome-distribution-report.json, raw-player-pages-<season>-<week>.json, raw-scoring-<season>.json and retrieval-manifest.json with plan/dataset/report digests and request context. It does not create authenticated captures: selected observation windows are not evidence of pregame timing. A coverage-only historical_projection_audit invocation does not materialize these artifacts. Keep credentials, raw responses and private player/league rows out of Git. No retrieval is authorized merely by this guide or D5.
+The developer-facing in-memory evaluation recipe and explicitly **NETWORKED** historical materialization command are maintained in [CONTRIBUTING](../CONTRIBUTING.md#reproducing-research-evaluations), including the required plan, absent/empty ignored output child, generated artifacts and private-data precautions. [T2](TECHNICAL_REFERENCE.md#evaluation-and-report-interfaces) records the input/output identities and provenance. This reference retains research authority: sources/samples/configuration must be explicit and validated, writes remain private, materialization requires separate authorization, selected windows do not authenticate pregame timing, and coverage-only diagnostics do not materialize evidence. Neither moving the procedure nor running it promotes a model.
 
 ## Sources and limitations
 

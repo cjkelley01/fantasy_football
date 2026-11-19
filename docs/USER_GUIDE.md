@@ -59,7 +59,7 @@ Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writabl
 
 Keep the service on loopback. Public hosting, proxies/port forwarding and untrusted shared-machine access are unsupported; local origin checks are not user authentication. Use [safe shutdown](#safe-shutdown-and-recovery) rather than stopping an unknown process.
 
-For an existing installation, optional `.\scripts\setup-local.ps1 -VerifyOnly` checks the prepared environment/assets and creates output directories; it does not install/build or prove a clean installation. Custom Python environments, path flags and developer setup are explained in [OPERATIONS](OPERATIONS.md#installation-and-prerequisites) and [CONTRIBUTING](../CONTRIBUTING.md#development-environment-and-checks).
+For an existing installation, optional `.\scripts\setup-local.ps1 -VerifyOnly` checks the prepared environment/assets and creates output directories; it does not install/build or prove a clean installation. Repeating ordinary setup reinstalls/rebuilds without deleting SQLite data. Close your own Vite processes normally first. Custom `-PythonLauncher`/`-VirtualEnvironment` setup and matching start `-PythonExecutable` are explained in [CONTRIBUTING](../CONTRIBUTING.md#development-environment-and-checks).
 
 ## Configure your ESPN league
 
@@ -78,20 +78,41 @@ For an existing installation, optional `.\scripts\setup-local.ps1 -VerifyOnly` c
    | `ESPN_S2` and `ESPN_SWID` | Leave both blank for public access, or supply both from your authorized private-league session. An incomplete pair is invalid; expired sessions may fail. |
    | `FANTASY_FOOTBALL_RULE_CONFIG_PATH` | Optional path to independently supported manual-rule YAML for browser refresh, described below. |
    | `SNAPSHOT_DB_PATH` | Optional Python settings/CLI database path; **does not configure the launcher**. |
+   | `LOG_LEVEL` | DEBUG, INFO, WARNING, ERROR or CRITICAL; default INFO. |
 
 3. Restart after deliberate configuration changes. Python settings read `.env`, then the process environment takes precedence, **including empty inherited values**. Editing the file may therefore leave an inherited setting active. Check names/settings privately; never paste cookie values into logs, issues, PRs or screenshots.
+
+The default settings file must exist when Python settings load; server startup itself does not load it. An empty SNAPSHOT_DB_PATH is invalid rather than a request for the default.
 
 ### Choose the intended local database
 
 For the launcher, explicit `-Database` overrides process `WAR_ROOM_DATABASE`, which overrides `outputs\fantasy_football.sqlite3`. It does not read `.env` for that choice. Publication/inspection CLIs instead use explicit `--database`, otherwise Python settings' `SNAPSHOT_DB_PATH`. If using both browser and CLI, deliberately point them at the same private file. Changing `.env` alone does not move launcher data. A different database can legitimately have an empty snapshot list.
 
-The optional `-Port`, `-NoBrowser`, database/log/runtime parameters and their precedence are listed in [launcher paths](OPERATIONS.md#launcher-paths-and-precedence). If you customize the runtime directory, use the matching directory with stop; do not discard its ownership metadata.
+Launcher parameters override process variables, then defaults; these settings do not come from `.env`:
+
+| Start parameter | Process variable | Default |
+|---|---|---|
+| `-Port` | `WAR_ROOM_PORT` | `8000` |
+| `-Database` | `WAR_ROOM_DATABASE` | `outputs\fantasy_football.sqlite3` |
+| `-Frontend` | `WAR_ROOM_FRONTEND` | `frontend\dist` |
+| `-LogDirectory` | `WAR_ROOM_LOG_DIRECTORY` | `outputs\logs` |
+| `-RuntimeDirectory` | `WAR_ROOM_RUNTIME_DIRECTORY` | `outputs\runtime` |
+
+Relative launcher paths resolve from the repository, where its child runs. `-PythonExecutable` defaults to `.venv\Scripts\python.exe`; `-ReadinessTimeoutSeconds` defaults to 30. `-NoBrowser` leaves opening the printed URL to you. For example:
+
+```powershell
+.\scripts\start-local.ps1 -Port 8123 -Database "D:\Private Fantasy Data\league.sqlite3" -NoBrowser
+# Open http://127.0.0.1:8123/ yourself.
+.\scripts\stop-local.ps1
+```
+
+Start refuses a foreign occupied port or a matching owned instance with different paths; stop before changing paths. If you customize the runtime directory, use matching `-RuntimeDirectory` on stop or retain the same `WAR_ROOM_RUNTIME_DIRECTORY` in that shell. Stop recovers port/database from authenticated metadata. Use a distinct runtime directory per deliberately separate instance. A custom snapshot path derives run history with `Path(database).with_suffix('.runs.sqlite3')`. Direct Python server defaults and CLI path differences are specified in [T8](TECHNICAL_REFERENCE.md#configuration-and-path-precedence).
 
 ### When ESPN cannot establish a rule
 
 Use manual rules only when independently supported evidence fills an allowed gap. For browser refresh, place validated YAML in an ignored local file such as `config/league_rules.local.yaml`, set `FANTASY_FOOTBALL_RULE_CONFIG_PATH`, then restart. Relative rule paths resolve from the working directory, not the settings file's parent. A valid profile does not prove a rule was applied: inspect the published capability/provenance findings.
 
-Do not copy synthetic fixture league settings, override known ESPN facts or invent bracket, tie, IR or acquisition mechanics to make a run start. Some valid league formats remain unsupported. [Rule authority](DATA.md#rules-and-manual-authority) and [manual-rule procedures](OPERATIONS.md#manual-league-rules) explain the boundary. Advanced retrieval CLIs require their own explicit `--manual-config`; they do not inherit that browser rule-path setting.
+Profile availability requires YAML to parse and validate for the configured league/season before it is advertised. Do not copy synthetic fixture league settings, override known ESPN facts or invent bracket, tie, IR or acquisition mechanics to make a run start. Some valid league formats remain unsupported. [Rule authority](DATA.md#rules-and-manual-authority) explains the boundary. Advanced retrieval CLIs require their own explicit `--manual-config`; they do not inherit that browser rule-path setting.
 
 ## Refresh and choose validated data
 
@@ -185,7 +206,7 @@ The current Simulation Center export downloads **run metadata JSON only**, not a
 | Temporary engine search scratch | Execution-owned indexes/queues; not permanent application history. Known later-failure cleanup work remains WR-026. |
 | Numerical recovery checkpoints | Independent numerical lifecycle/identity, not automatic application restart or an unlimited archive; cleanup/expiry obligations remain open. |
 | Explicit exported files | Your files; normal application/index cleanup must not silently delete or reimport them. |
-| Logs/runtime metadata | Private launcher logs in `outputs/logs` and ownership/control files in `outputs/runtime`; preserve them for authenticated stop/recovery. |
+| Logs/runtime metadata | Private `outputs/logs/war-room-<run-id>.stdout.log` / `.stderr.log`, plus `outputs/runtime/war-room-server.json` ownership and `war-room-shutdown.txt` control; preserve them for authenticated stop/recovery. |
 
 This is the accepted C13 storage distinction. An output directory is not disposable. Keep settings/cookies, manual rules, databases and WAL/SHM sidecars, research/diagnostic reports, logs/checkpoints and exports private and out of Git, including at custom paths. Browser preferences do not back up server results. Use SQLite-safe backups with the application stopped; do not copy an actively written database or remove a live lease. Exact storage/security contracts stay in [OPERATIONS](OPERATIONS.md#local-data-and-privacy) and [APPLICATION_SERVICE](APPLICATION_SERVICE.md#results-retention-and-ownership).
 
@@ -199,7 +220,9 @@ This is the accepted C13 storage distinction. An output directory is not disposa
 
    Supply the matching `-RuntimeDirectory` if customized. Stop authenticates the launcher-owned process and listener identity, requests cooperative shutdown and normally waits up to 20 seconds. Some upstream calls/active work can outlive bounded waits.
 2. If the verified owned process does not exit or has lost its listener, ordinary stop revalidates ownership and may recover only its authenticated process tree. Completed data remains; unfinished work is not silently resumed at restart. Use the printed diagnostics/private logs.
-3. If ownership is unverifiable, preserve the evidence and investigate. Do not kill guessed PIDs, delete runtime metadata/leases or weaken host checks. The optional `-PreserveOnTimeout` diagnostic switch deliberately leaves pending owned processes intact; follow [the full recovery procedure](OPERATIONS.md#shutdown-and-recovery).
+3. If ownership is unverifiable, preserve the evidence and investigate. Do not kill guessed PIDs, delete runtime metadata/leases or weaken host checks. The optional `.\scripts\stop-local.ps1 -PreserveOnTimeout` diagnostic command deliberately leaves pending authenticated processes intact. Inspect private logs, then rerun ordinary stop when ready for authenticated recovery; keep any custom runtime directory consistent.
+
+Start recognizes an already healthy matching instance but directs an owned process without its listener to stop/recovery. PID reuse, foreign listeners, altered commands and ambiguous or insufficient legacy metadata fail closed. Default refresh/analysis shutdown waits are one/two seconds; active synchronous work can outlive them, and a pending worker retains its lease until quiescent. Bounded waiting does not kill threads. See [T8/T9](TECHNICAL_REFERENCE.md#restart-leases-and-bounded-shutdown) for the executable ownership boundary; none of these instructions authorizes manual process termination.
 
 After a verified shutdown, use the normal start command to reopen. Foreground developer servers have separate terminal ownership; [CONTRIBUTING](../CONTRIBUTING.md#backend-and-vite) explains their workflow.
 
@@ -208,6 +231,8 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 | Symptom | Useful next step |
 |---|---|
 | Dependency/build failure | Confirm prerequisites and locked setup; preserve the exact error. Do not force installation, regenerate locks or assume the Node-policy gap is resolved. |
+| Windows native-file lock / missing import or frontend assets | Close your own Vite/test processes normally, rerun locked setup and match custom environment/start paths. VerifyOnly does not repair a missing build. |
+| Readiness timeout | Inspect the printed private stdout/stderr logs; retain ownership metadata and use authenticated stop/recovery if still alive. |
 | Empty snapshot selector | Check the exact database/league/season. A fresh store needs an authorized refresh; there is no bundled persistent demo loader. |
 | Profile/access failure | Check settings-file presence, identifiers, complete credential pair, inherited environment and manual-rule league/season privately. Never share credentials to diagnose it. |
 | Unsafe week, unsupported rule or capability | Read the finding and source limits; do not invent data or pick another week to bypass it. |
@@ -215,7 +240,7 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 | Slow/capped run or pending cancellation | Inspect actual work/resource/precision status; page size is not a computation bound. Cancellation is cooperative, not a reason to kill an unknown process. |
 | Missing older result | Check current snapshot, browser history limits, expiry and deletion. A viewer cannot reconstruct data that is no longer retained. |
 
-For specific error paths use [OPERATIONS troubleshooting](OPERATIONS.md#common-failures). Current source/rule limits, provisional projections, WR-003 and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
+Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. OPERATIONS retains its governing contracts pending adoption. Current source/rule limits, provisional projections, WR-003 and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
 
 ## Advanced existing CLI workflows
 
@@ -237,6 +262,6 @@ For an existing authorized local snapshot store, explicit paths avoid launcher/s
 
 Replace `<snapshot-id>` with a listed UUID and change the database argument to the actual private file. These inspect/verify stored evidence; they do not refresh ESPN or establish current live eligibility. Keep output private. Verification failure needs diagnosis, not editing an immutable row. [DATA](DATA.md#immutable-storage) owns read integrity.
 
-The manual-scenario CLI consumes strict scenario JSON and explicit snapshot/output/model/sampling settings; use the current [CLI contract](MANUAL_SCENARIOS.md#cli-and-operating-boundary), not an invented draft-export/import workflow. The offline `python -m fantasy_football.m0_verification --json` checks historical evidence roles, not live compatibility or release readiness.
+The manual-scenario CLI consumes strict scenario JSON and explicit snapshot/output/model/sampling settings; use the current [CLI contract](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries), not an invented draft-export/import workflow. The offline `python -m fantasy_football.m0_verification --json` checks historical evidence roles, not live compatibility or release readiness.
 
 Actually running `live_scoring_diagnostic --json`, `espn_adapter` or snapshot publication retrieval performs **live network access**. The **adapter and snapshot-publication CLIs** require an explicit `--first-simulation-week` and explicit `--manual-config` when needed; they are not the browser's automatic refresh flow. The diagnostic inspects evidence and does not accept that week argument. A manual week still must pass source/boundary validation. Live credentials/private stores are not needed for developer synthetic checks and are not required for credential-free documentation verification. Follow [retrieval boundaries](OPERATIONS.md#manual-league-rules) before any authorized live operation.

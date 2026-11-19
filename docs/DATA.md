@@ -192,6 +192,12 @@ For partial-week execution, canonical roster slots establish observed assignment
 
 [Standings and period authority](PARTIAL_WEEK.md#standings-and-period-authority) requires full current-period membership, including pre-horizon weeks, and verified cutoff/carry evidence. A canonical calendar, stored hash or NFL final flag cannot alone establish historical standings incorporation. M4 explains once-only composition; these source constraints do not create automatic live translation, conditional distributions or public partial-week execution.
 
+### Transaction eligibility authority
+
+Source observations do not automatically become transaction permissions. The sole implemented release/strict-IR evidence boundary is `validate_eligibility_evidence_artifact()` in [evolving_state.py](../src/fantasy_football/evolving_state.py). It checks exact artifact bytes against canonical `SourceReference.payload_sha256`, view `transaction_eligibility_evidence_v1`, parameter `evidence_contract=transaction_eligibility_v1`, payload schema `transaction_eligibility_v1` and coherent player, boundary, condition and status claims. Only registered immutable determinations returned by this validator may enter execution; retaining a source label or recomputing a hash is insufficient.
+
+The accepted classification is currently **`verified_by_tests`**, yielding **`validated_fixture`** evidence for controlled sanitized fixtures, not Verified live ESPN permission. `verified_source` is reserved for a future source-specific parser; callers cannot mint it by relabeling a response. `approved_assumption` applies only to the approved projection-based IR policy. No approved assumption supplies strict future IR eligibility or releases ESPN waiver holds. Advancing a hypothetical cycle does not clear a source hold; affirmative drop/release authority remains distinct from ownership, slot eligibility and structural completion assumptions. [M5](METHODOLOGY.md#roster-evolution-and-transaction-rules) explains analytical policy, [T4](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries) the execution boundary, and [TRANSACTIONS](TRANSACTIONS.md#eligibility-evidence-trust-boundary) retains current authority. WR-023/024 and unsupported source permissions remain open.
+
 ## Evidence-role register and verification references
 
 ### M0 consumer dependency

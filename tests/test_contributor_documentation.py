@@ -172,8 +172,11 @@ def test_current_setup_routes_replace_conflicting_user_guidance() -> None:
     assert 'pip install -e ".[app]"' not in _read("docs/APPLICATION_SERVICE.md")
 
 
-def test_operations_launcher_defaults_match_supported_start_parameters() -> None:
-    document = _read("docs/OPERATIONS.md")
+@pytest.mark.parametrize("document_path", ("docs/OPERATIONS.md", "docs/USER_GUIDE.md"))
+def test_operations_launcher_defaults_match_supported_start_parameters(
+    document_path: str,
+) -> None:
+    document = _read(document_path)
     script = _read("scripts/start-local.ps1")
     rows = re.findall(
         r"^\| `(-\w+)` \| `(WAR_ROOM_\w+)` \| `([^`]+)` \|$",

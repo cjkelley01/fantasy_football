@@ -2,6 +2,8 @@
 
 This is the current user-workflow and frontend reference. [README](../README.md) owns product capabilities/release status; [OPERATIONS](OPERATIONS.md) owns setup, configuration, private data and shutdown. Presentation does not own estimators, legality, API definitions or process recovery. Approved requirements in this domain and linked [BACKLOG](BACKLOG.md) obligations remain binding under [engineering governance](../AGENTS.md#authority-and-precedence).
 
+For operating steps use [USER_GUIDE](USER_GUIDE.md); [T5](TECHNICAL_REFERENCE.md#http-api-dtos-and-evolution) and [T9](TECHNICAL_REFERENCE.md#application-and-frontend-securityintegration-contracts) describe executable transport and integration. This focused product reference retains visual hierarchy, responsive/interaction standards and accessibility requirements. Its implemented workspace descriptions are distinct from desired design treatments and outstanding WR-017 acceptance; component tests do not establish actual-browser accessibility. Current authority precedence is unchanged.
+
 - [Visual standards](#visual-first-design-standard), [journey](#user-journey-and-navigation)
 - [Identity and requests](#identity-and-request-isolation), [interpretation and units](#analytical-presentation-and-units)
 - [League Overview](#league-overview), [Opportunity Explorer](#opportunity-explorer)
