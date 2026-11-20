@@ -1,4 +1,4 @@
-"""P7d architecture, ownership and security boundaries, not release evidence."""
+"""architecture, ownership and security boundaries, not release evidence."""
 
 from __future__ import annotations
 
@@ -98,7 +98,7 @@ OWNERSHIP = {
     "Execution scratch": (
         "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
         "explicitly closed",
-        "WR-026",
+        "Search Scratch Cleanup",
     ),
     "Application history": (
         "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
@@ -108,7 +108,7 @@ OWNERSHIP = {
     "Numerical checkpoints": (
         "TECHNICAL_REFERENCE.md#numerical-execution-workers-and-checkpoints",
         "Compatible engine resume",
-        "WR-021",
+        "Release Acceptance",
     ),
     "User exports": (
         "#existing-exports-and-deferred-parity-requirements",
@@ -157,8 +157,8 @@ def test_lifecycle_does_not_promote_unimplemented_cleanup_or_resume() -> None:
         "launcher process recovery",
         "no analysis-style compensation around executor.submit",
         "misleading pre-publication wording",
-        "WR-026",
-        "WR-021",
+        "Search Scratch Cleanup",
+        "Release Acceptance",
         "Dedicated expiry/count-purge evidence",
         "Garbage collection is not acceptance",
         "P0/P1",
@@ -328,7 +328,7 @@ def test_frontend_isolation_replay_and_accessibility_claims_keep_their_limits() 
         "no extra conversion",
         "not calibration/model-error bands",
         "Refresh dialog focus containment is not equivalently verified",
-        "WR-017",
+        "Interface and Action UX",
         "not replace, actual-browser",
         "legacy metadata",
         "weaker compatibility",

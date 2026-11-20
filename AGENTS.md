@@ -4,7 +4,7 @@
 
 [TECHNICAL_REFERENCE](docs/TECHNICAL_REFERENCE.md) owns executable interfaces, numerical/model/state identity, API/query contracts, workers/checkpoints, lifecycle and application integration. [VALIDATION](docs/VALIDATION.md) owns implementation/numerical/scientific/decision assurance and promotion/release evidence. The M0 verifier checks seven roles under contract 3 against DATA, METHODOLOGY, VALIDATION and TECHNICAL_REFERENCE, preserving historical identities without authenticating historical bytes offline.
 
-These rules apply to all future work in this repository. The owning [domain references](README.md#understand-the-system) define approved analytical requirements and modeling contracts; [BACKLOG](docs/BACKLOG.md) owns outstanding work. Follow [CONTRIBUTING](CONTRIBUTING.md) for feature-branch/fork synchronization and reviewed pull requests into the original repository's `main`. Do not push changes directly to authoritative main. No GitHub Issues/Projects/labels/templates or repository-setting changes are needed for the repository-native work list.
+These rules apply to all future work in this repository. The owning [domain references](README.md#understand-the-system) define approved analytical requirements and modeling contracts; [BACKLOG](docs/BACKLOG.md) owns outstanding work. Follow [CONTRIBUTING](CONTRIBUTING.md) for feature-branch/fork synchronization and pull requests into the original repository's `main`. Routine PR approvals are optional; explicitly gated methodology or high-impact decisions still require agreement. Do not push changes directly to authoritative main. No GitHub Issues/Projects/labels/templates or repository-setting changes are needed for the repository-native work list.
 
 ## Authority and precedence
 
@@ -13,7 +13,7 @@ These rules apply to all future work in this repository. The owning [domain refe
 3. BACKLOG preserves approved unimplemented requirements, unresolved defects, proposals and their evidence/approval gates. A proposal is not implementation authorization.
 4. AGENTS and CONTRIBUTING define engineering, verification and review discipline. A passing test or documentation edit does not approve a model, relax a technical constraint or release V1.
 5. README owns product scope/navigation; TECHNICAL_REFERENCE T1 owns system boundaries and INTERFACE owns product/design standards. Neither silently authorizes new functionality or overrides a technical owner.
-6. Ordinary implementation history and former governing/audit sources live in immutable Git revisions and reviewed PRs. Retiring a report does not discard its transferred requirements, source evidence, independent oracles or release/scientific obligations.
+6. Ordinary implementation history and former governing/audit sources live in immutable Git revisions and accepted PRs. Retiring a report does not discard its transferred requirements, source evidence, independent oracles or release/scientific obligations.
 
 ## Scope and sequencing
 

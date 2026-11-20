@@ -81,7 +81,9 @@ def _check_transport_boundaries(text: str) -> None:
     assert "not the json all-team/statistical/configuration payload" in query, (
         "CSV summary scope"
     )
-    assert "WR-017".lower() in query, "Richer query/export obligations remain open"
+    assert "Interface and Action UX".lower() in query, (
+        "Richer query/export obligations remain open"
+    )
 
 
 def test_transport_semantics_allow_editorial_changes_without_changing_contracts():
@@ -561,10 +563,10 @@ def test_scope_identity_and_future_parity_obligations_remain_explicit() -> None:
         "not every later page filter",
         "same ownership alone is not equivalence",
         "per state",
-        "WR-026",
+        "Search Scratch Cleanup",
         "the result handle does not",
         "trusted-process pickle",
-        "WR-017",
+        "Interface and Action UX",
         "not the JSON all-team/statistical/configuration payload",
         "all candidates receiving any Monte Carlo evaluation",
         "current filtered subset",

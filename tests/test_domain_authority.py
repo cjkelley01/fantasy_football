@@ -100,11 +100,23 @@ def _validate(documents: dict[str, str]) -> None:
         for fragment in fragments:
             assert fragment in documents[path], (path, fragment)
     backlog = documents["docs/BACKLOG.md"]
-    for number in (2, 3, 8, 17, 18, 19, 21, 23, 24, 25, 26):
+    for title in (
+        "Documentation Consolidation",
+        "Node Toolchain Compatibility",
+        "Simulation Performance Evaluation",
+        "Interface and Action UX",
+        "League Rules and Transaction Timing Evidence",
+        "Outcome Calibration and Scientific Promotion",
+        "Release Acceptance",
+        "Exact Finite-Score Objective Ordering",
+        "Incomplete-Valuation Transaction Selection",
+        "Progressive Inference Coverage",
+        "Search Scratch Cleanup",
+    ):
         row = next(
             line
             for line in backlog.splitlines()
-            if line.startswith(f"| WR-{number:03d} |")
+            if line.startswith("| ") and title in line.split("|")[1]
         )
         assert "| Done |" not in row, row
     for path in PERMANENT:

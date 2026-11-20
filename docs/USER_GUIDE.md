@@ -33,7 +33,7 @@ Partial-week composition and fully-unstarted partial Monte Carlo are **engine-on
 
 ## Install and launch safely
 
-Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writable checkout, 64-bit Python 3.12 with the `py` launcher, and Node/npm compatible with the locked frontend toolchain. Python **3.12.10** and Node **24.19.0** are the recorded tested contributor versions, not a fresh clean-machine certification. The installer's broader Node acceptance does not resolve the known **WR-003** toolchain-policy mismatch. Preserve dependency errors rather than forcing installation or updating locks.
+Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writable checkout, 64-bit Python 3.12 with the `py` launcher, and Node/npm compatible with the locked frontend toolchain. Python **3.12.10** and Node **24.19.0** are the recorded tested contributor versions, not a fresh clean-machine certification. The installer's broader Node acceptance does not resolve the known **Node Toolchain Compatibility** toolchain-policy mismatch. Preserve dependency errors rather than forcing installation or updating locks.
 
 1. Open PowerShell and obtain the repository:
 
@@ -106,7 +106,7 @@ Relative launcher paths resolve from the repository, where its child runs. `-Pyt
 .\scripts\stop-local.ps1
 ```
 
-Start refuses a foreign occupied port or a matching owned instance with different paths; stop before changing paths. If you customize the runtime directory, use matching `-RuntimeDirectory` on stop or retain the same `WAR_ROOM_RUNTIME_DIRECTORY` in that shell. Stop recovers port/database from authenticated metadata. Use a distinct runtime directory per deliberately separate instance. A custom snapshot path derives run history with `Path(database).with_suffix('.runs.sqlite3')`. Direct Python server defaults and CLI path differences are specified in [T8](TECHNICAL_REFERENCE.md#configuration-and-path-precedence).
+Start refuses a foreign occupied port or a matching owned instance with different paths; stop before changing paths. If you customize the runtime directory, use matching `-RuntimeDirectory` on stop or retain the same `WAR_ROOM_RUNTIME_DIRECTORY` in that shell. Stop recovers port/database from authenticated metadata. Use a distinct runtime directory per deliberately separate instance. A custom snapshot path derives run history with `Path(database).with_suffix('.runs.sqlite3')`. Direct Python server defaults and CLI path differences are specified in [Configuration and path precedence](TECHNICAL_REFERENCE.md#configuration-and-path-precedence).
 
 ### When ESPN cannot establish a rule
 
@@ -129,7 +129,7 @@ The advanced **Use advanced manual week override** is an explicit override, not 
 
 If refresh reports a late error, inspect any publication identity/committed indicator before retrying: publication may already have committed. Closing the refresh view stops observation, not server work; publication itself cannot be cancelled. Reopen the panel to inspect the process-local refresh. [Refresh semantics](TECHNICAL_REFERENCE.md#commit-and-cancellation-boundaries) describe the precise limitation.
 
-Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. The WR-017 **current-state-first simplification remains a proposal**; current snapshot selection and history remain explicit.
+Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. The Interface and Action UX **current-state-first simplification remains a proposal**; current snapshot selection and history remain explicit.
 
 ## Run a baseline and evaluate hypothetical changes
 
@@ -162,11 +162,11 @@ An authorized action, a structural hypothesis and a conditional waiver are diffe
 
 A championship probability is an estimated frequency under the chosen model and snapshot. **Illustration only:** a change from 10% to 12% is an increase of **2 probability points**, not a 2% relative increase. Those numbers are not an observed War Room result.
 
-There is an important current **unit-compatibility limitation**: the browser labels paired changes/intervals `pp` using values supplied by the API without extra scaling, while legacy paired fields pass through engine fraction values. For example, a supplied difference of `0.02` can be displayed as `0.02 pp` although the mathematical change is 2 probability points. Do not assume the printed paired `pp` scale has already been reconciled with displayed percentage probabilities or precision targets. Check the supplied baseline/scenario context and the [current unit contract](TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility); its correction is separately gated under [WR-017](BACKLOG.md#wr-017-query-export-and-unit-compatibility). This guide changes neither units nor inputs.
+There is an important current **unit-compatibility limitation**: the browser labels paired changes/intervals `pp` using values supplied by the API without extra scaling, while legacy paired fields pass through engine fraction values. For example, a supplied difference of `0.02` can be displayed as `0.02 pp` although the mathematical change is 2 probability points. Do not assume the printed paired `pp` scale has already been reconciled with displayed percentage probabilities or precision targets. Check the supplied baseline/scenario context and the [current unit contract](TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility); its correction is separately gated under [Interface and Action UX](BACKLOG.md#query-export-and-unit-compatibility). This guide changes neither units nor inputs.
 
 Use the supplied **paired** interval for a hypothetical comparison. Do not subtract endpoints from two standalone probability intervals to construct one. Different seeds/models/paths or snapshots are not a matched comparison simply because you selected the same manager. Current supported comparisons are the engine's within-analysis paired outputs and Explorer's same-search path tray, not a general saved-scenario comparison library.
 
-Confidence intervals describe **Monte Carlo sampling uncertainty** under the configured model. They do not establish player-model calibration, real-world accuracy, causal certainty or optimal decisions. More paths cannot repair missing source evidence or a wrong model. Repeated-look paired precision has an unresolved statistical review boundary under WR-025; narrow displayed intervals are not a blanket certification. [numerical methodology](METHODOLOGY.md#paired-comparisons-and-probability-units) owns the numerical definitions.
+Confidence intervals describe **Monte Carlo sampling uncertainty** under the configured model. They do not establish player-model calibration, real-world accuracy, causal certainty or optimal decisions. More paths cannot repair missing source evidence or a wrong model. Repeated-look paired precision has an unresolved statistical review boundary under Progressive Inference Coverage; narrow displayed intervals are not a blanket certification. [numerical methodology](METHODOLOGY.md#paired-comparisons-and-probability-units) owns the numerical definitions.
 
 ### Read status before ranking
 
@@ -203,7 +203,7 @@ The current Simulation Center export downloads **run metadata JSON only**, not a
 |---|---|
 | Immutable snapshot SQLite, normally `outputs/fantasy_football.sqlite3` | Published source evidence remains after shutdown. Do not edit canonical rows or remove it to retry an analysis. |
 | Application run SQLite, normally `outputs/fantasy_football.runs.sqlite3` | Separately bounded retained runs/results/lease state. Custom snapshot databases have an adjacent `.runs.sqlite3` file. Expiry/deletion follows current policy, not perpetual history or a promised continuous cleanup timer. |
-| Temporary engine search scratch | Execution-owned indexes/queues; not permanent application history. Known later-failure cleanup work remains WR-026. |
+| Temporary engine search scratch | Execution-owned indexes/queues; not permanent application history. Known later-failure cleanup work remains Search Scratch Cleanup. |
 | Numerical recovery checkpoints | Independent numerical lifecycle/identity, not automatic application restart or an unlimited archive; cleanup/expiry obligations remain open. |
 | Explicit exported files | Your files; normal application/index cleanup must not silently delete or reimport them. |
 | Logs/runtime metadata | Private `outputs/logs/war-room-<run-id>.stdout.log` / `.stderr.log`, plus `outputs/runtime/war-room-server.json` ownership and `war-room-shutdown.txt` control; preserve them for authenticated stop/recovery. |
@@ -240,7 +240,7 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 | Slow/capped run or pending cancellation | Inspect actual work/resource/precision status; page size is not a computation bound. Cancellation is cooperative, not a reason to kill an unknown process. |
 | Missing older result | Check current snapshot, browser history limits, expiry and deletion. A viewer cannot reconstruct data that is no longer retained. |
 
-Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, WR-003 and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
+Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, Node Toolchain Compatibility and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
 
 ## Advanced existing CLI workflows
 

@@ -1,4 +1,4 @@
-"""P7a schemas, trust examples and scoped reader/authority boundaries."""
+"""schemas, trust examples and scoped reader/authority boundaries."""
 
 from __future__ import annotations
 

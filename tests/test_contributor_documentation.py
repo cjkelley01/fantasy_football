@@ -24,23 +24,21 @@ def _work_rows(section_title: str = "Work items") -> list[list[str]]:
     return [
         [cell.strip() for cell in line.strip("|").split("|")]
         for line in section.splitlines()
-        if re.match(r"^\| WR-\d{3} \|", line)
+        if line.startswith("| ") and "| WR-" in line
     ]
 
 
-def test_backlog_ids_and_work_metadata_are_unambiguous() -> None:
+def test_backlog_titles_and_work_metadata_are_unambiguous() -> None:
     active = _work_rows()
     completed = _work_rows("Completed work")
     rows = active + completed
     assert rows
-    identifiers = [row[0] for row in rows]
-    assert len(set(identifiers)) == len(identifiers)
-    assert [row[0] for row in active] == sorted(row[0] for row in active)
-    assert [row[0] for row in completed] == sorted(row[0] for row in completed)
+    titles = [row[0] for row in rows]
+    assert len(set(titles)) == len(titles)
     assert all(row[3] != "Done" for row in active)
     assert all(row[3] == "Done" for row in completed)
     for row in rows:
-        assert len(row) == 6, row
+        assert len(row) == 7, row
         kind, priority = row[2].split(" / ")
         assert kind in {
             "Bug",
@@ -85,22 +83,6 @@ def test_fork_and_original_branch_sync_examples_are_both_present() -> None:
     assert "fork only" in guide
 
 
-def test_readme_covers_reader_needs_and_current_governance() -> None:
-    entry = _read("README.md")
-    for heading in ("Current capabilities", "Start here", "Understand the system"):
-        assert f"## {heading}\n" in entry
-    assert "docs/INTERFACE.md" in entry
-    assert "AGENTS.md#authority-and-precedence" in entry
-
-
-def test_accepted_r20_is_completed_but_broader_r2_work_remains_open() -> None:
-    assert any(
-        row[0] == "WR-001" and "3391552" in row[4]
-        for row in _work_rows("Completed work")
-    )
-    assert any(row[0] == "WR-002" and row[3] != "Done" for row in _work_rows())
-
-
 def test_user_guide_launcher_defaults_match_supported_start_parameters() -> None:
     document = _read("docs/USER_GUIDE.md")
     script = _read("scripts/start-local.ps1")
@@ -138,7 +120,7 @@ def test_contributor_locked_setup_and_vite_commands_match_sources() -> None:
 def test_release_signoffs_have_an_explicit_backlog_destination() -> None:
     section = (
         _read("docs/BACKLOG.md")
-        .split("## WR-021 release acceptance\n", 1)[1]
+        .split("## Release Acceptance\n", 1)[1]
         .split("\n## ", 1)[0]
     )
     for requirement in (

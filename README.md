@@ -6,7 +6,7 @@ ESPN access is **read-only**. War Room **never submits real transactions**, pred
 
 ## Current capabilities
 
-The default decision objective is **expected championship probability**, evaluated for every manager using ESPN's player-specific future weekly projections, actual league rules and the current snapshot. Paired season analysis measures downstream qualification, seeding, waiver competition and placement consequences; the published aggregate outputs are a documented subset of the broader [required output contract](docs/BACKLOG.md#wr-021-output-provenance-and-numerical-lifecycle). Secondary objectives remain future scope. War Room converts ESPN means into uncertain league seasons; it does not initially aim to outperform those player-mean forecasts. ESPN is the sole initial projection source. Another source requires demonstrated incremental value and independent approval as a versioned official model, not an automatic missing-data fallback.
+The default decision objective is **expected championship probability**, evaluated for every manager using ESPN's player-specific future weekly projections, actual league rules and the current snapshot. Paired season analysis measures downstream qualification, seeding, waiver competition and placement consequences; the published aggregate outputs are a documented subset of the broader [required output contract](docs/BACKLOG.md#output-provenance-and-numerical-lifecycle). Secondary objectives remain future scope. War Room converts ESPN means into uncertain league seasons; it does not initially aim to outperform those player-mean forecasts. ESPN is the sole initial projection source. Another source requires demonstrated incremental value and independent approval as a versioned official model, not an automatic missing-data fallback.
 
 | Availability | What you can use |
 |---|---|
@@ -21,7 +21,7 @@ Canonical snapshots preserve source provenance and historical schema reads witho
 
 ## Limitations and release status
 
-War Room is **not formally released**. Accepted engine/workspace implementation does not constitute release approval. **M8.4 release disposition remains pending**, including follow-up review and current clean-machine acceptance under [WR-021](docs/BACKLOG.md#wr-021-release-acceptance).
+War Room is **not formally released**. Accepted engine/workspace implementation does not constitute release approval. **M8.4 release disposition remains pending**, including follow-up review and current clean-machine acceptance under [Release Acceptance](docs/BACKLOG.md#release-acceptance).
 
 Exact valuation and action search can be expensive. A completed run can miss precision targets; incomplete paths/capabilities, candidate/evaluation coverage and unresolved rankings remain visible. A top displayed candidate need not be globally best or executable. Numerical checkpoint/resume exists; interrupted application jobs are classified, not automatically resumed. Active batches or synchronous ESPN calls can outlive cooperative shutdown waits; recovery requires authenticated launcher ownership.
 
@@ -29,7 +29,7 @@ The service binds to loopback on a trusted local machine. Host/Origin checks are
 
 ## Start here
 
-- [User guide](docs/USER_GUIDE.md): install, configure, select validated data, run analyses, interpret results and shut down safely. Installation/startup needs no ESPN credentials; retrieval requires authorized access. Tested versions and unresolved WR-003 setup limitations are recorded there.
+- [User guide](docs/USER_GUIDE.md): install, configure, select validated data, run analyses, interpret results and shut down safely. Installation/startup needs no ESPN credentials; retrieval requires authorized access. Tested versions and unresolved Node Toolchain Compatibility setup limitations are recorded there.
 - [Interface](docs/INTERFACE.md): product design, workspace interactions, visual hierarchy, responsive behavior and accessibility standards, with implemented behavior and remaining acceptance distinguished.
 - [Contributing](CONTRIBUTING.md): branch/fork collaboration, developer setup, verification and independent PR review. [AGENTS](AGENTS.md) defines standing engineering and evidence rules.
 - [Backlog](docs/BACKLOG.md): outstanding work and exact evidence/approval gates; a proposal is not implementation authorization.

@@ -1,4 +1,4 @@
-"""P7b assurance evidence and exact outstanding acceptance, not release proof."""
+"""assurance evidence and exact outstanding acceptance, not release proof."""
 
 from __future__ import annotations
 
@@ -99,7 +99,7 @@ def _check_empirical_validity(text: str) -> None:
         "incumbent approved version",
         "selection bias and runtime regression",
         "no single score promotes all components",
-        "wr-019",
+        "outcome-calibration-and-scientific-promotion",
     ):
         assert requirement in promotion, (
             f"Lost independent promotion gate: {requirement}"
@@ -171,13 +171,13 @@ EVIDENCE = {
         "METHODOLOGY.md#exact-projected-lineup-objective-and-ties",
         "lineup_optimizer.py",
         "test_lineup_optimizer.py",
-        "WR-023",
+        "Exact Finite-Score Objective Ordering",
     ),
     "I2": (
         "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
         "weekly_transactions.py",
         "test_weekly_transactions.py",
-        "WR-024",
+        "Incomplete-Valuation Transaction Selection",
     ),
     "I3": (
         "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
@@ -195,7 +195,7 @@ EVIDENCE = {
         "METHODOLOGY.md#frozen-scoring-and-standings",
         "weekly_engine.py",
         "test_postseason.py",
-        "WR-014",
+        "Partial-Season History and Multiweek Support",
     ),
     "I6": (
         "TECHNICAL_REFERENCE.md#permission-and-realization-interfaces",
@@ -246,7 +246,7 @@ EVIDENCE = {
         "identical observed",
     ),
     "O1": (
-        "BACKLOG.md#wr-008-representative-performance-and-diagnostics",
+        "BACKLOG.md#simulation-performance-evaluation",
         "benchmark_app_backend.py",
         "test_backend_validation.py",
         "not universal predictions",
@@ -267,7 +267,7 @@ EVIDENCE = {
         "BACKLOG.md#retention-decision",
         "search_orchestration.py",
         "test_application_documentation.py",
-        "WR-026",
+        "Search Scratch Cleanup",
     ),
     "O5": (
         "TECHNICAL_REFERENCE.md#restart-leases-and-bounded-shutdown",
@@ -334,7 +334,7 @@ def test_operational_gates_match_existing_backlog_without_closing_it() -> None:
     source = _plain(_read("docs/BACKLOG.md"))
     for gate in GATES:
         assert gate.lower() in source.lower(), gate
-    assert "WR-021 disposition remain open" in text
+    assert "Release Acceptance disposition remain open" in text
     assert "P0 recovery disposition remains open" in text
     assert "manual-rule configuration follow-ups" in text
     assert "independent reviewer explicitly accepts/rejects" in text
@@ -405,11 +405,11 @@ def test_current_normal_identity_and_missing_policy_are_not_historical_draw_keys
         (
             1,
             (
-                "WR-023",
+                "Exact Finite-Score Objective Ordering",
                 "1e30",
                 "precision 28",
                 "Fraction",
-                "WR-024",
+                "Incomplete-Valuation Transaction Selection",
                 "determination_complete=False",
                 "no zero substitution",
                 "Dominance enabled **and disabled**",
@@ -419,7 +419,7 @@ def test_current_normal_identity_and_missing_policy_are_not_historical_draw_keys
         (
             2,
             (
-                "WR-025",
+                "Progressive Inference Coverage",
                 "comparison_count=T*(T+2)",
                 "no planned-look/across-state factor",
                 "cannot certify",
@@ -437,7 +437,7 @@ def test_current_normal_identity_and_missing_policy_are_not_historical_draw_keys
                 "realized simulator replacements",
                 "misranking/decision error and cost",
                 "Candidate coverage, state evaluation coverage, numerical precision and ranking resolution",
-                "WR-025",
+                "Progressive Inference Coverage",
                 "No universal threshold, CRPS-only or synthetic-test-based promotion",
                 "counterparty agreement or claim success",
             ),
@@ -445,7 +445,7 @@ def test_current_normal_identity_and_missing_policy_are_not_historical_draw_keys
         (
             5,
             (
-                "WR-026",
+                "Search Scratch Cleanup",
                 "garbage collection is not acceptance",
                 "not a continuous sweeper",
                 "abandoned-checkpoint expiration",
@@ -470,7 +470,7 @@ def test_release_gate_inventory_retains_all_nine_current_checklist_obligations()
     None
 ):
     text = _chapter(_read("docs/VALIDATION.md"), HEADINGS[5])
-    source = _chapter(_read("docs/BACKLOG.md"), "WR-021 release acceptance")
+    source = _chapter(_read("docs/BACKLOG.md"), "Release Acceptance")
     source_rows = re.findall(r"^\| ([^|]+) \|", source, re.MULTILINE)[1:]
     source_to_destination = {
         "Automated release verification": "Automated release verification",
@@ -485,7 +485,7 @@ def test_release_gate_inventory_retains_all_nine_current_checklist_obligations()
     }
     assert set(source_rows) == set(source_to_destination)
     release = text.split("### Release acceptance remains pending", 1)[1].split(
-        "WR-021 also retains", 1
+        "Release Acceptance also retains", 1
     )[0]
     destination_rows = re.findall(r"^\| ([^|]+) \|", release, re.MULTILINE)[1:]
     assert len(destination_rows) == 9
@@ -495,7 +495,9 @@ def test_release_gate_inventory_retains_all_nine_current_checklist_obligations()
         "pip check",
         "npm audit at high threshold",
         "no audit-fix or policy relaxation",
-        "WR-002/003/004",
+        "Documentation Consolidation",
+        "Node Toolchain Compatibility",
+        "Contributor Verification and CI",
         "process tests run once",
         "independent reviewer",
     ):

@@ -4,12 +4,12 @@ This reference owns source interpretation, canonical evidence/validation, tempor
 
 D1–D6 separate raw observations, validated semantics and permission to execute. The M0 register binds substantive DATA/METHODOLOGY/VALIDATION/TECHNICAL_REFERENCE evidence homes under contract 3; publication or a source digest alone does not grant analytical capability.
 
-- [D1: Data lifecycle and source provenance](#data-lifecycle-and-source-provenance)
-- [D2: Source trust, coverage and research data](#source-trust-coverage-and-research-data)
-- [D3: Inputs, transformations and league-rule authority](#inputs-transformations-and-league-rule-authority)
-- [D4: Quality, canonical invariants and immutable publication](#quality-canonical-invariants-and-immutable-publication)
-- [D5: Current-week temporal evidence and permissions](#current-week-temporal-evidence-and-permissions)
-- [D6: Evidence-role register and verification references](#evidence-role-register-and-verification-references)
+- [Data lifecycle and source provenance](#data-lifecycle-and-source-provenance)
+- [Source trust, coverage and research data](#source-trust-coverage-and-research-data)
+- [Inputs, transformations and league-rule authority](#inputs-transformations-and-league-rule-authority)
+- [Quality, canonical invariants and immutable publication](#quality-canonical-invariants-and-immutable-publication)
+- [Current-week temporal evidence and permissions](#current-week-temporal-evidence-and-permissions)
+- [Evidence-role register and verification references](#evidence-role-register-and-verification-references)
 
 ## Data lifecycle and source provenance
 
@@ -41,7 +41,7 @@ Default retry policy allows at most two retries after the initial request for co
 
 Historical retrieval supplies what ESPN returns now, not proof of what a manager could know before a game. [research evidence's exact capture gate](DATA.md#research-source-trust) requires an externally provisioned manifest identity, retained exact payload bytes, capture strictly before the observation period, and identical player/season/week/projection/position/NFL-team rows. A source ID or caller-created hash alone cannot authenticate a row. Actuals need separate post-period source context. Authenticated row binding does not establish participation, a complete universe, unchanged historical scoring or scientific representativeness.
 
-[Coverage and leakage](VALIDATION.md#temporal-evaluation-and-support) keeps raw missing, explicit zero and policy-imputed zero separate. Missing-policy zero is not a forecast/error pair; a genuine ESPN zero can be. The dataset's source evidence label and temporal-provenance enum are independent of both numerical policy and model approval. Historical pairs remain unverified pregame; prospective capture requires independent operational trust provisioning, not just the tested validator. [V3](VALIDATION.md#empirical-validity) explains evaluation and promotion limits; [T2](TECHNICAL_REFERENCE.md#research-source-and-dataset-interfaces) records the typed interfaces.
+[Coverage and leakage](VALIDATION.md#temporal-evaluation-and-support) keeps raw missing, explicit zero and policy-imputed zero separate. Missing-policy zero is not a forecast/error pair; a genuine ESPN zero can be. The dataset's source evidence label and temporal-provenance enum are independent of both numerical policy and model approval. Historical pairs remain unverified pregame; prospective capture requires independent operational trust provisioning, not just the tested validator. [Empirical validity](VALIDATION.md#empirical-validity) explains evaluation and promotion limits; [Research source and dataset interfaces](TECHNICAL_REFERENCE.md#research-source-and-dataset-interfaces) records the typed interfaces.
 
 Coverage is computed from selected player-week rows, not caller totals: report raw projections, actuals, structural pairs, authenticated versus unverified pairs, missing forecasts, explicit zeros and disclosed policy imputation by season/week, raw position and descriptive projection bands. These audit bands are not universal thresholds or approved model strata. Weekly source-1/split-1 forecasts and source-0/split-1 actuals remain separate; period-zero totals are not weekly observations. Duplicate/wrong-context/nonfinite records and inconsistent scoring signatures reject rather than manufacture pairs.
 
@@ -96,7 +96,7 @@ Historical provenance: the 15 October 2026 M0.3 follow-up used current-week kona
 | Present positive | present | unchanged raw | espn | Yes |
 | Present finite negative | present | unchanged raw | espn | No |
 
-Availability is derived as `effective_projection > 0`. Values are finite, neither rounded nor clamped. The old M0 negative-value design question is resolved by the accepted canonical contract. This data rule does not floor realized scores. The [outcome-model owner](METHODOLOGY.md#player-outcome-generation-and-assumptions) owns WR-022 deterministic missing draws/public policy identity; [consolidated missing-policy evidence](METHODOLOGY.md#projection-classes-and-complete-outcome-universe) is checked with DATA/T2 by M0 contract 3. No position-average, injury-return or replacement projection fallback is permitted. Future weeks use currently returned ESPN projections without predicting revisions or applying horizon mean/variance factors.
+Availability is derived as `effective_projection > 0`. Values are finite, neither rounded nor clamped. The old M0 negative-value design question is resolved by the accepted canonical contract. This data rule does not floor realized scores. The [outcome-model owner](METHODOLOGY.md#player-outcome-generation-and-assumptions) owns Missing-Projection Numerical Compatibility deterministic missing draws/public policy identity; [consolidated missing-policy evidence](METHODOLOGY.md#projection-classes-and-complete-outcome-universe) is checked with DATA/T2 by M0 contract 3. No position-average, injury-return or replacement projection fallback is permitted. Future weeks use currently returned ESPN projections without predicting revisions or applying horizon mean/variance factors.
 
 #### Roster, scoring and transaction settings
 
@@ -196,7 +196,7 @@ For partial-week execution, canonical roster slots establish observed assignment
 
 Source observations do not automatically become transaction permissions. The sole implemented release/strict-IR evidence boundary is `validate_eligibility_evidence_artifact()` in [evolving_state.py](../src/fantasy_football/evolving_state.py). It checks exact artifact bytes against canonical `SourceReference.payload_sha256`, view `transaction_eligibility_evidence_v1`, parameter `evidence_contract=transaction_eligibility_v1`, payload schema `transaction_eligibility_v1` and coherent player, boundary, condition and status claims. Only registered immutable determinations returned by this validator may enter execution; retaining a source label or recomputing a hash is insufficient.
 
-The accepted classification is currently **`verified_by_tests`**, yielding **`validated_fixture`** evidence for controlled sanitized fixtures, not Verified live ESPN permission. `verified_source` is reserved for a future source-specific parser; callers cannot mint it by relabeling a response. `approved_assumption` applies only to the approved projection-based IR policy. No approved assumption supplies strict future IR eligibility or releases ESPN waiver holds. Advancing a hypothetical cycle does not clear a source hold; affirmative drop/release authority remains distinct from ownership, slot eligibility and structural completion assumptions. [M5](METHODOLOGY.md#roster-evolution-and-transaction-rules) explains analytical policy, [T4](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries) the execution boundary, and [transaction methodology](DATA.md#transaction-eligibility-authority) retains current authority. WR-023/024 and unsupported source permissions remain open.
+The accepted classification is currently **`verified_by_tests`**, yielding **`validated_fixture`** evidence for controlled sanitized fixtures, not Verified live ESPN permission. `verified_source` is reserved for a future source-specific parser; callers cannot mint it by relabeling a response. `approved_assumption` applies only to the approved projection-based IR policy. No approved assumption supplies strict future IR eligibility or releases ESPN waiver holds. Advancing a hypothetical cycle does not clear a source hold; affirmative drop/release authority remains distinct from ownership, slot eligibility and structural completion assumptions. [Roster evolution and transaction rules](METHODOLOGY.md#roster-evolution-and-transaction-rules) explains analytical policy, [Weekly integration and execution boundaries](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries) the execution boundary, and [transaction methodology](DATA.md#transaction-eligibility-authority) retains current authority. Exact Finite-Score Objective Ordering; Incomplete-Valuation Transaction Selection and unsupported source permissions remain open.
 
 ## Evidence-role register and verification references
 

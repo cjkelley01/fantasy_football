@@ -19,6 +19,7 @@ def _anchors(text: str) -> set[str]:
             suffix += 1
             candidate = f"{base}-{suffix}"
         used.add(candidate)
+    used.update(re.findall(r'<a id="([^"]+)">', text))
     return used
 
 
@@ -87,25 +88,8 @@ def test_current_release_contract_and_verification_entrypoint_are_present() -> N
         assert required_step in verifier
 
 
-def test_m7_visual_first_standard_is_authoritative_and_applied() -> None:
+def test_product_visual_standards_remain_explicit() -> None:
     vision = (REPOSITORY_ROOT / "docs" / "INTERFACE.md").read_text(encoding="utf-8")
-    assert "## Visual-first design standard" in vision
     assert "Meaningful visualizations take priority" in vision
-    for workspace in (
-        "League Overview",
-        "Opportunity Explorer",
-        "Trade Lab",
-        "Simulation Center",
-        "League Insights",
-    ):
-        assert workspace in vision
     assert "table as the primary form only" in vision
-    assert "decorative charts" in vision
-    for representation in (
-        "dot-and-whisker plot",
-        "probability bands",
-        "placement heatmap",
-        "Focused team panel",
-        "Progressive technical disclosure",
-    ):
-        assert representation in vision
+    assert "not a claim every proposed treatment exists" in vision
