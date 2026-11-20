@@ -50,7 +50,9 @@ def _validate_work_rows(rows: list[list[str]]) -> None:
         assert row[1] and row[4] and row[5]
     integration = rows[anchors.index("cgl-record-book-integration")]
     assert integration[3] == "Backlog"
-    assert "Roadmap direction approved; implementation is not authorized" in integration[4]
+    assert (
+        "Roadmap direction approved; implementation is not authorized" in integration[4]
+    )
 
 
 def test_backlog_titles_and_work_metadata_are_unambiguous() -> None:
