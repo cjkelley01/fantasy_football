@@ -634,8 +634,8 @@ def test_multiple_completed_teams_keep_fixed_points_with_matched_draws():
         )
 
 
-def test_current_and_delayed_exchanges_preserve_fixed_scores_and_matched_paths():
-    from fantasy_football.effective_trades import EffectiveTrade, TradeTransfer
+def _locked_trade_case():
+    from fantasy_football.effective_trades import TradeTransfer
 
     snapshot, config, model = _case()
     partial = config.partial_week
@@ -684,6 +684,13 @@ def test_current_and_delayed_exchanges_preserve_fixed_scores_and_matched_paths()
         ),
     )
     transfers = (TradeTransfer(1, 1, 2), TradeTransfer(2, 2, 1))
+    return snapshot, config, model, transfers
+
+
+def test_current_and_delayed_exchanges_preserve_fixed_scores_and_matched_paths():
+    from fantasy_football.effective_trades import EffectiveTrade, TradeTransfer
+
+    snapshot, config, model, transfers = _locked_trade_case()
     immediate = replace(config, effective_trades=(EffectiveTrade(15, transfers),))
     delayed = replace(config, effective_trades=(EffectiveTrade(16, transfers),))
     baseline, before = run_monte_carlo_path(
@@ -738,3 +745,80 @@ def test_current_and_delayed_exchanges_preserve_fixed_scores_and_matched_paths()
     assert run_monte_carlo_batch(snapshot, immediate, model) == run_monte_carlo_batch(
         snapshot, immediate, model
     )
+
+
+@pytest.mark.parametrize("week", (15, 16))
+def test_prepared_partial_trade_matches_reference_through_full_season(
+    week, monkeypatch
+):
+    from fantasy_football import monte_carlo as mc
+    from fantasy_football import scenario_evaluator as evaluator
+    from fantasy_football.effective_trades import EffectiveTrade
+    from fantasy_football.evolving_state import initialize_evolving_state
+    from fantasy_football.player_outcomes import PreparedNormalOutcomes
+
+    snapshot, config, model, transfers = _locked_trade_case()
+    initial = initialize_evolving_state(
+        snapshot,
+        scoring_week=snapshot.first_simulation_week,
+        ir_policy=config.ir_policy,
+    )
+    precision = PrecisionConfiguration(
+        0.95, 0.1, config.path_count, config.path_count, config.path_count
+    )
+    original_simulate = mc.simulate_deterministic_season
+    original_batch = evaluator.run_monte_carlo_batch
+    original_generate = PreparedNormalOutcomes.generate_scenario
+    traces = []
+    workspaces = []
+    generators = []
+
+    def record_season(*args, **kwargs):
+        season = original_simulate(*args, **kwargs)
+        traces.append(season)
+        return season
+
+    def record_batch(*args, **kwargs):
+        workspaces.append(kwargs["_lineup_workspace"])
+        return original_batch(*args, **kwargs)
+
+    def record_draws(prepared, path_index):
+        actual = original_generate(prepared, path_index)
+        assert actual == model.generate_scenario(
+            snapshot, master_seed=config.master_seed, path_index=path_index
+        )
+        generators.append(prepared)
+        return actual
+
+    def run():
+        return evaluator.evaluate_effective_trade_plan(
+            snapshot,
+            initial,
+            "prepared-equivalence",
+            config,
+            model,
+            precision,
+            (EffectiveTrade(week, transfers),),
+        )
+
+    monkeypatch.setattr(mc, "simulate_deterministic_season", record_season)
+    with monkeypatch.context() as reference:
+        reference.setattr(
+            PreparedNormalOutcomes, "supports", staticmethod(lambda model: False)
+        )
+        reference.setattr(
+            evaluator,
+            "run_monte_carlo_batch",
+            lambda *args, **kw: original_batch(*args),
+        )
+        expected = run()
+    reference_traces = tuple(traces)
+    traces.clear()
+
+    monkeypatch.setattr(evaluator, "run_monte_carlo_batch", record_batch)
+    monkeypatch.setattr(PreparedNormalOutcomes, "generate_scenario", record_draws)
+    assert run() == expected
+    assert tuple(traces) == reference_traces
+    assert len(workspaces) == 2 and workspaces[0] is workspaces[1]
+    assert len(generators) == 2 * config.path_count
+    assert all(generator is generators[0] for generator in generators)

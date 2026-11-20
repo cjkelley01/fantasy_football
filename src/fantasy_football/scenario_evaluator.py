@@ -22,7 +22,10 @@ from fantasy_football.evolving_state import (
     validate_evolving_state,
     initialize_evolving_state,
 )
-from fantasy_football.lineup_optimizer import optimize_starting_lineup
+from fantasy_football.lineup_optimizer import (
+    optimize_starting_lineup,
+    prepare_lineup_optimization,
+)
 from fantasy_football.monte_carlo import (
     MonteCarloBatchResult,
     MonteCarloConfig,
@@ -931,12 +934,19 @@ def evaluate_effective_trade_plan(
             "Lineup and ownership effects are evaluated at each effective boundary on each path.",
         ),
     )
+    # Both batches bind to the same snapshot object. The workspace retains
+    # immutable draw preparation and keyed valuation/ownership results.
+    workspace = prepare_lineup_optimization(snapshot)
     return compare_completed_scenario_batches(
         snapshot,
         baseline_state,
         description,
-        _run_batch(snapshot, baseline_config, model, None),
-        _run_batch(snapshot, hypothetical, model, None),
+        run_monte_carlo_batch(
+            snapshot, baseline_config, model, _lineup_workspace=workspace
+        ),
+        run_monte_carlo_batch(
+            snapshot, hypothetical, model, _lineup_workspace=workspace
+        ),
         precision,
         include_static_lineup_explanations=False,
     )

@@ -306,8 +306,12 @@ acquisitions remain indexed until the selected legal effect is materialized.
 
 `PreparedNormalOutcomes` reuses immutable historical JSON key fragments, preserving
 the full player-week universe, both SHA-256 counters and identical Box–Muller
-operations. It is not a new outcome model or identity. Overridden/custom models
-and partial-week inputs retain their existing generation interface. The common
+operations. The model and its identity are unchanged. The generator supports
+partial-week Normal runs and preserves the full draw universe. The reference
+season coordinator still composes fixed and remaining scores. Full-trace runs
+and overridden or custom models retain the ordinary generator. A timed trade
+comparison shares its snapshot-bound workspace between the two batches and
+reuses keyed ownership and lineup preparation. The common
 draw key is hashed once and its SHA-256 context copied before appending the two
 historical counter bytes; uniform conversion and floating-point operation order
 are unchanged. Prepared integer-coordinate JSON prefixes and finite-float

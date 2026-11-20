@@ -565,9 +565,12 @@ def run_monte_carlo_path(
                 _validate_pregame_partial_week(snapshot, config.partial_week)
             if lineup_workspace is None and not retain_result:
                 lineup_workspace = prepare_lineup_optimization(snapshot)
+            if lineup_workspace is not None and lineup_workspace.snapshot is not snapshot:
+                raise MonteCarloError(
+                    "lineup workspace belongs to a different canonical snapshot object"
+                )
             if (
                 lineup_workspace is not None
-                and config.partial_week is None
                 and not retain_result
                 and PreparedNormalOutcomes.supports(model)
             ):
