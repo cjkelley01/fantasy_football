@@ -519,6 +519,8 @@ def test_necessary_ir_placement_creates_capacity_without_unrelated_reshuffling()
             )
         ),
     )
+    _assert_compact_correction_effect_parity(snapshot, 1)
+    _assert_compact_executor_result_parity(snapshot)
     result = execute_weekly_essential_transactions(
         snapshot, _state(snapshot), _policy()
     )
@@ -648,6 +650,8 @@ def test_ir_placement_can_enable_activation_outside_acquisition_slot_namespace()
     assert production_values == oracle
     assert max(len(item.ledger) for item in oracle_states) >= 2
     assert diagnostic.correction_states >= 3
+    _assert_compact_correction_effect_parity(snapshot, 1)
+    _assert_compact_executor_result_parity(snapshot)
     result = execute_weekly_essential_transactions(snapshot, state, _policy())
     team_acquisitions = tuple(item for item in result.acquisitions if item.team_id == 1)
     assert team_acquisitions, tuple(
@@ -892,4 +896,215 @@ def test_reordered_state_is_deterministic_and_no_network(monkeypatch) -> None:
     assert first.state.roster_entries == second.state.roster_entries
     assert len({entry.player_id for entry in first.state.roster_entries}) == len(
         first.state.roster_entries
+    )
+
+
+def test_experimental_compact_acquisitions_match_reference_weekly_result() -> None:
+    """Full weekly search parity, including decisions, ledger, and diagnostics."""
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    policy = _policy(waivers=True)
+    expected = execute_weekly_essential_transactions(snapshot, state, policy)
+    actual = execute_weekly_essential_transactions(
+        snapshot,
+        state,
+        policy,
+        experimental_compact_acquisitions=True,
+    )
+    # Wall-clock instrumentation is nondeterministic; compare every other field.
+    assert replace(actual, valuation_seconds=0.0) == replace(
+        expected,
+        valuation_seconds=0.0,
+    )
+
+
+def test_indexed_optimistic_coverage_matches_reference_predicate() -> None:
+    """Cross-check the first compact weekly kernel across teams and candidates."""
+    from fantasy_football.compact_season_state import CompactSeasonState
+    from fantasy_football.compact_weekly_search import optimistic_coverage_possible
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+    from fantasy_football.prepared_season import prepare_season
+    from fantasy_football.weekly_transactions import _optimistic_coverage_possible
+
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    prepared = prepare_season(snapshot)
+    compact = CompactSeasonState.from_reference(prepared, state)
+    workspace = prepare_lineup_optimization(snapshot)
+    week = workspace.week_records[state.scoring_week]
+    projected_available = frozenset(
+        pid for pid, record in week.items() if record.projected_lineup_available
+    )
+    starters = tuple(slot.lineup_slot_id for slot in workspace.slots)
+    for team in snapshot.teams:
+        baseline = optimize_starting_lineup(
+            snapshot,
+            team.team_id,
+            state.scoring_week,
+            roster_entries=state.roster_entries,
+            workspace=workspace,
+        ).filled_starting_slot_count
+        for player in snapshot.players:
+            expected = _optimistic_coverage_possible(
+                snapshot,
+                state,
+                team.team_id,
+                player.player_id,
+                baseline,
+                workspace,
+            )
+            actual = optimistic_coverage_possible(
+                prepared,
+                compact,
+                team_id=team.team_id,
+                candidate_id=player.player_id,
+                baseline_filled=baseline,
+                starting_slot_ids=starters,
+                projected_available=projected_available,
+            )
+            assert actual == expected, (team.team_id, player.player_id)
+
+
+@pytest.mark.parametrize("compact_acquisitions", [False, True])
+def test_experimental_indexed_coverage_matches_complete_weekly_result(
+    compact_acquisitions: bool,
+) -> None:
+    """Indexed pruning must preserve complete weekly decisions and diagnostics."""
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    policy = _policy(waivers=True)
+    expected = execute_weekly_essential_transactions(
+        snapshot,
+        state,
+        policy,
+        experimental_compact_acquisitions=compact_acquisitions,
+    )
+    actual = execute_weekly_essential_transactions(
+        snapshot,
+        state,
+        policy,
+        experimental_compact_acquisitions=compact_acquisitions,
+        experimental_indexed_coverage=True,
+    )
+    assert replace(actual, valuation_seconds=0.0) == replace(
+        expected,
+        valuation_seconds=0.0,
+    )
+
+
+def test_compact_correction_graph_matches_reference_without_ir_moves() -> None:
+    from fantasy_football.compact_season_state import CompactSeasonState
+    from fantasy_football.compact_weekly_search import compact_correction_states
+    from fantasy_football.prepared_season import prepare_season
+    from fantasy_football.weekly_transactions import (
+        _correction_states,
+        _state_effect_key,
+    )
+
+    snapshot = _valuation_snapshot()
+    state = _state(snapshot)
+    prepared = prepare_season(snapshot)
+    for team in snapshot.teams:
+        reference = _correction_states(snapshot, state, team.team_id)
+        compact = compact_correction_states(
+            prepared,
+            CompactSeasonState.from_reference(prepared, state),
+            team.team_id,
+        )
+        assert {_state_effect_key(item) for item in reference} == {
+            _state_effect_key(item.to_reference()) for item in compact
+        }
+
+
+def _assert_compact_correction_effect_parity(snapshot, team_id: int) -> None:
+    """Compare complete IR correction effect sets, including reactive drops."""
+    from fantasy_football.compact_season_state import CompactSeasonState
+    from fantasy_football.compact_weekly_search import compact_correction_states
+    from fantasy_football.prepared_season import prepare_season
+    from fantasy_football.weekly_transactions import (
+        _correction_states,
+        _state_effect_key,
+    )
+
+    state = _state(snapshot)
+    prepared = prepare_season(snapshot)
+    reference = _correction_states(snapshot, state, team_id)
+    compact = compact_correction_states(
+        prepared,
+        CompactSeasonState.from_reference(prepared, state),
+        team_id,
+    )
+    assert {_state_effect_key(item) for item in reference} == {
+        _state_effect_key(item.to_reference()) for item in compact
+    }
+
+
+@pytest.mark.parametrize(
+    "snapshot_factory",
+    [
+        lambda: _valuation_snapshot(),
+        lambda: _overlap_snapshot(),
+    ],
+)
+def test_compact_correction_executor_matches_reference(snapshot_factory) -> None:
+    snapshot = snapshot_factory()
+    state = _state(snapshot)
+    expected = execute_weekly_essential_transactions(snapshot, state, _policy())
+    actual = execute_weekly_essential_transactions(
+        snapshot,
+        state,
+        _policy(),
+        experimental_compact_corrections=True,
+    )
+    assert replace(actual, valuation_seconds=0.0) == replace(
+        expected, valuation_seconds=0.0
+    )
+
+
+def _assert_compact_executor_result_parity(snapshot) -> None:
+    """Compare integrated transaction outcomes, excluding wall-clock timing."""
+    state = _state(snapshot)
+    reference = execute_weekly_essential_transactions(
+        snapshot,
+        state,
+        _policy(),
+    )
+    experimental = execute_weekly_essential_transactions(
+        snapshot,
+        state,
+        _policy(),
+        experimental_compact_corrections=True,
+    )
+    assert replace(experimental, valuation_seconds=0.0) == replace(
+        reference, valuation_seconds=0.0
+    )
+
+
+def test_opponent_search_cache_preserves_weekly_decisions_and_records_real_work() -> (
+    None
+):
+    """Compare complete operational outcomes with full-search reuse on and off."""
+    from fantasy_football.roster_value import opponent_search_diagnostics
+
+    snapshot = _valuation_snapshot(competing_teams=1, pool_values=(8.0, 6.0))
+    state = _state(snapshot)
+    policy = _policy(waivers=True)
+    with opponent_search_diagnostics(cache_enabled=False) as uncached_metrics:
+        uncached = execute_weekly_essential_transactions(snapshot, state, policy)
+    with opponent_search_diagnostics(cache_enabled=True) as cached_metrics:
+        cached = execute_weekly_essential_transactions(snapshot, state, policy)
+
+    from dataclasses import replace
+
+    # Wall-clock measurements are intentionally non-deterministic; all other
+    # fields, including decisions, state, ledger and diagnostics, must agree.
+    assert replace(cached, valuation_seconds=0.0) == replace(
+        uncached, valuation_seconds=0.0
+    )
+    assert uncached_metrics["hits"] == 0
+    assert uncached_metrics["misses"] > 0
+    assert cached_metrics["misses"] > 0
+    assert (
+        cached_metrics["actual_allocation_states"]
+        <= uncached_metrics["actual_allocation_states"]
     )

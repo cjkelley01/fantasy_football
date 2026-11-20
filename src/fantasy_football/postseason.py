@@ -409,12 +409,15 @@ def _validate_consolation_configuration(
 
 
 def resolve_postseason_seeds(
-    snapshot: LeagueSnapshot, standings: tuple[ModeledStanding, ...]
+    snapshot: LeagueSnapshot,
+    standings: tuple[ModeledStanding, ...],
+    *,
+    fallback_seed: int | None = None,
 ) -> tuple[PostseasonSeed, ...]:
     """Resolve seeds from modeled final standings, never snapshot seed fields."""
 
     validate_snapshot(snapshot)
-    table = rank_standings(snapshot, standings)
+    table = rank_standings(snapshot, standings, fallback_seed=fallback_seed)
     if table.unresolved_groups:
         groups = tuple(group.team_ids for group in table.unresolved_groups)
         raise PostseasonError(
@@ -517,10 +520,11 @@ def initialize_postseason(
     standings: tuple[ModeledStanding, ...],
     *,
     consolation_configuration: ConsolationLadderConfiguration | None = None,
+    fallback_seed: int | None = None,
 ) -> PostseasonState:
     """Initialize settings-driven championship and ESPN consolation graphs."""
 
-    seeds = resolve_postseason_seeds(snapshot, standings)
+    seeds = resolve_postseason_seeds(snapshot, standings, fallback_seed=fallback_seed)
     championship = snapshot.rules.championship
     tie_rule = next(
         (

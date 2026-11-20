@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, replace
-from enum import Enum
-from contextlib import nullcontext
 import hashlib
 import json
 import math
+from contextlib import nullcontext
+from dataclasses import asdict, dataclass, replace
+from enum import Enum
 from statistics import NormalDist
 
 from fantasy_football.canonical.model import LeagueSnapshot
+from fantasy_football.lineup_optimizer import prepare_lineup_optimization
 from fantasy_football.monte_carlo import (
     MonteCarloBatchResult,
     MonteCarloConfig,
     combine_monte_carlo_batches,
     run_monte_carlo_batch,
 )
-from fantasy_football.player_outcomes import PlayerOutcomeModel
 from fantasy_football.monte_carlo_parallel import (
-    ParallelMonteCarloExecutor,
     ParallelExecutionConfiguration,
+    ParallelMonteCarloExecutor,
 )
+from fantasy_football.player_outcomes import PlayerOutcomeModel
 
 
 class PrecisionError(ValueError):
@@ -388,6 +389,9 @@ def run_monte_carlo_to_precision(
     batches = []
     checkpoints = []
     used = 0
+    workspace = (
+        prepare_lineup_optimization(snapshot) if parallel_execution is None else None
+    )
     executor_context = (
         ParallelMonteCarloExecutor(
             snapshot, simulation_configuration, model, parallel_execution
@@ -410,7 +414,9 @@ def run_monte_carlo_to_precision(
                 path_count=next_total - used,
             )
             batch = (
-                run_monte_carlo_batch(snapshot, chunk, model)
+                run_monte_carlo_batch(
+                    snapshot, chunk, model, _lineup_workspace=workspace
+                )
                 if parallel_executor is None
                 else parallel_executor.run_batch(chunk).batch
             )

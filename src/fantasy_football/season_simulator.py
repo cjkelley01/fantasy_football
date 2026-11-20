@@ -30,6 +30,7 @@ from fantasy_football.evolving_state import (
 )
 from fantasy_football.lineup_optimizer import (
     LineupAssignment,
+    LineupOptimizationWorkspace,
     LineupVacancy,
     OptimizedLineup,
     StartingSlot,
@@ -73,6 +74,7 @@ from fantasy_football.weekly_transactions import (
     WeeklyTransactionResult,
     execute_weekly_essential_transactions,
     require_supported_transaction_rules,
+    require_supported_weekly_policy,
 )
 
 
@@ -281,6 +283,7 @@ def _preflight(
         raise SeasonSimulationError(
             "transaction_policy must be WeeklyTransactionPolicy"
         )
+    require_supported_weekly_policy(transaction_policy)
     participation = postseason_transaction_policy
     if not isinstance(participation, PostseasonTransactionParticipationPolicy):
         raise SeasonSimulationError(
@@ -478,15 +481,22 @@ def _freeze_and_score(
     scoring_week: int,
     team_ids: tuple[int, ...],
     score_index: dict[tuple[int, int], RealizedPlayerScore],
+    lineup_workspace: LineupOptimizationWorkspace,
+    prepared_lineups: tuple[OptimizedLineup, ...] | None = None,
 ) -> tuple[tuple[OptimizedLineup, ...], tuple[FrozenTeamWeek, ...]]:
-    lineups = tuple(
-        optimize_starting_lineup(
-            snapshot,
-            team_id,
-            scoring_week,
-            roster_entries=state.roster_entries,
+    lineups = (
+        prepared_lineups
+        if prepared_lineups is not None
+        else tuple(
+            optimize_starting_lineup(
+                snapshot,
+                team_id,
+                scoring_week,
+                roster_entries=state.roster_entries,
+                workspace=lineup_workspace,
+            )
+            for team_id in sorted(team_ids)
         )
-        for team_id in sorted(team_ids)
     )
     frozen = []
     for lineup in lineups:
@@ -894,7 +904,9 @@ def simulate_deterministic_season(
     matchup_acquisition_counts: dict[int, int] | None = None,
     ir_eligibility_evidence: tuple[IREligibilityEvidence, ...] = (),
     initial_evolving_state: EvolvingLeagueState | None = None,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
     partial_week: DeterministicPartialWeekInput | None = None,
+    _native_execution: bool = False,
 ) -> DeterministicSeasonResult:
     """Execute one settings-driven deterministic path without network or randomness."""
 
@@ -915,12 +927,38 @@ def simulate_deterministic_season(
     configuration_provenance = (
         f"postseason_transactions:{postseason_transaction_policy.provenance.value}:{participation_reference}",
     )
+    fallback_seed = None
+    if transaction_policy.automatic_rosters is not None:
+        fallback_seed = transaction_policy.automatic_rosters.standings_fallback_seed
+        configuration_provenance += (
+            f"automatic_rosters:{transaction_policy.automatic_rosters.policy_id}",
+            f"standings_fallback_seed:{fallback_seed}",
+        )
     if partial_week is not None:
         configuration_provenance += (f"partial_week:v1:{partial_identity}",)
     phases = _phase_by_week(snapshot)
     initial_standings = initialize_standings(snapshot)
     standings = initial_standings
-    if initial_evolving_state is None:
+    default_initial = (
+        initial_evolving_state is None
+        and season_acquisition_counts is None
+        and matchup_acquisition_counts is None
+        and ir_eligibility_evidence == ()
+    )
+    prepared_initial = None
+    if (
+        _native_execution
+        and partial_week is None
+        and default_initial
+        and type(ir_policy) is IRPolicy
+        and lineup_workspace is not None
+        and lineup_workspace.snapshot is snapshot
+        and lineup_workspace.execution is not None
+    ):
+        prepared_initial = lineup_workspace.execution.initial_references.get(ir_policy)
+    if prepared_initial is not None:
+        evolving = prepared_initial
+    elif initial_evolving_state is None:
         evolving = initialize_evolving_state(
             snapshot,
             scoring_week=snapshot.first_simulation_week,
@@ -966,20 +1004,47 @@ def simulate_deterministic_season(
         validate_evolving_state(evolving, snapshot)
     postseason: PostseasonState | None = None
     weeks: list[SeasonWeekTransition] = []
-    lineup_workspace = prepare_lineup_optimization(snapshot)
+    if lineup_workspace is None:
+        lineup_workspace = prepare_lineup_optimization(snapshot)
+    elif lineup_workspace.snapshot is not snapshot:
+        raise SeasonSimulationError(
+            "lineup workspace belongs to a different snapshot object"
+        )
+    native = None
+    native_state = None
+    if _native_execution and partial_week is None:
+        from fantasy_football.prepared_execution import PreparedExecution
+
+        if lineup_workspace.execution is None:
+            lineup_workspace.execution = PreparedExecution(lineup_workspace)
+        native = lineup_workspace.execution
+        if transaction_policy.automatic_rosters is not None:
+            from fantasy_football.automatic_rosters import prepared_ownership
+
+            prepared_ownership(
+                snapshot, transaction_policy.automatic_rosters, lineup_workspace
+            )
+        if default_initial and type(ir_policy) is IRPolicy:
+            native.initial_references.setdefault(ir_policy, evolving)
+        native_state = native.start(evolving)
 
     for scoring_week in range(
         snapshot.first_simulation_week, snapshot.final_simulation_week + 1
     ):
         if scoring_week != snapshot.first_simulation_week:
-            evolving = advance_cycle(
-                evolving,
-                snapshot,
-                cycle_id=evolving.cycle_id + 1,
-                scoring_week=scoring_week,
-            )
+            if native is not None:
+                native.advance(native_state, scoring_week)
+            else:
+                evolving = advance_cycle(
+                    evolving,
+                    snapshot,
+                    cycle_id=evolving.cycle_id + 1,
+                    scoring_week=scoring_week,
+                )
             if snapshot.rules.acquisition.waiver_order_resets is True:
-                ranking = rank_standings(snapshot, standings)
+                ranking = rank_standings(
+                    snapshot, standings, fallback_seed=fallback_seed
+                )
                 if not ranking.has_unique_order:
                     return _incomplete_result(
                         scenario=scenario,
@@ -988,19 +1053,25 @@ def simulate_deterministic_season(
                         initial_standings=initial_standings,
                         standings=standings,
                         weeks=weeks,
-                        evolving_state=evolving,
+                        evolving_state=native_state.to_reference()
+                        if native is not None
+                        else evolving,
                         postseason_state=postseason,
                         configuration_provenance=configuration_provenance,
                     )
-                evolving = reset_waiver_priority(
-                    evolving,
-                    snapshot,
-                    ordered_team_ids=tuple(reversed(ranking.require_unique_order())),
-                )
+                order = tuple(reversed(ranking.require_unique_order()))
+                if native is not None:
+                    native.reset_priority(native_state, order)
+                else:
+                    evolving = reset_waiver_priority(
+                        evolving, snapshot, ordered_team_ids=order
+                    )
 
         phase = phases[scoring_week]
         if phase is MatchupPhase.POSTSEASON and postseason is None:
-            final_ranking = rank_standings(snapshot, standings)
+            final_ranking = rank_standings(
+                snapshot, standings, fallback_seed=fallback_seed
+            )
             if not final_ranking.has_unique_order:
                 return _incomplete_result(
                     scenario=scenario,
@@ -1009,7 +1080,9 @@ def simulate_deterministic_season(
                     initial_standings=initial_standings,
                     standings=standings,
                     weeks=weeks,
-                    evolving_state=evolving,
+                    evolving_state=native_state.to_reference()
+                    if native is not None
+                    else evolving,
                     postseason_state=None,
                     configuration_provenance=configuration_provenance,
                 )
@@ -1018,6 +1091,7 @@ def simulate_deterministic_season(
                     snapshot,
                     standings,
                     consolation_configuration=consolation_configuration,
+                    fallback_seed=fallback_seed,
                 )
                 if (
                     partial_week is not None
@@ -1048,15 +1122,23 @@ def simulate_deterministic_season(
         )
         if is_partial_week:
             eligible_team_ids = ()
-        transaction_result = execute_weekly_essential_transactions(
-            snapshot,
-            evolving,
-            transaction_policy,
-            eligible_team_ids=eligible_team_ids,
-            lineup_workspace=lineup_workspace,
-        )
+        if native is not None and native.no_actions(native_state, eligible_team_ids):
+            transaction_result = None
+        elif native is not None:
+            pre_transaction_state, transaction_result, native_state = native.weekly(
+                native_state, transaction_policy, eligible_team_ids
+            )
+        else:
+            transaction_result = execute_weekly_essential_transactions(
+                snapshot,
+                evolving,
+                transaction_policy,
+                eligible_team_ids=eligible_team_ids,
+                lineup_workspace=lineup_workspace,
+            )
         if (
             phase is MatchupPhase.POSTSEASON
+            and transaction_result is not None
             and postseason_transaction_policy.mode
             is PostseasonTransactionParticipationMode.UNRESOLVED
             and transaction_result.acquisitions
@@ -1072,12 +1154,20 @@ def simulate_deterministic_season(
                 postseason_state=postseason,
                 configuration_provenance=configuration_provenance,
             )
-        evolving = transaction_result.state
-        logical_transaction_result = replace(transaction_result, valuation_seconds=0.0)
-        validate_evolving_state(evolving, snapshot)
+        if transaction_result is not None:
+            evolving = transaction_result.state
+        logical_transaction_result = (
+            replace(transaction_result, valuation_seconds=0.0)
+            if transaction_result is not None
+            else None
+        )
+        if native is None:
+            validate_evolving_state(evolving, snapshot)
         unresolved_teams = {
             item.team_id
-            for item in transaction_result.decisions
+            for item in (
+                () if transaction_result is None else transaction_result.decisions
+            )
             if item.outcome is DecisionOutcome.UNRESOLVED_AUTHORIZATION
         }
         materially_unresolved = tuple(
@@ -1117,25 +1207,54 @@ def simulate_deterministic_season(
                 snapshot, partial_composition, team_ids
             )
         else:
-            lineups, frozen = _freeze_and_score(
-                snapshot, evolving, scoring_week, team_ids, score_index
+            if native is not None:
+                lineups, frozen = _freeze_and_score(
+                    snapshot,
+                    evolving,
+                    scoring_week,
+                    team_ids,
+                    score_index,
+                    lineup_workspace,
+                    prepared_lineups=native.lineups(
+                        native.roster(native_state), scoring_week, team_ids
+                    ),
+                )
+            else:
+                lineups, frozen = _freeze_and_score(
+                    snapshot,
+                    evolving,
+                    scoring_week,
+                    team_ids,
+                    score_index,
+                    lineup_workspace,
+                )
+            scores = (
+                tuple(
+                    score_index[(assignment.player_id, scoring_week)]
+                    for lineup in lineups
+                    for assignment in lineup.assignments
+                )
+                if native is not None
+                else _scenario_week_scores(score_index, scoring_week)
             )
-            scores = _scenario_week_scores(score_index, scoring_week)
         regular_transition = None
         if phase is MatchupPhase.REGULAR:
-            regular_transition = resolve_regular_season_week(
-                snapshot,
-                scoring_week,
-                standings,
-                lineups,
-                scores,
-                roster_entries=evolving.roster_entries,
-                require_projected_availability=not is_partial_week,
-            )
-            standings = regular_transition.standings
+            if native is not None:
+                standings = native.regular_scores(scoring_week, standings, frozen)
+            else:
+                regular_transition = resolve_regular_season_week(
+                    snapshot,
+                    scoring_week,
+                    standings,
+                    lineups,
+                    scores,
+                    roster_entries=evolving.roster_entries,
+                    require_projected_availability=not is_partial_week,
+                )
+                standings = regular_transition.standings
         else:
             assert postseason is not None
-            if is_partial_week:
+            if is_partial_week or native is not None:
                 postseason = apply_postseason_team_scores(
                     snapshot,
                     postseason,
@@ -1156,18 +1275,19 @@ def simulate_deterministic_season(
                     scores,
                     roster_entries=evolving.roster_entries,
                 )
-        weeks.append(
-            SeasonWeekTransition(
-                scoring_week,
-                phase,
-                logical_transaction_result,
-                frozen,
-                regular_transition,
-                postseason,
+        if native is None:
+            weeks.append(
+                SeasonWeekTransition(
+                    scoring_week,
+                    phase,
+                    logical_transaction_result,
+                    frozen,
+                    regular_transition,
+                    postseason,
+                )
             )
-        )
 
-    ranking = rank_standings(snapshot, standings)
+    ranking = rank_standings(snapshot, standings, fallback_seed=fallback_seed)
     unresolved = ()
     status = SeasonCompletionStatus.COMPLETE
     if postseason is None:
@@ -1196,7 +1316,7 @@ def simulate_deterministic_season(
         standings,
         ranking,
         tuple(weeks),
-        evolving,
+        native_state.to_reference() if native is not None else evolving,
         postseason,
         records,
     )

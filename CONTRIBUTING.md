@@ -1,12 +1,10 @@
 # Contributing to War Room
 
-[Manual scenarios](docs/MANUAL_SCENARIOS.md) owns explicit hypothetical completion; [Unified action search](docs/UNIFIED_ACTION_SEARCH.md) owns candidate grammar, state grouping and search orchestration. Shared legality/V(R) remains in TRANSACTIONS and numerical inference in MONTE_CARLO.
+Use [METHODOLOGY](docs/METHODOLOGY.md) for analytical rules, [DATA](docs/DATA.md) for source meaning/permission and immutable storage, [TECHNICAL_REFERENCE](docs/TECHNICAL_REFERENCE.md) for executable interfaces/identities, and [VALIDATION](docs/VALIDATION.md) for evidence and promotion gates. Preserve production versus independent-oracle distinctions and exact unresolved [BACKLOG](docs/BACKLOG.md) obligations.
 
-Use [DATA](docs/DATA.md) and [RESEARCH](docs/RESEARCH.md) for current ingestion/storage/research contracts. The [M0 evidence-role contract](docs/DATA.md#m0-consumer-dependency) is offline historical verification: run `.venv\Scripts\python.exe -m fantasy_football.m0_verification --json` without credentials. Preserve role/section/interface checks and the distinction between recorded historical identity and unauthenticated historical bytes; contract 3 checks DATA, METHODOLOGY, VALIDATION and TECHNICAL_REFERENCE without retired-file dependencies.
+The offline [M0 role verifier](docs/DATA.md#m0-consumer-dependency), `.venv\Scripts\python.exe -m fantasy_football.m0_verification --json`, needs no credentials. Contract 3 checks seven roles against DATA, METHODOLOGY, VALIDATION and TECHNICAL_REFERENCE; preserve exact bindings/identities/limits and the distinction between recorded historical identity and unauthenticated historical bytes.
 
-For mechanics changes use [SEASON_SIMULATOR](docs/SEASON_SIMULATOR.md) and [TRANSACTIONS](docs/TRANSACTIONS.md), preserving production versus independent-oracle objectives and recording unresolved [mechanics obligations](docs/BACKLOG.md#mechanics-review-obligations).
-
-`tdkelley2001/fantasy_football` is the authoritative repository for accepted code and documentation. Both regular contributors use reviewed pull requests into its `main` branch, whether the work branch is in the original repository or the existing fork. Keep the fork; no migration, remote replacement or permission change is needed.
+`tdkelley2001/fantasy_football` is the authoritative repository for accepted code and documentation. Both regular contributors use pull requests into its `main` branch, whether the work branch is in the original repository or the existing fork. **PR approval is not required by default**; the author may merge an ordinary change after appropriate checks. Use reviewed pull requests when a change affects methodology, league rules, numerical identity, major architecture, or other explicitly gated high-impact behavior. Keep the fork; no migration, remote replacement or permission change is needed.
 
 Start with the [development backlog](docs/BACKLOG.md), [current capabilities](README.md#current-capabilities), [domain authorities](README.md#understand-the-system) and [authority precedence](AGENTS.md#authority-and-precedence). Independently accepted analytical requirements, dependencies and acceptance gates remain binding in their owning references; historical milestones are Git/PR evidence, not a parallel work queue.
 
@@ -19,15 +17,15 @@ Use [README navigation](README.md#understand-the-system) to find user guides, ar
 
 ## Agree the work first
 
-Use a stable `WR-NNN` backlog ID in the branch/PR description. Propose new work or claim an existing item by editing [BACKLOG.md](docs/BACKLOG.md) through an ordinary PR. An owner is optional; agree assignments rather than assigning the other contributor without discussion. A listed proposal is not implementation approval. Record scope, dependencies, acceptance/verification and the governing specification before starting substantive work.
+Use the descriptive backlog title and its stable anchor in the branch/PR description. Propose new work or claim an existing item by editing [BACKLOG.md](docs/BACKLOG.md) through an ordinary PR. An owner is optional; agree assignments rather than assigning the other contributor without discussion. A listed proposal is not implementation approval. Record scope, dependencies, acceptance/verification and the governing specification before starting substantive work.
 
-Coordinate overlapping files or interfaces in the backlog entry and PR discussion. Agree sequencing, keep changes small and bring relevant upstream changes into the branch before final review. Do not combine work packages merely because they touch nearby code. Each contributor, including coding agents, follows the same review and evidence rules.
+Coordinate overlapping files or interfaces in the backlog entry and PR discussion. Agree sequencing, keep changes small and bring relevant upstream changes into the branch before merge. Do not combine work packages merely because they touch nearby code. Each contributor, including coding agents, follows the same review and evidence rules.
 
 ## Branches and safe synchronization
 
 The Git examples are instructions, not repository settings. Begin with `git status --short` and `git remote -v`; preserve any local work deliberately. Check which repository each remote names. Do not discard changes, reset main, force-push or rewrite another contributor's published commits. If a fast-forward fails, inspect divergence and coordinate instead of forcing it. “Already up to date” does not prove local main has no extra commits: inspect ahead/behind state and review the complete PR diff against authoritative main.
 
-Use a short branch such as `docs/WR-002-current-guides` or `fix/WR-003-node-check`. Replace example names with the actual work ID and branch. Use a new branch for each independently reviewable change.
+Use a short branch such as `docs/current-guides` or `fix/node-toolchain-compatibility`. Replace example names with the actual work title and branch. Use a new branch for each independently reviewable change.
 
 ### Working in the original repository
 
@@ -37,10 +35,10 @@ Here `origin` must be `tdkelley2001/fantasy_football`:
 git fetch origin
 git switch main
 git merge --ff-only origin/main
-git switch -c docs/WR-002-current-guides
+git switch -c docs/current-guides
 ```
 
-Update an existing work branch with `git fetch origin`, switch to that branch and `git merge origin/main`. Resolve conflicts with the affected contributor, run the relevant checks, then push **the work branch**, for example `git push -u origin docs/WR-002-current-guides`. Open a PR with base `tdkelley2001/fantasy_football:main`. Do not push changes directly to upstream main.
+Update an existing work branch with `git fetch origin`, switch to that branch and `git merge origin/main`. Resolve conflicts with the affected contributor, run the relevant checks, then push **the work branch**, for example `git push -u origin docs/current-guides`. Open a PR with base `tdkelley2001/fantasy_football:main`. Do not push changes directly to upstream main.
 
 ### Working in the existing fork
 
@@ -57,16 +55,16 @@ git fetch upstream
 git switch main
 git merge --ff-only upstream/main
 git push origin main
-git switch -c docs/WR-002-current-guides
+git switch -c docs/current-guides
 ```
 
 The main push above updates **the fork only**, not authoritative main. If fork/local main contains unrelated commits, preserve that work and agree a branch base containing only the intended contribution; do not reset or delete the fork. Update an existing work branch by fetching upstream and merging `upstream/main` into that branch. Then push the work branch to `origin` and open a PR whose **base repository is the original repository**, not the fork. Both contribution routes receive the same review and verification.
 
-Merging upstream into a shared branch is the default; rebasing or rewriting published history requires explicit coordination and is not needed for this workflow. Review the PR's files and base/head repositories before requesting review.
+Merging upstream into a shared branch is the default; rebasing or rewriting published history requires explicit coordination and is not needed for this workflow. Check the PR's files and base/head repositories before merging or requesting optional review.
 
 ## Development environment and checks
 
-Use the sole [prerequisites and user setup](docs/OPERATIONS.md#installation-and-prerequisites) reference: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.x from 24.15.0** for the full locked frontend toolchain, with **24.19.0** as the contributor reference version. User configuration and launcher/CLI precedence live in [OPERATIONS](docs/OPERATIONS.md#league-configuration); do not duplicate them here.
+Use the [prerequisites and user setup](docs/USER_GUIDE.md#install-and-launch-safely) procedure: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.x from 24.15.0** for the full locked frontend toolchain (24.15.0 and 24.19.0 have recorded contributor checks). Setup validates Node and `npm.cmd` before Python/dependency installation. Node Toolchain Compatibility remains In Review; these checks are not clean-machine release acceptance. User configuration and launcher/CLI precedence are explained in [USER_GUIDE](docs/USER_GUIDE.md#configure-your-espn-league).
 
 For contributor-controlled dependency installation from the repository root, the setup script's locked operations can also be run explicitly:
 
@@ -79,6 +77,40 @@ npm.cmd --prefix frontend run build
 ```
 
 No activation is needed with explicit interpreter paths. These commands download/install dependencies and generate assets; they are not routine offline verification. Close your own Vite processes first. Do not freshly resolve extras, regenerate locks, upgrade packages or bypass engine checks as an incidental repair. A failed import/build is evidence to diagnose, not permission to change dependencies.
+
+The setup wrapper repeats these locked installs/builds without deleting SQLite data. `scripts/setup-local.ps1 -VerifyOnly` instead checks the existing package import/frontend assets and creates private output directories; it neither installs nor builds. Optional `-PythonLauncher` selects the launcher used with `-3.12`; `-VirtualEnvironment` selects the environment directory. Pass its matching `-PythonExecutable` to `start-local.ps1` when using a custom environment. These are source-verified procedures, not a newly executed clean-machine installation.
+
+### Reproducing research evaluations
+
+After separately authorized data preparation, the pure in-memory workflow is:
+
+```python
+from fantasy_football.historical_dataset import (
+    build_historical_research_dataset,
+    historical_research_dataset_to_json,
+)
+from fantasy_football.outcome_distribution_research import (
+    outcome_distribution_report_to_json,
+    research_outcome_distributions,
+)
+
+dataset = build_historical_research_dataset(samples, sources)
+report = research_outcome_distributions(dataset, configuration)
+dataset_bytes = historical_research_dataset_to_json(dataset)
+report_bytes = outcome_distribution_report_to_json(report)
+```
+
+Construct and validate `samples`, `sources` and `configuration` explicitly using the [T2 research interfaces](docs/TECHNICAL_REFERENCE.md#research-source-and-dataset-interfaces). This is not a runnable empty-data example or a promotion recipe; the caller controls private writes. [research evidence](CONTRIBUTING.md#reproducing-research-evaluations) retains the governing reproduction contract.
+
+Historical materialization is **NETWORKED**, read-only retrieval requiring explicit authorization for the selected league, seasons and private output. It is not part of credential-free verification. Only within that authorized scope, from the repository root:
+
+```powershell
+.venv\Scripts\python.exe -m fantasy_football.historical_research_workflow --plan docs/examples/m32_historical_research_plan.json --output-dir outputs/m32-evidence-local
+```
+
+Review the required [plan](docs/examples/m32_historical_research_plan.json): it explicitly selects season/week samples, observation windows, pagination and research configuration. Choose an absent or empty **child of ignored `outputs/`**; the workflow rejects other/nonempty destinations rather than overwriting evidence. It writes `historical-research-dataset.json`, `outcome-distribution-report.json`, `raw-player-pages-<season>-<week>.json`, `raw-scoring-<season>.json` and `retrieval-manifest.json`. The manifest records the normalized plan/digest, dataset/report identities and source request context; raw captures preserve parsed player/scoring responses, filters, UTC retrieval and scoring signatures. See [Evaluation and report interfaces](docs/TECHNICAL_REFERENCE.md#evaluation-and-report-interfaces) for serialization/provenance boundaries.
+
+The coverage-only `historical_projection_audit` diagnostic does **not** materialize this dataset/report bundle. Neither selected observation windows nor retrospective retrieval authenticate pregame forecasts or calibrate a production model. [DATA D2](docs/DATA.md#research-source-trust) and [VALIDATION V3/V4](docs/VALIDATION.md#empirical-validity) retain those evidence and independent promotion limits. Keep credentials, raw responses, private player/league rows and generated outputs out of Git, including shared reports/screenshots. This procedure grants no retrieval authorization and records no new live execution. Credential-free [workflow tests](tests/test_historical_research_workflow.py) and [research tests](tests/test_outcome_distribution_research.py) establish implementation behavior only.
 
 ### Backend and Vite
 
@@ -148,7 +180,7 @@ For an isolated credential-free source/publication exercise, reuse `tests/test_s
 
 ## Tier 4: Release verification
 
-Use for release-readiness work when that scope is agreed, after setup. The authoritative executable is [verify-release.ps1](scripts/verify-release.ps1); [WR-021](docs/BACKLOG.md#wr-021-release-acceptance) retains exact human signoff and unresolved release dispositions. This is **credential-free but networked**, not an offline or read-only command:
+Use for release-readiness work when that scope is agreed, after setup. The authoritative executable is [verify-release.ps1](scripts/verify-release.ps1); [release criteria](docs/VALIDATION.md#release-acceptance-remains-pending) define human signoff; [Release Acceptance](docs/BACKLOG.md#release-acceptance) tracks unresolved disposition. This is **credential-free but networked**, not an offline or read-only command:
 
 ```powershell
 .\scripts\verify-release.ps1
@@ -181,14 +213,14 @@ These are separate scopes, not routine consequences of editing documentation or 
 |---|---|---|
 | Windows process/recovery | `.venv\Scripts\python.exe -m pytest -m windows_process`; alternatively `.\scripts\verify-release.ps1 -IncludeWindowsProcessTests` for the complete release gate plus that tier. | Windows and PowerShell required. Creates/starts/stops and sometimes terminates authenticated disposable processes/stores. The release switch first repeats the full networked default gate; choose the intended route, not both unnecessarily. Unsupported platforms skip existing platform-guarded tests. |
 | Live ESPN diagnostics | `.venv\Scripts\python.exe -m fantasy_football.live_scoring_diagnostic --json` for an expressly scoped live evidence question. | Read-only ESPN network requests using authorized local profile/credentials. Aggregate diagnostic output is not proof of settlement, lock permissions or unsupported in-game semantics. Retain sanitized provenance; no credential/payload dumps. |
-| Browser workflow | Follow [first-run steps](docs/OPERATIONS.md#launch-and-first-use) with an expressly chosen disposable synthetic or separately authorized live profile. | Requires built frontend/server and an actual supported browser. Record revision, URLs, ownership and evidence. Clicking refresh can retrieve live data and append snapshots; synthetic component tests do not authorize it. |
-| Clean-machine installation | Follow [installation](docs/OPERATIONS.md#installation-and-prerequisites) in an isolated checkout/machine, then separately scoped first-run checks. | Dependency downloads, venv/node_modules/build/output creation. Record actual Python/Node/npm and install logs. Existing installed-environment passes cannot substitute. |
+| Browser workflow | Follow [first-run steps](docs/USER_GUIDE.md#install-and-launch-safely) with an expressly chosen disposable synthetic or separately authorized live profile. | Requires built frontend/server and an actual supported browser. Record revision, URLs, ownership and evidence. Clicking refresh can retrieve live data and append snapshots; synthetic component tests do not authorize it. |
+| Clean-machine installation | Follow [installation](docs/USER_GUIDE.md#install-and-launch-safely) in an isolated checkout/machine, then separately scoped first-run checks. | Dependency downloads, venv/node_modules/build/output creation. Record actual Python/Node/npm and install logs. Existing installed-environment passes cannot substitute. |
 
-Historical capture scripts under `frontend/dev/` may assume a fixed Windows Edge executable/URL and may operate live refresh controls. `playwright-core` does not install a browser. Inspect the specific capture before agreeing a browser scope. Preserve launcher ownership/lease checks; use [authenticated shutdown/recovery](docs/OPERATIONS.md#shutdown-and-recovery), never guessed PIDs, metadata deletion or another contributor's database. No unverified-process termination is a troubleshooting shortcut.
+Historical capture scripts under `frontend/dev/` may assume a fixed Windows Edge executable/URL and may operate live refresh controls. `playwright-core` does not install a browser. Inspect the specific capture before agreeing a browser scope. Preserve launcher ownership/lease checks; use [authenticated shutdown/recovery](docs/USER_GUIDE.md#safe-shutdown-and-recovery), never guessed PIDs, metadata deletion or another contributor's database. No unverified-process termination is a troubleshooting shortcut.
 
 ## Change-based verification matrix
 
-The [application API and execution reference](docs/APPLICATION_SERVICE.md) owns current routes/DTOs, refresh, analysis lifecycle, limits, retained results and process-ownership guarantees. Use its [source/test entry points](docs/APPLICATION_SERVICE.md#source-and-verification) for application-only contract work; it replaces the separate backend/run handoffs, not the numerical or operational test tiers below.
+The [application API and execution reference](docs/TECHNICAL_REFERENCE.md#http-api-dtos-and-evolution) owns current routes/DTOs, refresh, analysis lifecycle, limits, retained results and process-ownership guarantees. Use its [source/test entry points](docs/TECHNICAL_REFERENCE.md#integration-evidence) for application-only contract work; numerical and operational checks retain their separate verification tiers.
 
 Start with Tier 1, then select relevant tests below. The module lists are useful starting points, not exhaustive signoff or permission to omit an applicable reference/acceptance gate. All test paths are relative to the repository root and can follow `python -m pytest` using the prepared interpreter. Include `-m "not windows_process"` for ordinary credential-free selection.
 
@@ -211,9 +243,9 @@ Partial changes also select `tests/test_partial_week.py`, `tests/test_partial_se
 
 Acceptance checks cover identity/ownership, exact slot matching and impossible rosters; transaction permission/timing; standings and distinct tie cases; championship/consolation progression, full placement reconciliation; snapshot validation and reproducibility. Cross-boundary checks compare direct engine, service, background and HTTP results/configuration/identities, coverage/precision/ranking labels, every supported trade/acquisition/chain/combined family, errors and local security. Preserve representative workload evidence with exact snapshot dimensions and path/worker policies, startup/serialization costs, parent **and aggregate-child** memory, storage and responsive polling/query latency. Historical 14-team/188-player/two-worker measurements are fixtures at their recorded revision, not a universal performance threshold.
 
-Statistical acceptance needs synthetic-known-probability tests, empirical calibration and sequential interval/stopping coverage, not merely a deterministic interval result. Historical/prospective comparisons require authentic as-of inputs, temporal isolation and original forecasts distinct from newer-model replays. A faster compiled/vectorized/parallel implementation must match its readable independent reference in feasible sequences, final states and path-indexed outcomes before promotion; compiler/JIT adoption is conditional on profiling, not required technology. Existing deterministic fixtures and provisional model acceptance do not satisfy every scientific or repeated-look gate; [research](docs/RESEARCH.md#component-specific-promotion) and [WR-025](docs/BACKLOG.md#numerical-and-partial-evidence-obligations) retain those obligations. Record actual environments, exclusions and limitations instead of transferring obsolete suite totals as current acceptance evidence.
+Statistical acceptance needs synthetic-known-probability tests, empirical calibration and sequential interval/stopping coverage, not merely a deterministic interval result. Historical/prospective comparisons require authentic as-of inputs, temporal isolation and original forecasts distinct from newer-model replays. A faster compiled/vectorized/parallel implementation must match its readable independent reference in feasible sequences, final states and path-indexed outcomes before promotion; compiler/JIT adoption is conditional on profiling, not required technology. Existing deterministic fixtures and provisional model acceptance do not satisfy every scientific or repeated-look gate; [research](docs/VALIDATION.md#independent-component-specific-promotion) and [Progressive Inference Coverage](docs/VALIDATION.md#precision-claims-and-progressive-inference-coverage) retain those obligations. Record actual environments, exclusions and limitations instead of transferring obsolete suite totals as current acceptance evidence.
 
-[PLAYER_OUTCOME_MODEL](docs/PLAYER_OUTCOME_MODEL.md), [MONTE_CARLO](docs/MONTE_CARLO.md) and [PARTIAL_WEEK](docs/PARTIAL_WEEK.md) own the current numerical and evidence contracts. M0 contract 3 checks consolidated DATA/METHODOLOGY/VALIDATION/TECHNICAL_REFERENCE evidence sections, including DATA/M2/T2 missing-policy evidence; preserve its substantive/fence-aware and historical identity checks.
+[outcome methodology](docs/METHODOLOGY.md#player-outcome-generation-and-assumptions), [numerical methodology](docs/METHODOLOGY.md#monte-carlo-simulation-and-estimators) and [partial-week methodology](docs/METHODOLOGY.md#current-week-and-partial-week-treatment) own the current numerical and evidence contracts. M0 contract 3 checks consolidated DATA/METHODOLOGY/VALIDATION/TECHNICAL_REFERENCE evidence sections, including DATA/M2/T2 missing-policy evidence; preserve its substantive/fence-aware and historical identity checks.
 
 - Preserve immutable source evidence, raw/effective projections, snapshot IDs/bytes/checksums and historical compatibility. A valid schema is not proof of consumer permission.
 - Compare exact deterministic path-level scores, standings, postseason outcomes and shared path-indexed draws before only comparing aggregate probabilities. Match snapshot, seed, path indices, policies and outcome model; ownership/action order must not generate independent baseline/scenario samples.
@@ -221,7 +253,7 @@ Statistical acceptance needs synthetic-known-probability tests, empirical calibr
 - Separate intentional approved model changes from regressions. Document expected changed outputs and identity consequences before changing goldens. **Never update golden outputs merely to obtain passing tests.** Retain historical reference evidence and use an independent oracle where the supported policy changes.
 - Version numerical identity when semantics change; test adversarial custom identifiers/parameters and old-checkpoint refusal without rewriting stored bytes. Preserve nonaffected random-key bytes, not just approximate distributions. Retained historical output is not automatically reproducible under a new model.
 
-[Accepted WR-022](docs/PLAYER_OUTCOME_MODEL.md#identity-and-compatibility) is the example, not a reopened decision: missing outcomes are deterministic zero, while nonmissing draws use original version/three draw parameters. Public Normal identity additionally includes `missing_projection_outcome="deterministic-zero-v1"`; a suffix alone could equal a historical custom version. Public serialization/configuration/run fingerprints now distinguish the policy and old checkpoints fail closed. The original golden constants remain protected by the historical test oracle. This guide changes none of that analytical meaning.
+[Accepted Missing-Projection Numerical Compatibility](docs/TECHNICAL_REFERENCE.md#normal-private-draw-bytes-and-public-policy-identity) is the example, not a reopened decision: missing outcomes are deterministic zero, while nonmissing draws use original version/three draw parameters. Public Normal identity additionally includes `missing_projection_outcome="deterministic-zero-v1"`; a suffix alone could equal a historical custom version. Public serialization/configuration/run fingerprints now distinguish the policy and old checkpoints fail closed. The original golden constants remain protected by the historical test oracle. This guide changes none of that analytical meaning.
 
 ## Documentation maintenance
 
@@ -231,7 +263,7 @@ When implementing an enhancement, update its authoritative domain reference and 
 |---|---|
 | [README](README.md) | Product/capabilities, release status and navigation. Keep operating procedures and detailed interactions in their owners; implementation success is not release acceptance. |
 | [INTERFACE](docs/INTERFACE.md) | Workspace interactions, visual/accessibility standards and request isolation change. Distinguish design standards from implemented behavior. |
-| [backlog](docs/BACKLOG.md) | Work is proposed/claimed/blocked/reviewed/completed. Follow its existing ordinary-PR workflow; retain stable IDs and actual decision references. |
+| [backlog](docs/BACKLOG.md) | Work is proposed/claimed/blocked/reviewed/completed. Follow its existing ordinary-PR workflow; retain descriptive titles and stable anchors and actual decision references. |
 | Technical references | Public shape, behavior, source authority, versioning or extension boundaries change. Cite source/tests and distinguish fixture claims from live evidence. |
 | Owning domain references | Approved current/future analytical requirements change only under explicit authorization. Explain rationale, coordinate related owners and preserve compatibility/gates; an editorial cleanup cannot adopt a model. |
 | Immutable Git revisions / reviewed PRs | Retain ordinary history and selected historical citations there. Preserve source-authentication contracts, required numerical artifacts/oracles and applicable acceptance gates in current owners; do not overwrite historical measurements with current counts. |
@@ -241,6 +273,6 @@ Use an ordinary reviewed PR; no extra committee, tracker, template or workflow i
 
 ## Review and completion
 
-In the PR description, give the backlog ID, objective/change, governing contract, acceptance criteria addressed, exact verification results and skipped checks with reasons. State compatibility/evidence risks and any remaining blockers. No issue/PR template, label system, Project board or new workflow configuration is required.
+In the PR description, give the backlog title, objective/change, governing contract, acceptance criteria addressed, exact verification results and skipped checks with reasons. State compatibility/evidence risks and any remaining blockers. No issue/PR template, label system, Project board or new workflow configuration is required.
 
-Request review from the other contributor or an agreed independent reviewer. Do not automatically merge implementation work. Merge only after review, applicable gates and relevant verification are satisfied. A successful local check is not acceptance of a new modeling assumption or a declaration of release. Update current capability documentation when behavior actually changes; update the backlog in the same PR or a small follow-up PR when review disposition is known. Keep items In Review until accepted, then retain their IDs in the completed record with the actual PR/decision reference. See [backlog maintenance](docs/BACKLOG.md#maintaining-this-file).
+**Pull requests do not require routine approval.** The author can merge ordinary bug fixes, documentation and low-risk implementation changes after appropriate tests and a diff check. For substantive methodological, league-rule, statistical, numerical-identity, security or architectural changes, coordinate and obtain explicit agreement on the change before merging; collaborator review is recommended, and an explicitly agreed acceptance gate still applies. Do not make auto-merge the default. Applicable verification and compatibility requirements remain binding. A successful local check is not acceptance of a new modeling assumption or a declaration of release. Update current capability documentation when behavior actually changes; update the backlog in the same PR or a small follow-up PR when review disposition is known. Keep items In Review until their stated acceptance conditions are met; ordinary changes do not require a separate reviewer. After acceptance and merge, update current domain documentation and remove the item from the active backlog; Git and the merged PR retain the decision record. See [backlog maintenance](docs/BACKLOG.md#maintaining-this-file).

@@ -46,6 +46,76 @@ def _powershell(script: Path, *arguments: str, timeout: int = 30) -> subprocess.
     )
 
 
+@pytest.mark.skipif(os.name != "nt", reason="PowerShell setup preflight")
+@pytest.mark.parametrize(
+    "version,fault,accepted,message",
+    [
+        ("v24.15.0", "none", True, "Python 3.12 was not found"),
+        ("v24.19.0", "none", True, "Python 3.12 was not found"),
+        ("v24.14.99", "none", False, "Node.js 24.x"),
+        ("v22.22.2", "none", False, "Node.js 24.x"),
+        ("v26.0.0", "none", False, "Node.js 24.x"),
+        ("not-a-version", "none", False, "Node.js 24.x"),
+        ("v24.15.0-rc.1", "none", False, "Node.js 24.x"),
+        ("v24.19.0", "missing-node", False, "Node.js 24.x"),
+        ("v24.19.0", "missing-npm", False, "npm.cmd is required"),
+        ("v24.19.0", "node-exit", False, "Node.js 24.x"),
+        ("v24.19.0", "multiline", False, "Node.js 24.x"),
+    ],
+)
+def test_setup_node_npm_preflight_stops_before_installation(
+    tmp_path,
+    version,
+    fault,
+    accepted,
+    message,
+):
+    # Run the actual setup script with command shims. Even an accepted Node
+    # version stops at a fake Python launcher, before venv/pip/npm or imports.
+    probe = tmp_path / "node-preflight.ps1"
+    probe.write_text(
+        """param([string]$SetupPath, [string]$Version, [string]$Fault)
+$global:pythonCalled = $false
+function Get-Command([string]$Name) {
+    if (($Name -eq 'node' -and $Fault -eq 'missing-node') -or
+        ($Name -eq 'npm.cmd' -and $Fault -eq 'missing-npm')) { return $null }
+    return 'present'
+}
+function node {
+    $global:LASTEXITCODE = 0
+    if ($Fault -eq 'node-exit') { $global:LASTEXITCODE = 1 }
+    if ($Fault -eq 'multiline') { Write-Output $Version }
+    Write-Output $Version
+}
+function Invoke-ProbePython {
+    $global:pythonCalled = $true
+    throw 'intentional stop before installation'
+}
+try {
+    & $SetupPath -PythonLauncher Invoke-ProbePython
+    throw 'setup unexpectedly completed'
+} catch {
+    @{ python_called = $global:pythonCalled; message = $_.Exception.Message } |
+        ConvertTo-Json -Compress
+}
+""",
+        encoding="utf-8",
+    )
+    result = _powershell(
+        probe,
+        "-SetupPath",
+        str(ROOT / "scripts/setup-local.ps1"),
+        "-Version",
+        version,
+        "-Fault",
+        fault,
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["python_called"] is accepted
+    assert message in report["message"]
+
+
 def _start_arguments(
     *, port: int, database: Path, frontend: Path, logs: Path,
     runtime: Path, python: str = sys.executable, readiness: int = 20,
