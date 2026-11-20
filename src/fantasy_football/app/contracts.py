@@ -157,6 +157,23 @@ class SimulationConfiguration(ContractModel):
     waiver_boundary: Literal["unresolved", "modeled_weekly_v1"]
     reject_incomplete_valuations: bool = True
     require_complete: bool = True
+    automatic_roster_policy: Literal["legacy_v1", "mandatory_marginal_lineup_v1"] = (
+        Field(default="legacy_v1", exclude_if=lambda value: value == "legacy_v1")
+    )
+    standings_fallback_seed: int | None = Field(
+        default=None, strict=True, exclude_if=lambda value: value is None
+    )
+
+    @model_validator(mode="after")
+    def validate_automatic_policy(self):
+        if (
+            self.standings_fallback_seed is not None
+            and self.automatic_roster_policy == "legacy_v1"
+        ):
+            raise ValueError(
+                "standings fallback requires the explicit automatic roster policy"
+            )
+        return self
 
 
 class PrecisionSettings(ContractModel):

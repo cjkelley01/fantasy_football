@@ -1,4 +1,4 @@
-"""P7d architecture, ownership and security boundaries, not release evidence."""
+"""architecture, ownership and security boundaries, not release evidence."""
 
 from __future__ import annotations
 
@@ -96,19 +96,19 @@ OWNERSHIP = {
         "never deletes or rewrites snapshots",
     ),
     "Execution scratch": (
-        "UNIFIED_ACTION_SEARCH.md#engine-artifact-lifecycle",
+        "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
         "explicitly closed",
-        "WR-026",
+        "Search Scratch Cleanup",
     ),
     "Application history": (
-        "APPLICATION_SERVICE.md#ownership-and-lifecycle-assessment",
+        "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
         "retention policy",
         "not snapshots/checkpoints/user exports",
     ),
     "Numerical checkpoints": (
-        "MONTE_CARLO.md#checkpoints-and-recovery",
+        "TECHNICAL_REFERENCE.md#numerical-execution-workers-and-checkpoints",
         "Compatible engine resume",
-        "WR-021",
+        "Release Acceptance",
     ),
     "User exports": (
         "#existing-exports-and-deferred-parity-requirements",
@@ -157,8 +157,8 @@ def test_lifecycle_does_not_promote_unimplemented_cleanup_or_resume() -> None:
         "launcher process recovery",
         "no analysis-style compensation around executor.submit",
         "misleading pre-publication wording",
-        "WR-026",
-        "WR-021",
+        "Search Scratch Cleanup",
+        "Release Acceptance",
         "Dedicated expiry/count-purge evidence",
         "Garbage collection is not acceptance",
         "P0/P1",
@@ -204,7 +204,7 @@ def _check_retained_store_contract(text: str) -> None:
     ):
         assert boundary in plain, f"Lost retained-store boundary: {boundary}"
     assert "14fd6dba46cfe5827c0b3da110bfefa4a683b647" in section
-    assert "narrowly scoped successor" in plain
+    assert "bounded application copies are distinct permissions" in plain
 
 
 def test_transferred_retention_distinguishes_logical_storage_and_owned_lifetimes():
@@ -328,7 +328,7 @@ def test_frontend_isolation_replay_and_accessibility_claims_keep_their_limits() 
         "no extra conversion",
         "not calibration/model-error bands",
         "Refresh dialog focus containment is not equivalently verified",
-        "WR-017",
+        "Interface and Action UX",
         "not replace, actual-browser",
         "legacy metadata",
         "weaker compatibility",
@@ -344,12 +344,3 @@ def test_frontend_isolation_replay_and_accessibility_claims_keep_their_limits() 
         "SimulationCenter",
     ):
         assert f"../frontend/src/{panel}.test.tsx" in text
-    for current_owner in (
-        "INTERFACE.md",
-        "OPERATIONS.md",
-        "USER_GUIDE.md",
-        "CONTRIBUTING.md",
-        "BACKLOG.md",
-        "VALIDATION.md",
-    ):
-        assert current_owner in text

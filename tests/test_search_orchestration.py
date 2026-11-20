@@ -405,14 +405,19 @@ def test_bounded_index_is_cleaned_after_generation_failure(monkeypatch, tmp_path
     assert indexes and all(not Path(index.path).exists() for index in indexes)
 
 
-@pytest.mark.parametrize("failure_point", (
-    OrchestrationStage.CANDIDATE_GENERATION,
-    "evaluate_progressive_state_groups",
-    "_write_exports",
-    OrchestrationStage.FINAL,
-))
+@pytest.mark.parametrize(
+    "failure_point",
+    (
+        OrchestrationStage.CANDIDATE_GENERATION,
+        "evaluate_progressive_state_groups",
+        "_write_exports",
+        OrchestrationStage.FINAL,
+    ),
+)
 def test_bounded_index_is_cleaned_before_a_failed_search_returns(
-    monkeypatch, tmp_path, failure_point,
+    monkeypatch,
+    tmp_path,
+    failure_point,
 ) -> None:
     import fantasy_football.search_orchestration as orchestration
 
@@ -448,7 +453,9 @@ def test_bounded_index_is_cleaned_before_a_failed_search_returns(
         index_directory=str(tmp_path),
     )
     try:
-        with pytest.raises(RuntimeError, match="injected coordinator failure") as raised:
+        with pytest.raises(
+            RuntimeError, match="injected coordinator failure"
+        ) as raised:
             _run(configuration, progress_observer=observe)
         assert raised.value is failure
         assert len(artifacts) == 3
@@ -456,6 +463,33 @@ def test_bounded_index_is_cleaned_before_a_failed_search_returns(
     finally:
         for index in indexes:
             index.close()
+
+
+def test_cleanup_oserror_does_not_replace_original_coordinator_failure(
+    monkeypatch, tmp_path
+):
+    import fantasy_football.search_orchestration as orchestration
+
+    failure = RuntimeError("original export failure")
+    original_close = SearchResultIndex.close
+
+    def close(index):
+        original_close(index)
+        raise OSError("injected filesystem cleanup failure")
+
+    def fail(*args):
+        raise failure
+
+    monkeypatch.setattr(SearchResultIndex, "close", close)
+    monkeypatch.setattr(orchestration, "_write_exports", fail)
+    with pytest.raises(RuntimeError, match="original export failure") as raised:
+        _run(
+            _configuration(
+                SearchExecutionMode.BOUNDED_OVERLAP, index_directory=str(tmp_path)
+            )
+        )
+    assert raised.value is failure
+    assert any("injected filesystem cleanup failure" in note for note in failure.__notes__)
 
 
 def test_generic_progressive_state_evaluation_matches_accepted_m54_trade_policy() -> None:

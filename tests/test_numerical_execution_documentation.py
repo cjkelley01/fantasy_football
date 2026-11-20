@@ -369,6 +369,6 @@ def test_t6_retains_identity_lifecycle_methodology_and_validity_owners():
         "METHODOLOGY.md#absolute-precision-and-stopping",
         "METHODOLOGY.md#progressive-selection-multiplicity-and-unresolved-validity",
         "VALIDATION.md#numerical-correctness-and-reproducibility",
-        "BACKLOG.md#wr-021-output-provenance-and-numerical-lifecycle",
-        "BACKLOG.md#numerical-and-partial-evidence-obligations",
+        "VALIDATION.md#release-acceptance-remains-pending",
+        "VALIDATION.md#precision-claims-and-progressive-inference-coverage",
     } <= destinations
