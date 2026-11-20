@@ -33,7 +33,7 @@ Partial-week composition and fully-unstarted partial Monte Carlo are **engine-on
 
 ## Install and launch safely
 
-Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writable checkout, 64-bit Python 3.12 with the `py` launcher, and Node/npm compatible with the locked frontend toolchain. Python **3.12.10** and Node **24.19.0** are the recorded tested contributor versions, not a fresh clean-machine certification. The installer's broader Node acceptance does not resolve the known **Node Toolchain Compatibility** toolchain-policy mismatch. Preserve dependency errors rather than forcing installation or updating locks.
+Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writable checkout, 64-bit Python 3.12 with the `py` launcher, and Node **24.x, starting at 24.15.0**, with `npm.cmd` for the locked frontend toolchain. Python **3.12.10** and Node **24.19.0** are the recorded tested contributor versions, not a fresh clean-machine certification. Setup checks the stable three-part Node version and `npm.cmd` before installing dependencies; other major versions, Node below 24.15.0 and prereleases are rejected. `-VerifyOnly` checks an existing installation without requiring frontend-build prerequisites. **Node Toolchain Compatibility** remains In Review; clean-machine acceptance remains separate. Preserve dependency errors rather than forcing installation or updating locks.
 
 1. Open PowerShell and obtain the repository:
 
@@ -240,7 +240,7 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 
 | Symptom | Useful next step |
 |---|---|
-| Dependency/build failure | Confirm prerequisites and locked setup; preserve the exact error. Do not force installation, regenerate locks or assume the Node-policy gap is resolved. |
+| Dependency/build failure | Confirm prerequisites and locked setup; preserve the exact error. Use supported stable Node 24 and npm.cmd; do not force installation or regenerate locks. |
 | Windows native-file lock / missing import or frontend assets | Close your own Vite/test processes normally, rerun locked setup and match custom environment/start paths. VerifyOnly does not repair a missing build. |
 | Readiness timeout | Inspect the printed private stdout/stderr logs; retain ownership metadata and use authenticated stop/recovery if still alive. |
 | Empty snapshot selector | Check the exact database/league/season. A fresh store needs an authorized refresh; there is no bundled persistent demo loader. |
@@ -250,7 +250,7 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 | Slow/capped run or pending cancellation | Inspect actual work/resource/precision status; page size is not a computation bound. Cancellation is cooperative, not a reason to kill an unknown process. |
 | Missing older result | Check current snapshot, browser history limits, expiry and deletion. A viewer cannot reconstruct data that is no longer retained. |
 
-Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, Node Toolchain Compatibility and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
+Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, independent acceptance of Node Toolchain Compatibility and clean-machine/release evidence remain outstanding; neither setup success nor this guide declares release readiness.
 
 ## Advanced existing CLI workflows
 

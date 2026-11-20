@@ -28,11 +28,11 @@ def _validate_work_rows(rows: list[list[str]]) -> None:
     assert rows
     anchors = [re.search(r'id="([^"]+)"', row[0]).group(1) for row in rows]
     assert len(set(anchors)) == len(anchors)
-    expected_legacy = {f"WR-{number:03d}" for number in (*range(3, 22), *range(23, 27))}
+    expected_legacy = {f"WR-{number:03d}" for number in (*range(3, 22), *range(23, 28))}
     legacy = [row[6] for row in rows if row[6].startswith("WR-")]
     assert expected_legacy <= set(legacy) and len(legacy) == len(set(legacy))
     assert {
-        "v1-v2-season-simulator-integration",
+        "cgl-record-book-integration",
         "enhanced-automatic-drop-valuation",
     } <= set(anchors)
     for row in rows:
@@ -48,8 +48,11 @@ def _validate_work_rows(rows: list[list[str]]) -> None:
         assert priority in {"P0", "P1", "P2", "P3"}
         assert row[3] in {"Backlog", "Ready", "In Progress", "In Review", "Blocked"}
         assert row[1] and row[4] and row[5]
-    integration = rows[anchors.index("v1-v2-season-simulator-integration")]
-    assert integration[3] == "In Review" and "/pull/161" in integration[4]
+    integration = rows[anchors.index("cgl-record-book-integration")]
+    assert integration[3] == "Backlog"
+    assert (
+        "Roadmap direction approved; implementation is not authorized" in integration[4]
+    )
 
 
 def test_backlog_titles_and_work_metadata_are_unambiguous() -> None:
@@ -126,6 +129,9 @@ def test_contributor_locked_setup_and_vite_commands_match_sources() -> None:
     ):
         assert arguments in document
         assert all(f'"{part}"' in setup for part in arguments.split())
+    assert "24.x from 24.15.0" in document
+    assert "24.x (24.15.0 or later)" in setup
+    assert "24.x, starting at 24.15.0" in _read("docs/USER_GUIDE.md")
     vite = _read("frontend/vite.config.ts")
     assert "VITE_API_TARGET" in document and "VITE_API_TARGET" in vite
     assert "changeOrigin: false" in vite and "without changing Origin" in document

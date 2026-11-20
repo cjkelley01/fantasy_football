@@ -105,7 +105,7 @@ def _validate(documents: dict[str, str]) -> None:
             assert fragment in documents[path], (path, fragment)
     backlog = documents["docs/BACKLOG.md"]
     for title in (
-        "Season Simulator Integration",
+        "CGL Record Book Integration",
         "Node Toolchain Compatibility",
         "Simulation Performance Evaluation",
         "Interface and Action UX",
