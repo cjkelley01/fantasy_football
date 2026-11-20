@@ -16,6 +16,10 @@ from fantasy_football.canonical.model import (
 from fantasy_football.canonical.serialization import snapshot_to_json
 from fantasy_football.canonical.validation import validated_snapshot
 from fantasy_football.evolving_state import EvolvingLeagueState, IRPolicy
+from fantasy_football.lineup_optimizer import (
+    LineupOptimizationWorkspace,
+    prepare_lineup_optimization,
+)
 from fantasy_football.partial_week import (
     DeterministicPlayerValue,
     PartialWeekEvidence,
@@ -26,7 +30,11 @@ from fantasy_football.partial_week import (
     validate_proposed_lineup,
 )
 from fantasy_football.partial_week_serialization import partial_week_to_json
-from fantasy_football.player_outcomes import PlayerOutcomeModel, projection_class_counts
+from fantasy_football.player_outcomes import (
+    PlayerOutcomeModel,
+    PreparedNormalOutcomes,
+    projection_class_counts,
+)
 from fantasy_football.postseason import ConsolationLadderConfiguration, WeeklyTeamScore
 from fantasy_football.season_simulator import (
     DEFAULT_POSTSEASON_TRANSACTION_POLICY,
@@ -188,6 +196,16 @@ SIMULATION_SEMANTICS = (
 
 
 def _deterministic_value(value):
+    if isinstance(value, WeeklyTransactionPolicy):
+        # These are the exact accepted V1 keys. Added optimization defaults
+        # must not invalidate historical checkpoints or change published IDs.
+        result = {
+            "waiver_boundary": _deterministic_value(value.waiver_boundary),
+            "reject_incomplete_valuations": value.reject_incomplete_valuations,
+        }
+        if value.automatic_rosters is not None:
+            result["automatic_rosters"] = _deterministic_value(value.automatic_rosters)
+        return result
     if is_dataclass(value):
         return {
             item.name: _deterministic_value(getattr(value, item.name))
@@ -351,7 +369,11 @@ def monte_carlo_run_identity(
     )
 
 
-def _scenario_digest(result) -> str:
+def _scenario_digest(result, prepared: PreparedNormalOutcomes | None = None) -> str:
+    if prepared is not None:
+        digest = prepared.scenario_digest(result)
+        if digest is not None:
+            return digest
     payload = tuple(
         (item.player_id, item.season, item.scoring_week, item.points)
         for item in result.scores
@@ -485,6 +507,7 @@ def run_monte_carlo_path(
     path_index: int,
     *,
     retain_result: bool = False,
+    lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> tuple[MonteCarloPathSummary, DeterministicSeasonResult | None]:
     if path_index not in config.path_indices:
         raise MonteCarloError(f"path_index={path_index} is outside configured range")
@@ -492,9 +515,27 @@ def run_monte_carlo_path(
         with validated_snapshot(snapshot):
             if config.partial_week is not None:
                 _validate_pregame_partial_week(snapshot, config.partial_week)
-            scenario = model.generate_scenario(
-                snapshot, master_seed=config.master_seed, path_index=path_index
-            )
+            if lineup_workspace is None and not retain_result:
+                lineup_workspace = prepare_lineup_optimization(snapshot)
+            if (
+                lineup_workspace is not None
+                and config.partial_week is None
+                and not retain_result
+                and PreparedNormalOutcomes.supports(model)
+            ):
+                identity = config.master_seed, model.model_id, model.parameters
+                if (
+                    lineup_workspace.outcomes is None
+                    or lineup_workspace.outcomes.identity != identity
+                ):
+                    lineup_workspace.outcomes = PreparedNormalOutcomes(
+                        snapshot, model, config.master_seed
+                    )
+                scenario = lineup_workspace.outcomes.generate_scenario(path_index)
+            else:
+                scenario = model.generate_scenario(
+                    snapshot, master_seed=config.master_seed, path_index=path_index
+                )
             season_scenario, partial = (
                 (scenario, None)
                 if config.partial_week is None
@@ -508,7 +549,9 @@ def run_monte_carlo_path(
                 postseason_transaction_policy=config.postseason_transaction_policy,
                 consolation_configuration=config.consolation_configuration,
                 initial_evolving_state=config.initial_evolving_state,
+                lineup_workspace=lineup_workspace,
                 partial_week=partial,
+                _native_execution=not retain_result and partial is None,
             )
     except ValueError as exc:
         raise MonteCarloError(f"invalid path {path_index}: {exc}") from exc
@@ -526,7 +569,10 @@ def run_monte_carlo_path(
     summary = MonteCarloPathSummary(
         path_index,
         scenario.scenario_id,
-        _scenario_digest(scenario),
+        _scenario_digest(
+            scenario,
+            lineup_workspace.outcomes if lineup_workspace is not None else None,
+        ),
         season.status,
         season.unresolved_capabilities,
         teams,
@@ -758,14 +804,24 @@ def run_monte_carlo_batch(
     snapshot: LeagueSnapshot,
     config: MonteCarloConfig,
     model: PlayerOutcomeModel,
+    *,
+    _lineup_workspace: LineupOptimizationWorkspace | None = None,
 ) -> MonteCarloBatchResult:
     if not getattr(model, "model_id", None) or not hasattr(model, "generate_scenario"):
         raise MonteCarloError("model does not satisfy PlayerOutcomeModel")
-    paths = tuple(
-        run_monte_carlo_path(snapshot, config, model, path_index)[0]
-        for path_index in config.path_indices
-    )
-    return _aggregate(snapshot, config, model, paths)
+    with validated_snapshot(snapshot):
+        lineup_workspace = _lineup_workspace or prepare_lineup_optimization(snapshot)
+        if lineup_workspace.snapshot is not snapshot:
+            raise MonteCarloError(
+                "lineup workspace belongs to a different canonical snapshot object"
+            )
+        paths = tuple(
+            run_monte_carlo_path(
+                snapshot, config, model, path_index, lineup_workspace=lineup_workspace
+            )[0]
+            for path_index in config.path_indices
+        )
+        return _aggregate(snapshot, config, model, paths)
 
 
 def aggregate_monte_carlo_paths(

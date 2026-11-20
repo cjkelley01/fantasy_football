@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections import Counter, OrderedDict
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, getcontext
 from enum import StrEnum
 
 from fantasy_football.canonical.model import (
@@ -81,20 +81,29 @@ class LineupOptimizationWorkspace:
     """
 
     __slots__ = (
-        "snapshot",
-        "players",
-        "team_ids",
-        "week_records",
-        "slots",
-        "reserve_slot_ids",
         "candidate_cache",
-        "starting_cache",
-        "maximum_cache_entries",
         "candidate_hits",
+        "execution",
+        "maximum_cache_entries",
+        "outcomes",
+        "ownership_cache",
+        "players",
+        "prepared_season",
+        "projected_values",
+        "projection_profiles",
+        "reserve_slot_ids",
+        "slots",
+        "snapshot",
+        "starting_cache",
         "starting_hits",
+        "team_ids",
+        "validated_rosters",
+        "week_records",
     )
 
-    def __init__(self, snapshot: LeagueSnapshot, *, maximum_cache_entries: int = 20_000):
+    def __init__(
+        self, snapshot: LeagueSnapshot, *, maximum_cache_entries: int = 20_000
+    ):
         if maximum_cache_entries <= 0:
             raise LineupOptimizationError("maximum_cache_entries must be positive")
         self.snapshot = snapshot
@@ -118,6 +127,35 @@ class LineupOptimizationWorkspace:
         self.maximum_cache_entries = maximum_cache_entries
         self.candidate_hits = 0
         self.starting_hits = 0
+        self.prepared_season = None
+        self.validated_rosters = OrderedDict()
+        self.ownership_cache = OrderedDict()
+        self.execution = None
+        self.outcomes = None
+        self.projected_values = OrderedDict()
+        self.projection_profiles = OrderedDict()
+
+    def validate_roster(self, entries):
+        # Strict type checks precede equality-based caching: True == 1 must
+        # never let a malformed record alias an accepted integer ID.
+        cacheable = isinstance(entries, tuple) and all(
+            type(entry) is RosterEntry
+            and type(entry.player_id) is int
+            and type(entry.team_id) is int
+            and type(entry.lineup_slot_id) is int
+            and (
+                entry.raw_owner_team_id is None or type(entry.raw_owner_team_id) is int
+            )
+            for entry in entries
+        )
+        if cacheable and entries in self.validated_rosters:
+            self.validated_rosters.move_to_end(entries)
+            return
+        validate_roster_state(self.snapshot, entries)
+        if cacheable:
+            self.validated_rosters[entries] = True
+            while len(self.validated_rosters) > 128:
+                self.validated_rosters.popitem(last=False)
 
     def _get(self, cache, key):
         value = cache.get(key)
@@ -281,6 +319,104 @@ def _vacancy_reason(
     return VacancyReason.ELIGIBLE_PLAYERS_ASSIGNED_ELSEWHERE
 
 
+def _native_unlimited_assignment(candidates, slot_count):
+    """Exact Decimal DP with integer-encoded lexicographic assignments.
+
+    Each slot is a fixed-width digit: ascending player-ID rank, then None.
+    Integer order therefore equals the reference tie key, including vacancies.
+    This avoids constructing assignment tuples on every legal DP edge. Decimal
+    additions retain candidate order, rounding, traps and flags unchanged.
+    """
+    player_ids = tuple(sorted(candidate.player_id for candidate in candidates))
+    ranks = {player: rank for rank, player in enumerate(player_ids)}
+    empty = len(player_ids)
+    width = max(1, empty.bit_length())
+    shifts = tuple(width * (slot_count - slot - 1) for slot in range(slot_count))
+    initial = sum(empty << shift for shift in shifts)
+    states = {0: (Decimal(0), initial)}
+    for candidate in candidates:
+        moves = tuple(
+            (1 << slot, (ranks[candidate.player_id] - empty) << shifts[slot])
+            for slot in candidate.eligible_slot_indices
+        )
+        updated = dict(states)
+        for mask, (total, assignment) in states.items():
+            value = None
+            for bit, delta in moves:
+                if mask & bit:
+                    continue
+                if value is None:
+                    value = total + candidate.exact_projection
+                target = mask | bit
+                old = updated.get(target)
+                if old is not None and value < old[0]:
+                    continue
+                proposed = assignment + delta
+                if old is None or value > old[0] or proposed < old[1]:
+                    updated[target] = value, proposed
+        states = updated
+    best = None
+    best_mask = 0
+    for mask, (total, assignment) in states.items():
+        if (
+            best is None
+            or total > best[0]
+            or (
+                total == best[0]
+                and (
+                    mask.bit_count() > best_mask.bit_count()
+                    or (
+                        mask.bit_count() == best_mask.bit_count()
+                        and assignment < best[1]
+                    )
+                )
+            )
+        ):
+            best = total, assignment
+            best_mask = mask
+    digits = player_ids + (None,)
+    digit_mask = (1 << width) - 1
+    assignment = tuple(digits[(best[1] >> shift) & digit_mask] for shift in shifts)
+    return _State(best[0], assignment)
+
+
+def _reference_assignment(
+    candidates, slots, limited_player_ids, maximum_limited_players
+):
+    """Readable general oracle, also used for genuinely limited-player cases."""
+    empty_assignment = (None,) * len(slots)
+    states = {(0, 0): _State(Decimal(0), empty_assignment)}
+    for candidate in candidates:
+        updated = dict(states)
+        for (mask, limited_count), state in states.items():
+            next_limited_count = limited_count + (
+                candidate.player_id in limited_player_ids
+            )
+            if (
+                maximum_limited_players is not None
+                and next_limited_count > maximum_limited_players
+            ):
+                continue
+            for slot_index in candidate.eligible_slot_indices:
+                bit = 1 << slot_index
+                if mask & bit:
+                    continue
+                assignment = list(state.assignment)
+                assignment[slot_index] = candidate.player_id
+                proposed = _State(
+                    state.exact_total + candidate.exact_projection, tuple(assignment)
+                )
+                target_key = mask | bit, next_limited_count
+                if _prefer_projected_points(proposed, updated.get(target_key)):
+                    updated[target_key] = proposed
+        states = updated
+    best = None
+    for state in states.values():
+        if _prefer_projected_points(state, best):
+            best = state
+    return best
+
+
 def optimize_candidate_lineup(
     snapshot: LeagueSnapshot,
     scoring_week: int,
@@ -359,34 +495,46 @@ def optimize_candidate_lineup(
             or candidate.player_id in retained_limited
         ]
 
-    empty_assignment: tuple[int | None, ...] = (None,) * len(slots)
+    # Identical ordered player/projection/eligibility vectors have identical
+    # week-free CandidateLineup results. The higher-level team/week artifact
+    # is still constructed separately. Preserve Decimal context/trap/flag
+    # effects as well, rather than assuming a different arithmetic policy.
+    context = getcontext()
+    context_key = (
+        context.prec,
+        context.rounding,
+        context.Emin,
+        context.Emax,
+        context.clamp,
+        tuple(context.traps.items()),
+        tuple(context.flags.items()),
+    )
+    profile_key = (
+        canonical_player_ids,
+        tuple(
+            (c.player_id, type(c.projection), c.projection, c.eligible_slot_indices)
+            for c in candidates
+        ),
+        tuple(sorted(limited_player_ids)),
+        maximum_limited_players,
+        use_exact_limited_dominance,
+        context_key,
+    )
+    profile = prepared._get(prepared.projection_profiles, profile_key)
+    if profile is not None:
+        result, flags = profile
+        context.flags.update(dict(flags))
+        prepared._put(prepared.candidate_cache, key, result)
+        return result
+
     if maximum_limited_players is not None and maximum_limited_players < 0:
         raise LineupOptimizationError("maximum_limited_players cannot be negative")
-    states: dict[tuple[int, int], _State] = {(0, 0): _State(Decimal(0), empty_assignment)}
-    for candidate in candidates:
-        updated = dict(states)
-        for (mask, limited_count), state in states.items():
-            next_limited_count = limited_count + (candidate.player_id in limited_player_ids)
-            if maximum_limited_players is not None and next_limited_count > maximum_limited_players:
-                continue
-            for slot_index in candidate.eligible_slot_indices:
-                bit = 1 << slot_index
-                if mask & bit:
-                    continue
-                assignment = list(state.assignment)
-                assignment[slot_index] = candidate.player_id
-                proposed = _State(
-                    state.exact_total + candidate.exact_projection,
-                    tuple(assignment),
-                )
-                target_key = (mask | bit, next_limited_count)
-                if _prefer_projected_points(proposed, updated.get(target_key)):
-                    updated[target_key] = proposed
-        states = updated
-    best: _State | None = None
-    for state in states.values():
-        if _prefer_projected_points(state, best):
-            best = state
+    if not limited_player_ids and maximum_limited_players is None:
+        best = _native_unlimited_assignment(candidates, len(slots))
+    else:
+        best = _reference_assignment(
+            candidates, slots, limited_player_ids, maximum_limited_players
+        )
     assert best is not None
     assignments = tuple(
         LineupAssignment(slot, player_id, week_records[player_id].effective_projection)
@@ -402,6 +550,11 @@ def optimize_candidate_lineup(
         math.fsum(item.effective_projection for item in assignments),
     )
     prepared._put(prepared.candidate_cache, key, result)
+    prepared._put(
+        prepared.projection_profiles,
+        profile_key,
+        (result, tuple(context.flags.items())),
+    )
     return result
 
 
@@ -438,8 +591,15 @@ def optimize_starting_lineup(
         )
 
     modeled_roster = snapshot.roster_entries if roster_entries is None else roster_entries
-    validate_roster_state(snapshot, modeled_roster)
-    cache_key = (team_id, scoring_week, modeled_roster)
+    prepared.validate_roster(modeled_roster)
+    # A team's exact starting lineup is unaffected by other teams' rosters.
+    team_entries = tuple(
+        sorted(
+            (entry for entry in modeled_roster if entry.team_id == team_id),
+            key=lambda item: item.player_id,
+        )
+    )
+    cache_key = (team_id, scoring_week, team_entries)
     cached = prepared._get(prepared.starting_cache, cache_key)
     if cached is not None:
         prepared.starting_hits += 1
@@ -448,7 +608,6 @@ def optimize_starting_lineup(
     week_records = prepared.week_records[scoring_week]
     slots = prepared.slots
     reserve_slot_ids = prepared.reserve_slot_ids
-    team_entries = tuple(sorted((entry for entry in modeled_roster if entry.team_id == team_id), key=lambda item: item.player_id))
     projections = {entry.player_id: week_records[entry.player_id].effective_projection for entry in team_entries}
 
     candidate_ids = tuple(

@@ -388,19 +388,3 @@ def test_prior_postseason_scores_are_replayed_not_added_twice_or_advanced_early(
     )
     with pytest.raises(SeasonSimulationError, match="preceding current-period"):
         _execute(snapshot, future, replace(partial, prior_postseason_scores=()))
-
-
-def test_t4_cross_references_preserve_analytical_source_and_public_interface_owners():
-    # These are ownership links, not a brittle duplicate of every source field.
-    destinations = set(re.findall(r"\]\(([^)]+)\)", _chapter()))
-    assert {
-        "SEASON_SIMULATOR.md#inputs-and-boundaries",
-        "TRANSACTIONS.md#roster-state-and-legality",
-        "PARTIAL_WEEK.md#current-capability-map",
-        "MANUAL_SCENARIOS.md#public-contracts",
-        "DATA.md#live-and-temporal-evidence",
-        "METHODOLOGY.md",
-        "#scenario-and-state-representations",
-        "#validation-nulls-and-compatibility",
-        "BACKLOG.md#numerical-and-partial-evidence-obligations",
-    } <= destinations

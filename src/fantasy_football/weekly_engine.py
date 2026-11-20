@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 from fractions import Fraction
-import math
 
 from fantasy_football.canonical.model import (
     InterpretationStatus,
@@ -388,12 +388,69 @@ def _allow_tied_matchup(snapshot: LeagueSnapshot) -> str:
     )
 
 
-def rank_standings(snapshot: LeagueSnapshot, standings: tuple[ModeledStanding, ...]) -> StandingsTable:
+def rank_standings(
+    snapshot: LeagueSnapshot,
+    standings: tuple[ModeledStanding, ...],
+    *,
+    fallback_seed: int | None = None,
+) -> StandingsTable:
     """Rank supported records without manufacturing an unverified deeper order."""
 
     validate_snapshot(snapshot)
     rows = _validate_standings(snapshot, standings)
     first_rule = snapshot.rules.standings.first_seeding_tiebreak
+    if fallback_seed is not None:
+        import hashlib
+
+        if isinstance(fallback_seed, bool) or not isinstance(fallback_seed, int):
+            raise WeeklyEngineError("standings fallback seed must be an integer")
+        if first_rule not in {None, "TOTAL_POINTS_SCORED"}:
+            raise WeeklyEngineError(
+                f"configured seeding tiebreaker {first_rule!r} is unsupported; fallback cannot override it"
+            )
+        secondary_id = snapshot.rules.standings.secondary_tiebreak_rule_id
+        secondary = next((rule for rule in snapshot.rules.interpretations
+                          if rule.rule_id == secondary_id), None)
+        tied_keys = [(row.winning_percentage, row.points_for) for row in rows.values()]
+        if (
+            secondary is not None
+            and len(tied_keys) != len(set(tied_keys))
+            and (
+                secondary.status is InterpretationStatus.UNSUPPORTED
+                or (
+                    secondary.status is InterpretationStatus.UNDERSTOOD
+                    and secondary.normalized_value != "random"
+                )
+            )
+        ):
+            raise WeeklyEngineError(
+                f"configured secondary tiebreaker {secondary_id!r} is unsupported; fallback cannot override it"
+            )
+
+        def random_key(row):
+            key = f"standings-final-random-v1:{fallback_seed}:{snapshot.snapshot_id}:{row.team_id}"
+            return hashlib.sha256(key.encode("utf-8")).hexdigest(), row.team_id
+
+        ordered = sorted(
+            rows.values(),
+            key=lambda row: (-row.winning_percentage, -row.points_for, random_key(row)),
+        )
+        return StandingsTable(
+            tuple(
+                StandingsRanking(
+                    row.team_id,
+                    rank,
+                    row.winning_percentage.numerator,
+                    row.winning_percentage.denominator,
+                    row.points_for,
+                    True,
+                )
+                for rank, row in enumerate(ordered, 1)
+            ),
+            first_rule,
+            True,
+            (),
+        )
     supports_points_for = first_rule == "TOTAL_POINTS_SCORED"
     primary: dict[Fraction, list[ModeledStanding]] = {}
     for row in rows.values():
@@ -505,6 +562,13 @@ def resolve_regular_season_week(
             tuple(sorted(lineup.vacancies, key=lambda item: item.slot)),
         )
 
+    return _regular_transition(snapshot, scoring_week, current, team_scores, matchups)
+
+
+def _regular_transition(
+    snapshot, scoring_week, current, team_scores, matchups, *, retain_scores=True
+):
+    """Shared record/tie arithmetic after the caller validates score authority."""
     updated = dict(current)
     results: list[MatchupResult] = []
     for matchup in matchups:
@@ -555,6 +619,8 @@ def resolve_regular_season_week(
             )
         )
     updated_tuple = tuple(updated[team_id] for team_id in sorted(updated))
+    if not retain_scores:
+        return updated_tuple
     return WeeklyTransition(
         snapshot.season,
         scoring_week,

@@ -238,15 +238,7 @@ def _validate_methodology(text: str) -> None:
     assert "Exactly `0.0`" in classes["`MISSING`"][1]
     assert "nonmissing draw path" in classes["`EXPLICIT_ZERO`"][1]
     assert "Exactly `0.0`" in classes["`EXPLICIT_ZERO`"][2]
-    for owner in (
-        "PLAYER_OUTCOME_MODEL.md#normal-distribution-and-draw-bytes",
-        "PLAYER_OUTCOME_MODEL.md#identity-and-compatibility",
-        "DATA.md#projection-contract",
-        "RESEARCH.md#component-specific-promotion",
-        "SEASON_SIMULATOR.md#weekly-progression",
-        "MONTE_CARLO.md#aggregation-and-probability-estimators",
-    ):
-        assert f"]({owner})" in text, f"Missing current owner: {owner}"
+    assert "](VALIDATION.md#independent-component-specific-promotion)" in text
 
 
 def test_methodology_preserves_mathematical_and_evidence_contracts() -> None:
@@ -260,7 +252,7 @@ def test_methodology_preserves_mathematical_and_evidence_contracts() -> None:
         r"q_\ell=\mathbf1\{A_\ell=0\}",
         "nonmissing draw path",
         "unconditional probability estimates are suppressed",
-        "RESEARCH.md#component-specific-promotion",
+        "VALIDATION.md#independent-component-specific-promotion",
         "Earlier Normal checkpoints are incompatible",
     ),
 )
@@ -430,8 +422,8 @@ def _validate_mechanics(text: str) -> None:
         "maximize vacancies filled; maximize opposing projected improvement; minimize the target's best residual attainable lineup; then stable vacancy/player identity",
         "marginal opportunities, not persistent acquisitions",
         "reverse frozen opening priority",
-        "WR-023 remains unresolved",
-        "WR-024 remains unresolved",
+        "Exact Finite-Score Objective Ordering remains unresolved",
+        "Incomplete-Valuation Transaction Selection remains unresolved",
         "selects **(1,2)**",
         "favors **(1,3)**",
         "Production excludes materially incomplete-valued plans",
@@ -439,8 +431,8 @@ def _validate_mechanics(text: str) -> None:
         "not a certified maximum over unresolved alternatives",
         "no aggregate multiweek regular-period reconciliation or equivalent universal preflight rejection",
         "unchanged correctness defects",
-        "TRANSACTIONS.md#independent-reference-contracts",
-        "BACKLOG.md#mechanics-review-obligations",
+        "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
+        "VALIDATION.md#exactness-and-unresolved-mechanics",
     ):
         assert requirement in text, f"Missing mechanics contract: {requirement}"
 
@@ -865,9 +857,8 @@ def _validate_partial_methodology(text: str) -> None:
         "not all companion content",
         "prescribed path range",
         "No public partial request fields",
-        "S128–S136 and S165",
-        "PARTIAL_WEEK.md#standings-and-period-authority",
-        "PARTIAL_WEEK.md#monte-carlo-subset",
+        "METHODOLOGY.md#standings-cutoff-period-carry-and-season-integration",
+        "METHODOLOGY.md#supported-execution-states-and-pregame-equivalence",
     ):
         assert contract in chapter, f"Missing partial-week contract: {contract}"
 
@@ -1206,7 +1197,7 @@ def _validate_inference_methodology(text: str) -> None:
         r"H_\Delta=\frac{u_\Delta-\ell_\Delta}{2}",
         "Wilson remains an approximate score interval",
         "no planned-look/across-state multiplier",
-        "WR-025 remains unresolved",
+        "Progressive Inference Coverage remains unresolved",
         "not certify simultaneous repeated-look coverage",
         "without service-side scaling",
         "does **not automatically restart interrupted HTTP jobs**",
@@ -1247,7 +1238,7 @@ def _p6_manual_example():
     return snapshot, state, complete_manual_scenario(snapshot, state, scenario)
 
 
-def test_p6_manual_completion_and_published_paired_decision_values() -> None:
+def test_manual_completion_and_published_paired_decision_values() -> None:
     snapshot, state, completed = _p6_manual_example()
     assert tuple((item.team_id, item.player_id) for item in completed.forced_drops) == (
         (2, 2),
@@ -1312,7 +1303,7 @@ def test_p6_manual_completion_and_published_paired_decision_values() -> None:
     assert repr((snapshot, state)) == before
 
 
-def test_p6_dependent_chain_example_matches_complete_independent_reference() -> None:
+def test_dependent_chain_example_matches_complete_independent_reference() -> None:
     snapshot = _scenario_snapshot_with_bench()
     state = _manual_state(snapshot)
     config = _chain_config()
@@ -1366,7 +1357,7 @@ def test_p6_dependent_chain_example_matches_complete_independent_reference() -> 
     assert not capped.coverage.complete and len(capped.candidates) == 1
 
 
-def test_p6_optional_filters_do_not_turn_empty_into_unrestricted() -> None:
+def test_optional_filters_do_not_turn_empty_into_unrestricted() -> None:
     snapshot = _scenario_snapshot_with_bench()
     state = _manual_state(snapshot)
     config = _single_trade_config()
@@ -1391,7 +1382,7 @@ def test_p6_optional_filters_do_not_turn_empty_into_unrestricted() -> None:
         assert empty.coverage.complete and not empty.candidates
 
 
-def test_p6_screen_matches_independent_completed_state_threshold_calculation() -> None:
+def test_screen_matches_independent_completed_state_threshold_calculation() -> None:
     snapshot = _scenario_snapshot_with_bench()
     state = _manual_state(snapshot)
     candidates = enumerate_single_trade_candidates(
@@ -1428,7 +1419,7 @@ def test_p6_screen_matches_independent_completed_state_threshold_calculation() -
     )
 
 
-def test_p6_equivalent_example_preserves_paths_and_shares_one_evaluation(
+def test_equivalent_example_preserves_paths_and_shares_one_evaluation(
     monkeypatch,
 ) -> None:
     import fantasy_football.trade_evaluation as evaluation_module
@@ -1485,7 +1476,7 @@ def test_p6_equivalent_example_preserves_paths_and_shares_one_evaluation(
         validate_candidate_state_registry(snapshot, forged)
 
 
-def test_p6_capped_state_exposure_cannot_certify_a_best_candidate() -> None:
+def test_capped_state_exposure_cannot_certify_a_best_candidate() -> None:
     result = _progressive_run(_search(budget=1, target=0.99))
     assert result.coverage.initially_evaluated_states == 1
     assert result.coverage.unevaluated_states > 0
@@ -1509,11 +1500,10 @@ def _validate_decision_methodology(text: str) -> None:
         "not exhaustive coverage of the unscreened feasible universe",
         "two distinct paths, one completed state, one reusable numerical evaluation",
         "leaves ranking_resolved=False",
-        "WR-025 still qualifies ranking/inference interpretation",
+        "Progressive Inference Coverage still qualifies ranking/inference interpretation",
         r"\Delta_r(c)=p_{\mathrm{champ},r}(E_c)-p_{\mathrm{champ},r}(E_0)",
-        "transfers no authority",
-        "MANUAL_SCENARIOS.md#protected-pins-and-completion-chronology",
-        "UNIFIED_ACTION_SEARCH.md#identities-and-state-equivalence",
+        "METHODOLOGY.md#explicit-scenarios-and-one-time-completion",
+        "METHODOLOGY.md#screening-and-complete-state-equivalence",
     ):
         assert contract in text, f"Missing decision-method contract: {contract}"
     for false_claim in (
@@ -1523,7 +1513,7 @@ def _validate_decision_methodology(text: str) -> None:
         assert false_claim not in text, "Unsupported decision claim"
 
 
-def test_p6_preserves_method_boundaries_and_pending_review() -> None:
+def test_preserves_method_boundaries_and_pending_review() -> None:
     _validate_decision_methodology(_guide())
 
 
@@ -1534,7 +1524,7 @@ def test_p6_preserves_method_boundaries_and_pending_review() -> None:
         "Structural feasibility guarantees ESPN execution.",
     ),
 )
-def test_p6_rejects_false_proxy_or_execution_guarantee(claim: str) -> None:
+def test_rejects_false_proxy_or_execution_guarantee(claim: str) -> None:
     with pytest.raises(AssertionError, match="Unsupported decision claim"):
         _validate_decision_methodology(_guide() + "\n" + claim)
 
@@ -1545,10 +1535,10 @@ def test_p6_rejects_false_proxy_or_execution_guarantee(claim: str) -> None:
         r"O_\ell\cap I_{\ell-1}\ne\varnothing",
         "not exhaustive coverage of the unscreened feasible universe",
         "leaves ranking_resolved=False",
-        "WR-025 still qualifies ranking/inference interpretation",
+        "Progressive Inference Coverage still qualifies ranking/inference interpretation",
     ),
 )
-def test_p6_rejects_lost_dependency_coverage_or_inference_boundary(lost: str) -> None:
+def test_rejects_lost_dependency_coverage_or_inference_boundary(lost: str) -> None:
     text = _guide()
     assert lost in text
     with pytest.raises(AssertionError, match="Missing decision-method contract"):

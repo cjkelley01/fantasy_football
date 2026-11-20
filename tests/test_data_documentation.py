@@ -1,4 +1,4 @@
-"""P7a schemas, trust examples and scoped reader/authority boundaries."""
+"""schemas, trust examples and scoped reader/authority boundaries."""
 
 from __future__ import annotations
 
@@ -44,6 +44,122 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _read(name: str) -> str:
     return (ROOT / "docs" / name).read_text(encoding="utf-8")
+
+
+def test_developer_research_recipe_executes_without_claiming_pregame_evidence() -> None:
+    from fantasy_football.outcome_distribution_research import TemporalSplit
+
+    document = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    section = document.split("### Reproducing research evaluations\n", 1)[1].split(
+        "\n### ", 1
+    )[0]
+    recipe = re.search(r"```python\n(.*?)\n```", section, re.DOTALL)
+    assert recipe is not None
+    samples = tuple(
+        _sample(
+            HistoricalResearchInputRecord(_record(1, 10, 8, week=week)),
+            week=week,
+        )
+        for week in (1, 2)
+    )
+    sources = (*_sources(week=1), *_sources(week=2))
+    configuration = _config(
+        temporal_split=TemporalSplit(2025, 2),
+        minimum_group_size=1,
+        minimum_training_rows=1,
+        minimum_evaluation_rows=1,
+    )
+    namespace = {"samples": samples, "sources": sources, "configuration": configuration}
+    # Execute the version-controlled example, never supplied/private input.
+    exec(compile(recipe[1], "CONTRIBUTING.md research example", "exec"), namespace)  # noqa: S102
+    expected = build_historical_research_dataset(samples, sources)
+    assert namespace["dataset_bytes"] == historical_research_dataset_to_json(expected)
+    assert namespace["report_bytes"] == outcome_distribution_report_to_json(
+        research_outcome_distributions(expected, configuration)
+    )
+    assert all(not row.eligible_authenticated_pair for row in expected.rows)
+    assert "requiring explicit authorization" in section
+
+
+def _check_research_operating_boundary(text: str) -> None:
+    section = text.split("### Reproducing research evaluations\n", 1)[1].split(
+        "\n### ", 1
+    )[0]
+    assert "NETWORKED" in section and "requiring explicit authorization" in section
+    assert "absent or empty" in section and "child of ignored `outputs/`" in section
+    assert "diagnostic does **not** materialize" in section
+    assert "nor retrospective retrieval authenticate pregame" in section
+    assert "out of Git" in section
+
+
+def test_research_recipe_preserves_operating_and_trust_limits() -> None:
+    _check_research_operating_boundary(
+        (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    )
+
+
+@pytest.mark.parametrize(
+    "removed",
+    (
+        "requiring explicit authorization",
+        "absent or empty",
+        "diagnostic does **not** materialize",
+        "nor retrospective retrieval authenticate pregame",
+        "out of Git",
+    ),
+)
+def test_research_recipe_rejects_lost_operating_limits(removed: str) -> None:
+    text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    with pytest.raises(AssertionError):
+        _check_research_operating_boundary(text.replace(removed, ""))
+
+
+def _check_transaction_source_permission(text: str) -> None:
+    section = text.split("### Transaction eligibility authority\n", 1)[1].split(
+        "\n## ", 1
+    )[0]
+    for boundary in (
+        "SourceReference.payload_sha256",
+        "transaction_eligibility_evidence_v1",
+        "evidence_contract=transaction_eligibility_v1",
+        "verified_by_tests",
+        "validated_fixture",
+        "Only registered immutable determinations",
+        "not Verified live ESPN permission",
+        "No approved assumption supplies strict future IR eligibility or releases ESPN waiver holds",
+    ):
+        assert boundary in section, f"Lost transaction source boundary: {boundary}"
+
+
+def test_transaction_source_permission_is_fixture_only_and_validator_minted() -> None:
+    from fantasy_football.evolving_state import (
+        EvidenceBasis,
+        validate_eligibility_evidence_artifact,
+    )
+
+    _check_transaction_source_permission(_read("DATA.md"))
+    implementation = inspect.getsource(validate_eligibility_evidence_artifact)
+    assert EvidenceBasis.VALIDATED_FIXTURE.value in _read("DATA.md")
+    for identity in (
+        "transaction_eligibility_evidence_v1",
+        "transaction_eligibility_v1",
+        "verified_by_tests",
+    ):
+        assert identity in implementation
+
+
+@pytest.mark.parametrize(
+    "removed",
+    (
+        "Only registered immutable determinations",
+        "not Verified live ESPN permission",
+        "No approved assumption supplies strict future IR eligibility or releases ESPN waiver holds",
+    ),
+)
+def test_transaction_source_permission_cannot_silently_gain_live_authority(removed):
+    text = _read("DATA.md")
+    with pytest.raises(AssertionError, match="Lost transaction source boundary"):
+        _check_transaction_source_permission(text.replace(removed, ""))
 
 
 def _record_fields(text: str, name: str) -> list[str]:
@@ -323,34 +439,3 @@ def test_v3_exploratory_recommendation_and_t2_report_identity_are_distinct() -> 
                 report, recommended_candidate_id=report.exploratory_best_candidate_id
             )
         )
-
-
-def test_d1_d6_and_deferred_mapping_preserve_existing_owners() -> None:
-    data = _read("DATA.md")
-    assert {
-        "Data lifecycle and source provenance",
-        "Source trust, coverage and research data",
-        "Inputs, transformations and league-rule authority",
-        "Quality, canonical invariants and immutable publication",
-        "Current-week temporal evidence and permissions",
-        "Evidence-role register and verification references",
-    } <= set(re.findall(r"^## (.+)$", data, re.MULTILINE))
-    mapping = data.split("### P7a source-section mapping and retained ownership", 1)[1]
-    for retained in (
-        "S071–S072",
-        "S073, S083",
-        "S074–S078, S080",
-        "S079, S082",
-        "S081",
-        "S084–S085",
-        "S144–S149",
-        "S145, S149–S154",
-        "S146–S148",
-        "S139, S141, S143",
-    ):
-        assert retained in mapping
-    assert (
-        "executable bindings use contract 3, with authority retirement separately gated"
-        in mapping
-    )
-    assert "permanent authority adoption remains separately gated" in mapping

@@ -474,6 +474,139 @@ class ProvisionalNormalModel:
         )
 
 
+_NORMAL_GENERATE = ProvisionalNormalModel.generate_scenario
+_NORMAL_DRAW = ProvisionalNormalModel._standard_normal
+
+
+class PreparedNormalOutcomes:
+    """Exact historical keys with immutable JSON fragments prepared once.
+
+    Full canonical draws and their order are retained. This changes encoding
+    work only; the two SHA-256 digests and Box–Muller operations are identical.
+    Custom models, subclasses and overridden methods use their original API.
+    """
+
+    @staticmethod
+    def supports(model):
+        return (
+            type(model) is ProvisionalNormalModel
+            and type(model.base_stddev) in (int, float)
+            and type(model.projection_scale) in (int, float)
+            and type(model).generate_scenario is _NORMAL_GENERATE
+            and type(model)._standard_normal is _NORMAL_DRAW
+        )
+
+    def __init__(self, snapshot, model, master_seed):
+        self.identity = master_seed, model.model_id, model.parameters
+        self.model_id = model.model_id
+        self.seed = master_seed
+        self.prefix = (
+            json.dumps(
+                ("fantasy-football-player-week-draw-v1", master_seed),
+                separators=(",", ":"),
+                ensure_ascii=True,
+            ).encode()[:-1]
+            + b","
+        )
+        self.records = tuple(
+            (
+                row.player_id,
+                row.season,
+                row.scoring_week,
+                float(row.effective_projection),
+                model.base_stddev
+                + model.projection_scale * abs(float(row.effective_projection)),
+                None
+                if row.projection_class is ProjectionClass.MISSING
+                else json.dumps(
+                    (
+                        row.player_id,
+                        row.season,
+                        row.scoring_week,
+                        model.version,
+                        model._draw_parameters,
+                    ),
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                ).encode()[1:],
+            )
+            for row in sorted(
+                snapshot.player_weeks,
+                key=lambda row: (row.player_id, row.season, row.scoring_week),
+            )
+            if snapshot.first_simulation_week
+            <= row.scoring_week
+            <= snapshot.final_simulation_week
+        )
+        self.digest_prefixes = tuple(
+            json.dumps(
+                (player, season, week), separators=(",", ":"), ensure_ascii=True
+            )[:-1]
+            + ","
+            for player, season, week, *_ in self.records
+        )
+        self.last_scenario = None
+
+    def generate_scenario(self, path_index):
+        if (
+            isinstance(path_index, bool)
+            or not isinstance(path_index, int)
+            or path_index < 0
+        ):
+            raise PlayerOutcomeError("path_index must be a nonnegative integer")
+        prefix = self.prefix + str(path_index).encode("ascii") + b","
+        scores = []
+        sha256 = hashlib.sha256
+        sqrt, log, cos, pi = math.sqrt, math.log, math.cos, math.pi
+        denominator = float(1 << 256)
+        for player, season, week, mean, sigma, suffix in self.records:
+            if suffix is None:
+                points = 0.0
+            else:
+                key = prefix + suffix
+                common = sha256(key)
+                first_counter = common.copy()
+                first_counter.update(b"\x00")
+                first = int.from_bytes(first_counter.digest(), "big")
+                common.update(b"\x01")
+                second = int.from_bytes(common.digest(), "big")
+                u1 = (first + 0.5) / denominator
+                u2 = (second + 0.5) / denominator
+                draw = sqrt(-2.0 * log(u1)) * cos(2.0 * pi * u2)
+                points = mean + sigma * draw
+            if not math.isfinite(points):
+                raise PlayerOutcomeError(
+                    f"nonfinite generated score for player-week {(player, season, week)}"
+                )
+            scores.append(RealizedPlayerScore(player, season, week, points))
+        scenario = DeterministicScoreScenario(
+            f"mc:{self.model_id}:seed={self.seed}:path={path_index}", tuple(scores)
+        )
+        self.last_scenario = scenario
+        return scenario
+
+    def scenario_digest(self, scenario):
+        """Exact JSON bytes for this workspace's latest immutable generated tuple.
+
+        Python's JSON encoder uses float.__repr__ for finite floats. Every
+        generated point is a checked built-in float; the immutable integer
+        coordinates were encoded once. Other scenarios use the general encoder.
+        """
+        if scenario is not self.last_scenario:
+            return None
+        payload = (
+            "["
+            + ",".join(
+                prefix + repr(score.points) + "]"
+                for prefix, score in zip(
+                    self.digest_prefixes, scenario.scores, strict=True
+                )
+            )
+            + "]"
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def projection_class_counts(snapshot: LeagueSnapshot) -> tuple[tuple[str, int], ...]:
     """Report source classes independently of outcome generation."""
 
