@@ -64,7 +64,7 @@ Merging upstream into a shared branch is the default; rebasing or rewriting publ
 
 ## Development environment and checks
 
-Use the [prerequisites and user setup](docs/USER_GUIDE.md#install-and-launch-safely) procedure: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.19.0** for the full locked frontend toolchain. Node Toolchain Compatibility's broader installer/version-policy mismatch remains open. User configuration and launcher/CLI precedence are explained in [USER_GUIDE](docs/USER_GUIDE.md#configure-your-espn-league).
+Use the [prerequisites and user setup](docs/USER_GUIDE.md#install-and-launch-safely) procedure: Windows/PowerShell, Python 3.12 (previously tested 3.12.10), Node **24.x from 24.15.0** for the full locked frontend toolchain (24.15.0 and 24.19.0 have recorded contributor checks). Setup validates Node and `npm.cmd` before Python/dependency installation. Node Toolchain Compatibility remains In Review; these checks are not clean-machine release acceptance. User configuration and launcher/CLI precedence are explained in [USER_GUIDE](docs/USER_GUIDE.md#configure-your-espn-league).
 
 For contributor-controlled dependency installation from the repository root, the setup script's locked operations can also be run explicitly:
 

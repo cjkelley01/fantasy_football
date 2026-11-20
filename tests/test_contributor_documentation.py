@@ -129,6 +129,9 @@ def test_contributor_locked_setup_and_vite_commands_match_sources() -> None:
     ):
         assert arguments in document
         assert all(f'"{part}"' in setup for part in arguments.split())
+    assert "24.x from 24.15.0" in document
+    assert "24.x (24.15.0 or later)" in setup
+    assert "24.x, starting at 24.15.0" in _read("docs/USER_GUIDE.md")
     vite = _read("frontend/vite.config.ts")
     assert "VITE_API_TARGET" in document and "VITE_API_TARGET" in vite
     assert "changeOrigin: false" in vite and "without changing Origin" in document

@@ -18,6 +18,21 @@ function Invoke-Checked([string]$File, [string[]]$Arguments, [string]$Failure) {
 Push-Location $repo
 try {
     if (-not $VerifyOnly) {
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            throw "Node.js 24.x (24.15.0 or later) is required to build and test the frontend."
+        }
+        $nodeVersion = & node --version
+        $parsedNodeVersion = $null
+        if ($LASTEXITCODE -ne 0 -or $nodeVersion -isnot [string] -or
+            $nodeVersion -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or
+            -not [version]::TryParse($nodeVersion.Substring(1), [ref]$parsedNodeVersion) -or
+            $parsedNodeVersion.Major -ne 24 -or $parsedNodeVersion -lt [version]'24.15.0') {
+            throw "Node.js 24.x (24.15.0 or later) is required to build and test the frontend; detected '$nodeVersion'."
+        }
+        if (-not (Get-Command npm.cmd -ErrorAction SilentlyContinue)) {
+            throw "npm.cmd is required to install frontend dependencies. Install Node.js with npm."
+        }
+
         try { $version = & $PythonLauncher -3.12 -c "import sys; print('.'.join(map(str, sys.version_info[:3])))" }
         catch { throw "Python 3.12 was not found. Install 64-bit Python 3.12 and ensure the 'py' launcher is available." }
         if ($LASTEXITCODE -ne 0 -or -not ($version -match '^3\.12\.')) {
@@ -29,14 +44,6 @@ try {
         Invoke-Checked $python @("-m", "pip", "install", "--disable-pip-version-check", "-r", "requirements.lock") "Locked Python dependency installation failed"
         Invoke-Checked $python @("-m", "pip", "install", "--disable-pip-version-check", "--no-deps", "-e", ".") "Local package installation failed"
 
-        if (-not (Get-Command node -ErrorAction SilentlyContinue)) { throw "Node.js is required to build the frontend." }
-        if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { throw "npm is required to build the frontend." }
-        $nodeParts = (& node --version).TrimStart('v').Split('.')
-        $nodeMajor = [int]$nodeParts[0]
-        $nodeMinor = [int]$nodeParts[1]
-        if (($nodeMajor -eq 20 -and $nodeMinor -lt 19) -or $nodeMajor -lt 20 -or $nodeMajor -eq 21 -or ($nodeMajor -eq 22 -and $nodeMinor -lt 12)) {
-            throw "Vite requires Node.js 20.19+ or 22.12+; detected $(& node --version)."
-        }
         Push-Location (Join-Path $repo "frontend")
         try {
             Invoke-Checked "npm.cmd" @("ci", "--no-audit", "--no-fund") "Reproducible frontend dependency installation failed"
