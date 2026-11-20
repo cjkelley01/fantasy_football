@@ -822,191 +822,199 @@ def execute_search_orchestration(
             snapshot, baseline_state, configuration.candidate_search,
             configuration.resources, should_stop,
         )
-    emit(OrchestrationStage.CANDIDATE_GENERATION, enumeration, complete=enumeration.coverage.complete, stop=generation_stop)
-    emit(OrchestrationStage.STATE_GROUPING, enumeration, complete=enumeration.coverage.complete)
+    try:
+        emit(OrchestrationStage.CANDIDATE_GENERATION, enumeration, complete=enumeration.coverage.complete, stop=generation_stop)
+        emit(OrchestrationStage.STATE_GROUPING, enumeration, complete=enumeration.coverage.complete)
 
-    state_limit = configuration.resources.evaluation_state_limit
-    sampling = configuration.sampling
-    if state_limit is not None:
-        sampling = replace(sampling, unique_state_evaluation_budget=state_limit)
-    if configuration.resources.simulation_path_budget is not None:
-        sampling = replace(sampling, maximum_paths_per_state=min(sampling.maximum_paths_per_state, configuration.resources.simulation_path_budget))
-        simulation = replace(simulation, path_count=sampling.maximum_paths_per_state)
-    parallel = None
-    if configuration.resources.execution_mode is SearchExecutionMode.BOUNDED_OVERLAP and configuration.resources.worker_count > 1:
-        parallel = ParallelExecutionConfiguration(
-            configuration.resources.worker_count,
-            configuration.resources.paths_per_worker_task,
-            max_in_flight_tasks=configuration.resources.maximum_in_flight_states,
-        )
-    fixed = None
-    progressive = None
-    if configuration.evaluation_mode is SearchEvaluationMode.FIXED:
-        precision = PrecisionConfiguration(
-            sampling.confidence_level, sampling.target_paired_half_width,
-            sampling.maximum_paths_per_state, sampling.maximum_paths_per_state,
-            sampling.maximum_paths_per_state,
-        )
-        if result_index is not None:
-            state_ids = result_index.state_ids()
-            if state_limit is not None:
-                state_ids = state_ids[:state_limit]
-            fixed = _evaluate_indexed_fixed(
-                snapshot, baseline_state, result_index, state_ids,
-                simulation, model, precision, parallel, should_stop,
+        state_limit = configuration.resources.evaluation_state_limit
+        sampling = configuration.sampling
+        if state_limit is not None:
+            sampling = replace(sampling, unique_state_evaluation_budget=state_limit)
+        if configuration.resources.simulation_path_budget is not None:
+            sampling = replace(sampling, maximum_paths_per_state=min(sampling.maximum_paths_per_state, configuration.resources.simulation_path_budget))
+            simulation = replace(simulation, path_count=sampling.maximum_paths_per_state)
+        parallel = None
+        if configuration.resources.execution_mode is SearchExecutionMode.BOUNDED_OVERLAP and configuration.resources.worker_count > 1:
+            parallel = ParallelExecutionConfiguration(
+                configuration.resources.worker_count,
+                configuration.resources.paths_per_worker_task,
+                max_in_flight_tasks=configuration.resources.maximum_in_flight_states,
+            )
+        fixed = None
+        progressive = None
+        if configuration.evaluation_mode is SearchEvaluationMode.FIXED:
+            precision = PrecisionConfiguration(
+                sampling.confidence_level, sampling.target_paired_half_width,
+                sampling.maximum_paths_per_state, sampling.maximum_paths_per_state,
+                sampling.maximum_paths_per_state,
+            )
+            if result_index is not None:
+                state_ids = result_index.state_ids()
+                if state_limit is not None:
+                    state_ids = state_ids[:state_limit]
+                fixed = _evaluate_indexed_fixed(
+                    snapshot, baseline_state, result_index, state_ids,
+                    simulation, model, precision, parallel, should_stop,
+                )
+            else:
+                full_enumeration = enumeration
+                groups = enumeration.completed_states if state_limit is None else enumeration.completed_states[:state_limit]
+                subset_ids = {
+                    candidate_id for group in groups for candidate_id in group.candidate_ids
+                }
+                subset = replace(
+                    full_enumeration,
+                    candidates=tuple(
+                        item for item in full_enumeration.candidates
+                        if item.candidate_id in subset_ids
+                    ),
+                    completed_states=groups,
+                )
+                fixed = evaluate_unified_action_states(
+                    snapshot, baseline_state, subset, simulation, model, precision,
+                    parallel_execution=parallel,
+                    should_stop=should_stop,
+                ) if groups and not should_stop() else None
+            evaluated = len(fixed.evaluations) if fixed is not None else 0
+            paths = evaluated * sampling.maximum_paths_per_state
+            evaluation_coverage_complete = (
+                evaluated == enumeration.coverage.unique_completed_state_count
+            )
+            precision_complete = (
+                evaluation_coverage_complete
+                and fixed is not None
+                and all(
+                    all(
+                        team.championship.interval.half_width
+                        <= sampling.target_paired_half_width
+                        for team in item.comparison.teams
+                    )
+                    for item in fixed.evaluations
+                )
+            )
+            ranking_resolved = False
+            evaluation_stop = (
+                OrchestrationStopReason.WALL_CLOCK_LIMIT
+                if should_stop() and not evaluation_coverage_complete
+                else OrchestrationStopReason.EVALUATION_LIMIT
+                if not evaluation_coverage_complete
+                else (
+                    OrchestrationStopReason.COMPLETE
+                    if precision_complete
+                    else OrchestrationStopReason.STATISTICAL_LIMIT
+                )
             )
         else:
-            full_enumeration = enumeration
-            groups = enumeration.completed_states if state_limit is None else enumeration.completed_states[:state_limit]
-            subset_ids = {
-                candidate_id for group in groups for candidate_id in group.candidate_ids
-            }
-            subset = replace(
-                full_enumeration,
-                candidates=tuple(
-                    item for item in full_enumeration.candidates
-                    if item.candidate_id in subset_ids
-                ),
-                completed_states=groups,
-            )
-            fixed = evaluate_unified_action_states(
-                snapshot, baseline_state, subset, simulation, model, precision,
-                parallel_execution=parallel,
-                should_stop=should_stop,
-            ) if groups and not should_stop() else None
-        evaluated = len(fixed.evaluations) if fixed is not None else 0
-        paths = evaluated * sampling.maximum_paths_per_state
-        evaluation_coverage_complete = (
-            evaluated == enumeration.coverage.unique_completed_state_count
-        )
-        precision_complete = (
-            evaluation_coverage_complete
-            and fixed is not None
-            and all(
-                all(
-                    team.championship.interval.half_width
-                    <= sampling.target_paired_half_width
-                    for team in item.comparison.teams
+            def observe_progressive(item):
+                if item.stage not in {
+                    SearchProgressStage.INITIAL_EVALUATION,
+                    SearchProgressStage.REFINEMENT,
+                }:
+                    return
+                emit(
+                    OrchestrationStage.INITIAL_EVALUATION
+                    if item.stage is SearchProgressStage.INITIAL_EVALUATION
+                    else OrchestrationStage.PROGRESSIVE_REFINEMENT,
+                    enumeration,
+                    item.initially_evaluated_states,
+                    sum(estimate.completed_paths for estimate in item.estimates),
+                    item.candidate_coverage_complete,
+                    item.statistical_precision_complete,
+                    item.ranking_resolved,
                 )
-                for item in fixed.evaluations
+
+            state_source = result_index if result_index is not None else tuple(
+                ProgressiveStateGroupInput(item.completed_state_sha256, item.state, item.candidate_ids)
+                for item in enumeration.completed_states
             )
-        )
-        ranking_resolved = False
-        evaluation_stop = (
-            OrchestrationStopReason.WALL_CLOCK_LIMIT
-            if should_stop() and not evaluation_coverage_complete
-            else OrchestrationStopReason.EVALUATION_LIMIT
-            if not evaluation_coverage_complete
-            else (
-                OrchestrationStopReason.COMPLETE
-                if precision_complete
+            progressive = evaluate_progressive_state_groups(
+                snapshot, baseline_state,
+                state_source,
+                configuration.candidate_search.requesting_team_id,
+                sampling, simulation, model, parallel_execution=parallel,
+                progress_observer=observe_progressive,
+                should_stop=should_stop,
+            )
+            evaluated = progressive.initially_evaluated_states
+            paths = progressive.scenario_paths_computed
+            precision_complete = progressive.statistical_precision_complete
+            ranking_resolved = progressive.ranking_resolved
+            evaluation_coverage_complete = progressive.candidate_coverage_complete
+            evaluation_stop = (
+                OrchestrationStopReason.WALL_CLOCK_LIMIT
+                if should_stop() and not evaluation_coverage_complete
+                else OrchestrationStopReason.COMPLETE
+                if precision_complete or ranking_resolved
                 else OrchestrationStopReason.STATISTICAL_LIMIT
             )
+        evaluation_coverage_complete = (
+            enumeration.coverage.complete and evaluation_coverage_complete
         )
-    else:
-        def observe_progressive(item):
-            if item.stage not in {
-                SearchProgressStage.INITIAL_EVALUATION,
-                SearchProgressStage.REFINEMENT,
-            }:
-                return
-            emit(
-                OrchestrationStage.INITIAL_EVALUATION
-                if item.stage is SearchProgressStage.INITIAL_EVALUATION
-                else OrchestrationStage.PROGRESSIVE_REFINEMENT,
-                enumeration,
-                item.initially_evaluated_states,
-                sum(estimate.completed_paths for estimate in item.estimates),
-                item.candidate_coverage_complete,
-                item.statistical_precision_complete,
-                item.ranking_resolved,
-            )
-
-        state_source = result_index if result_index is not None else tuple(
-            ProgressiveStateGroupInput(item.completed_state_sha256, item.state, item.candidate_ids)
-            for item in enumeration.completed_states
+        precision_complete = evaluation_coverage_complete and precision_complete
+        ranking_resolved = evaluation_coverage_complete and ranking_resolved
+        if configuration.evaluation_mode is SearchEvaluationMode.FIXED:
+            emit(OrchestrationStage.INITIAL_EVALUATION, enumeration, evaluated, paths, enumeration.coverage.complete, precision_complete, ranking_resolved)
+        source_candidates = (
+            enumeration.candidates if result_index is None else result_index.iter_candidates()
         )
-        progressive = evaluate_progressive_state_groups(
-            snapshot, baseline_state,
-            state_source,
+        candidate_results = _iter_candidate_results(
+            source_candidates, fixed, progressive,
             configuration.candidate_search.requesting_team_id,
-            sampling, simulation, model, parallel_execution=parallel,
-            progress_observer=observe_progressive,
-            should_stop=should_stop,
         )
-        evaluated = progressive.initially_evaluated_states
-        paths = progressive.scenario_paths_computed
-        precision_complete = progressive.statistical_precision_complete
-        ranking_resolved = progressive.ranking_resolved
-        evaluation_coverage_complete = progressive.candidate_coverage_complete
-        evaluation_stop = (
-            OrchestrationStopReason.WALL_CLOCK_LIMIT
-            if should_stop() and not evaluation_coverage_complete
-            else OrchestrationStopReason.COMPLETE
-            if precision_complete or ranking_resolved
-            else OrchestrationStopReason.STATISTICAL_LIMIT
-        )
-    evaluation_coverage_complete = (
-        enumeration.coverage.complete and evaluation_coverage_complete
-    )
-    precision_complete = evaluation_coverage_complete and precision_complete
-    ranking_resolved = evaluation_coverage_complete and ranking_resolved
-    if configuration.evaluation_mode is SearchEvaluationMode.FIXED:
-        emit(OrchestrationStage.INITIAL_EVALUATION, enumeration, evaluated, paths, enumeration.coverage.complete, precision_complete, ranking_resolved)
-    source_candidates = (
-        enumeration.candidates if result_index is None else result_index.iter_candidates()
-    )
-    candidate_results = _iter_candidate_results(
-        source_candidates, fixed, progressive,
-        configuration.candidate_search.requesting_team_id,
-    )
-    if result_index is not None:
-        result_batch = []
-        for candidate in candidate_results:
-            result_batch.append(candidate)
-            if len(result_batch) >= configuration.resources.index_page_size:
+        if result_index is not None:
+            result_batch = []
+            for candidate in candidate_results:
+                result_batch.append(candidate)
+                if len(result_batch) >= configuration.resources.index_page_size:
+                    result_index.add_candidate_results(tuple(result_batch))
+                    result_batch.clear()
+            if result_batch:
                 result_index.add_candidate_results(tuple(result_batch))
-                result_batch.clear()
-        if result_batch:
-            result_index.add_candidate_results(tuple(result_batch))
-        candidates = ()
-    else:
-        candidates = tuple(candidate_results)
-    final_stop = generation_stop or (
-        OrchestrationStopReason.NO_CANDIDATES
-        if enumeration.coverage.retained_path_count == 0
-        else evaluation_stop
-    )
-    wall_clock_overrun = (
-        max(0.0, monotonic_clock() - deadline) if deadline is not None and should_stop()
-        else 0.0
-    )
-    identity = hashlib.sha256(json.dumps({
-        "contract": "m5.8-search-orchestration-v1",
-        "snapshot_id": snapshot.snapshot_id,
-        "candidate_search_sha256": enumeration.configuration_sha256,
-        "baseline_state_sha256": enumeration.baseline_state_sha256,
-        "evaluation_mode": configuration.evaluation_mode.value,
-        "sampling": asdict(configuration.sampling),
-        "monte_carlo_run_identity": monte_carlo_run_identity(
-            snapshot, simulation, model
-        ),
-        "candidate_identity": hashlib.sha256(
-            "\n".join(
-                item.candidate_id
-                for item in (
-                    candidates if result_index is None else result_index.iter_candidate_results()
-                )
-            ).encode()
-        ).hexdigest(),
-    }, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
-    result = SearchOrchestrationResult(
-        ORCHESTRATION_SCHEMA_VERSION, identity, configuration, enumeration,
-        candidates, result_index, fixed, progressive, preflight, (), final_stop,
-        enumeration.coverage.complete,
-        evaluation_coverage_complete, precision_complete, ranking_resolved,
-        wall_clock_overrun, (),
-    )
-    exports = _write_exports(result, configuration)
-    emit(OrchestrationStage.FINAL, enumeration, evaluated, paths, enumeration.coverage.complete, precision_complete, ranking_resolved, final_stop)
-    return replace(result, progress=tuple(progress), export_paths=exports)
+            candidates = ()
+        else:
+            candidates = tuple(candidate_results)
+        final_stop = generation_stop or (
+            OrchestrationStopReason.NO_CANDIDATES
+            if enumeration.coverage.retained_path_count == 0
+            else evaluation_stop
+        )
+        wall_clock_overrun = (
+            max(0.0, monotonic_clock() - deadline) if deadline is not None and should_stop()
+            else 0.0
+        )
+        identity = hashlib.sha256(json.dumps({
+            "contract": "m5.8-search-orchestration-v1",
+            "snapshot_id": snapshot.snapshot_id,
+            "candidate_search_sha256": enumeration.configuration_sha256,
+            "baseline_state_sha256": enumeration.baseline_state_sha256,
+            "evaluation_mode": configuration.evaluation_mode.value,
+            "sampling": asdict(configuration.sampling),
+            "monte_carlo_run_identity": monte_carlo_run_identity(
+                snapshot, simulation, model
+            ),
+            "candidate_identity": hashlib.sha256(
+                "\n".join(
+                    item.candidate_id
+                    for item in (
+                        candidates if result_index is None else result_index.iter_candidate_results()
+                    )
+                ).encode()
+            ).hexdigest(),
+        }, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+        result = SearchOrchestrationResult(
+            ORCHESTRATION_SCHEMA_VERSION, identity, configuration, enumeration,
+            candidates, result_index, fixed, progressive, preflight, (), final_stop,
+            enumeration.coverage.complete,
+            evaluation_coverage_complete, precision_complete, ranking_resolved,
+            wall_clock_overrun, (),
+        )
+        exports = _write_exports(result, configuration)
+        emit(OrchestrationStage.FINAL, enumeration, evaluated, paths, enumeration.coverage.complete, precision_complete, ranking_resolved, final_stop)
+        return replace(result, progress=tuple(progress), export_paths=exports)
+    except BaseException as error:
+        if result_index is not None:
+            try:
+                result_index.close()
+            except OSError as cleanup_error:
+                error.add_note(f"Unable to clean temporary search index: {cleanup_error}")
+        raise

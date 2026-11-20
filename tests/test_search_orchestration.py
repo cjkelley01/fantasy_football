@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import gc
 from dataclasses import replace
 from pathlib import Path
 
@@ -71,7 +70,7 @@ def _configuration(mode=SearchExecutionMode.SEQUENTIAL_REFERENCE, **resource_cha
     )
 
 
-def _run(configuration):
+def _run(configuration, **kwargs):
     snapshot = _scenario_snapshot_with_bench()
     return execute_search_orchestration(
         snapshot,
@@ -79,6 +78,7 @@ def _run(configuration):
         configuration,
         simulation_config(2),
         PrescribedModel(),
+        **kwargs,
     )
 
 
@@ -382,12 +382,12 @@ def test_deadline_after_active_batch_preserves_completed_result(monkeypatch) -> 
 def test_bounded_index_is_cleaned_after_generation_failure(monkeypatch, tmp_path) -> None:
     import fantasy_football.search_orchestration as orchestration
 
-    paths = []
+    indexes = []
     original_create = orchestration.SearchResultIndex.create
 
     def create(directory, page_size):
         value = original_create(directory, page_size)
-        paths.append(Path(value.path))
+        indexes.append(value)
         return value
 
     def fail(*_args, **_kwargs):
@@ -402,8 +402,94 @@ def test_bounded_index_is_cleaned_after_generation_failure(monkeypatch, tmp_path
     )
     with pytest.raises(RuntimeError, match="injected candidate worker failure"):
         _run(configuration)
-    gc.collect()
-    assert paths and all(not path.exists() for path in paths)
+    assert indexes and all(not Path(index.path).exists() for index in indexes)
+
+
+@pytest.mark.parametrize(
+    "failure_point",
+    (
+        OrchestrationStage.CANDIDATE_GENERATION,
+        "evaluate_progressive_state_groups",
+        "_write_exports",
+        OrchestrationStage.FINAL,
+    ),
+)
+def test_bounded_index_is_cleaned_before_a_failed_search_returns(
+    monkeypatch,
+    tmp_path,
+    failure_point,
+) -> None:
+    import fantasy_football.search_orchestration as orchestration
+
+    indexes = []
+    artifacts = []
+    original_create = SearchResultIndex.create
+    failure = RuntimeError("injected coordinator failure")
+
+    def create(directory, page_size):
+        index = original_create(directory, page_size)
+        indexes.append(index)
+        return index
+
+    def fail(*_args, **_kwargs):
+        assert len(indexes) == 1
+        database = Path(indexes[0].path)
+        assert database.is_file()
+        sidecars = [Path(f"{database}{suffix}") for suffix in ("-wal", "-shm")]
+        for sidecar in sidecars:
+            sidecar.touch()
+        artifacts.extend([database, *sidecars])
+        raise failure
+
+    def observe(item):
+        if item.stage is failure_point:
+            fail()
+
+    monkeypatch.setattr(SearchResultIndex, "create", create)
+    if not isinstance(failure_point, OrchestrationStage):
+        monkeypatch.setattr(orchestration, failure_point, fail)
+    configuration = _configuration(
+        SearchExecutionMode.BOUNDED_OVERLAP,
+        index_directory=str(tmp_path),
+    )
+    try:
+        with pytest.raises(
+            RuntimeError, match="injected coordinator failure"
+        ) as raised:
+            _run(configuration, progress_observer=observe)
+        assert raised.value is failure
+        assert len(artifacts) == 3
+        assert all(not artifact.exists() for artifact in artifacts)
+    finally:
+        for index in indexes:
+            index.close()
+
+
+def test_cleanup_oserror_does_not_replace_original_coordinator_failure(
+    monkeypatch, tmp_path
+):
+    import fantasy_football.search_orchestration as orchestration
+
+    failure = RuntimeError("original export failure")
+    original_close = SearchResultIndex.close
+
+    def close(index):
+        original_close(index)
+        raise OSError("injected filesystem cleanup failure")
+
+    def fail(*args):
+        raise failure
+
+    monkeypatch.setattr(SearchResultIndex, "close", close)
+    monkeypatch.setattr(orchestration, "_write_exports", fail)
+    with pytest.raises(RuntimeError, match="original export failure") as raised:
+        _run(
+            _configuration(
+                SearchExecutionMode.BOUNDED_OVERLAP, index_directory=str(tmp_path)
+            )
+        )
+    assert raised.value is failure
+    assert any("injected filesystem cleanup failure" in note for note in failure.__notes__)
 
 
 def test_generic_progressive_state_evaluation_matches_accepted_m54_trade_policy() -> None:
