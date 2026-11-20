@@ -90,3 +90,39 @@ main { min-width:0; }.surface{padding:42px clamp(20px,4vw,64px) 72px;max-width:1
 
 /* M8.2 source-backed league refresh. */
 .refresh-scrim{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:20px;background:rgba(2,9,14,.76);backdrop-filter:blur(8px)}.refresh-panel{width:min(620px,100%);max-height:calc(100vh - 40px);overflow:auto;padding:24px;border:1px solid var(--line);border-radius:18px;background:var(--panel);box-shadow:0 24px 80px rgba(0,0,0,.45)}.refresh-panel>header{display:flex;justify-content:space-between;gap:20px;align-items:start}.refresh-panel h2{margin:5px 0 0;font-size:1.8rem}.refresh-identity{display:flex;align-items:center;gap:12px;margin:22px 0 8px;padding:14px;border-left:2px solid var(--teal);background:var(--bg)}.refresh-identity>svg{color:var(--teal)}.refresh-identity strong,.refresh-identity span,.refresh-status strong,.refresh-status span,.refresh-status small,.refresh-result span{display:block}.refresh-identity span,.privacy-note,.refresh-status span,.refresh-status small{color:var(--muted);font-size:.72rem}.privacy-note{margin:8px 0 18px}.refresh-panel>label{display:grid;gap:6px;color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.08em}.refresh-panel input{padding:10px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--text)}.refresh-status{display:flex;gap:12px;align-items:flex-start;margin-top:18px;padding:14px;background:var(--bg);border-left:2px solid var(--teal)}.refresh-status>svg{width:20px;color:var(--teal)}.refresh-result{display:grid;gap:5px;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:9px}.refresh-result span{color:var(--muted);font-size:.72rem}.refresh-result details{margin-top:8px}.refresh-error{padding:10px;border-left:2px solid var(--warm);color:var(--warm);background:color-mix(in srgb,var(--warm) 7%,transparent)}.refresh-panel>footer{display:flex;justify-content:flex-end;margin-top:20px}.refresh-panel>footer button,.state-card .primary-button{display:inline-flex;align-items:center;gap:7px}.spin{animation:spin 1s linear infinite}@media(max-width:600px){.refresh-scrim{padding:0;align-items:end}.refresh-panel{max-height:92vh;border-radius:18px 18px 0 0}}
+
+.trade-timing {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  margin-block: 12px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.trade-timing-options {
+  display: inline-flex;
+  flex-wrap: wrap;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.trade-timing-options button {
+  border: 0;
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 10px;
+}
+.trade-timing-options button[aria-pressed="true"] {
+  background: var(--panel-2);
+  color: var(--teal);
+}
+.trade-timing label {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.trade-timing p {
+  margin: 0;
+  color: var(--muted);
+}

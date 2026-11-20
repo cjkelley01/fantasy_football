@@ -95,6 +95,9 @@ export interface LiveScoringSummary {
   readonly next_fully_unplayed_period:number|null;
   readonly supported_simulation_week:number|null;
   readonly partial_week_simulation_required:boolean;
+  readonly supported_trade_weeks?: readonly number[];
+  readonly player_earliest_trade_weeks?: readonly (readonly [number, number])[];
+  readonly trade_timing_limitation?: string | null;
   readonly current_week_execution_available?:boolean;
   readonly current_week_limitations?:readonly string[];
   readonly boundary_method:"automatic"|"manual_override"|"unresolved";
@@ -228,7 +231,7 @@ export interface ProtectedPlayerInput { readonly team_id:number; readonly player
 export interface SimulationConfiguration { readonly master_seed:number;readonly path_count:number;readonly first_path_index:number;readonly ir_policy:"projection_based"|"strict";readonly waiver_boundary:"unresolved"|"modeled_weekly_v1";readonly reject_incomplete_valuations:boolean;readonly require_complete:boolean; readonly use_observed_current_week_lineup?:boolean; }
 export interface PrecisionSettings { readonly family_confidence_level:number;readonly target_half_width_probability:number;readonly minimum_paths:number;readonly maximum_paths:number;readonly evaluation_interval_paths:number; }
 export interface NormalOutcomeModelConfiguration { readonly model_type:"provisional_normal";readonly base_stddev_points:number;readonly projection_scale:number; }
-export interface ManualScenarioRequest { readonly api_schema_version:"1.0";readonly snapshot:{readonly snapshot_id:string;readonly league_id:number;readonly season:number};readonly simulation:SimulationConfiguration;readonly precision:PrecisionSettings;readonly outcome_model:NormalOutcomeModelConfiguration;readonly scenario:{readonly scenario_id:string;readonly changes:readonly RosterChangeInput[];readonly protected_players:readonly ProtectedPlayerInput[]}; }
+export interface ManualScenarioRequest { readonly api_schema_version:"1.0";readonly snapshot:{readonly snapshot_id:string;readonly league_id:number;readonly season:number};readonly simulation:SimulationConfiguration;readonly precision:PrecisionSettings;readonly outcome_model:NormalOutcomeModelConfiguration;readonly scenario:{readonly scenario_id:string;readonly effective_trades?:readonly {readonly transfers:readonly RosterChangeInput[];readonly selected_week:number|null}[];readonly changes:readonly RosterChangeInput[];readonly protected_players:readonly ProtectedPlayerInput[]}; }
 export interface BackgroundRunSubmission { readonly api_schema_version:"1.0";readonly run_id:string;readonly run_type:"baseline"|"manual_scenario"|"action_search";readonly status:RunStatus;readonly created_at_utc:string; }
 export interface BackgroundProgress { readonly api_schema_version:"1.0";readonly run_id:string;readonly status:RunStatus;readonly stage:string;readonly candidates_explored:number;readonly candidates_retained:number;readonly unique_completed_states:number;readonly state_evaluations_completed:number;readonly simulation_paths_completed:number;readonly candidate_coverage_complete:boolean;readonly evaluation_coverage_complete:boolean;readonly statistical_precision_complete:boolean;readonly ranking_resolved:boolean;readonly elapsed_seconds:number;readonly stop_reason:string|null; }
 export interface BaselineAnalysisRequest { readonly api_schema_version:"1.0";readonly snapshot:{readonly snapshot_id:string;readonly league_id:number;readonly season:number};readonly simulation:SimulationConfiguration;readonly precision:PrecisionSettings;readonly outcome_model:NormalOutcomeModelConfiguration; }

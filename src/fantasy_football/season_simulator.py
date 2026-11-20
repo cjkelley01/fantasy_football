@@ -19,6 +19,7 @@ from fantasy_football.canonical.validation import (
     authoritative_current_matchup_period_scoring_weeks,
     validate_snapshot,
 )
+from fantasy_football.effective_trades import EffectiveTrade, apply_effective_trade
 from fantasy_football.evolving_state import (
     EvolvingLeagueState,
     IREligibilityEvidence,
@@ -605,6 +606,8 @@ def _prepare_partial_week(
     snapshot: LeagueSnapshot,
     scenario: DeterministicScoreScenario,
     partial: DeterministicPartialWeekInput,
+    *,
+    effective_owners: dict[int, int] | None = None,
 ):
     if not isinstance(partial, DeterministicPartialWeekInput):
         raise SeasonSimulationError(
@@ -657,7 +660,11 @@ def _prepare_partial_week(
             "partial input requires current matchup or explicit bye evidence for rostered teams"
         )
     composition = compose_partial_week_scores(
-        snapshot, evidence, partial.lineup, partial.values
+        snapshot,
+        evidence,
+        partial.lineup,
+        partial.values,
+        effective_owners=effective_owners,
     )
     cutoff = evidence.standings_cutoff
     period_start = evidence.matchup_period_scoring_weeks[0]
@@ -906,6 +913,7 @@ def simulate_deterministic_season(
     initial_evolving_state: EvolvingLeagueState | None = None,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
     partial_week: DeterministicPartialWeekInput | None = None,
+    effective_trades: tuple[EffectiveTrade, ...] = (),
     _native_execution: bool = False,
 ) -> DeterministicSeasonResult:
     """Execute one settings-driven deterministic path without network or randomness."""
@@ -918,10 +926,33 @@ def simulate_deterministic_season(
         consolation_configuration,
         partial_week,
     )
+    trade_weeks = tuple(trade.scoring_week for trade in effective_trades)
+    if trade_weeks != tuple(sorted(trade_weeks)) or any(
+        week
+        not in range(snapshot.first_simulation_week, snapshot.final_simulation_week + 1)
+        for week in trade_weeks
+    ):
+        raise SeasonSimulationError(
+            "Effective trade sequence is unordered or outside the scoring horizon."
+        )
+    current_trades = tuple(
+        trade
+        for trade in effective_trades
+        if trade.scoring_week == snapshot.first_simulation_week
+    )
     partial_composition = None
     if partial_week is not None:
         partial_composition, partial_identity = _prepare_partial_week(
-            snapshot, scenario, partial_week
+            snapshot,
+            scenario,
+            partial_week,
+            effective_owners={
+                move.player_id: move.to_team_id
+                for trade in current_trades
+                for move in trade.transfers
+            }
+            if current_trades
+            else None,
         )
     participation_reference = postseason_transaction_policy.reference or "unresolved"
     configuration_provenance = (
@@ -934,6 +965,19 @@ def simulate_deterministic_season(
             f"automatic_rosters:{transaction_policy.automatic_rosters.policy_id}",
             f"standings_fallback_seed:{fallback_seed}",
         )
+    if effective_trades:
+        trade_digest = hashlib.sha256(
+            json.dumps(
+                [asdict(trade) for trade in effective_trades],
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        configuration_provenance += (f"effective_trades:v1:{trade_digest}",)
+        if current_trades and partial_week is not None:
+            configuration_provenance += (
+                "effective_trade_current_lineup:exact_legal_roster_assignment_v1",
+            )
     if partial_week is not None:
         configuration_provenance += (f"partial_week:v1:{partial_identity}",)
     phases = _phase_by_week(snapshot)
@@ -993,15 +1037,35 @@ def simulate_deterministic_season(
             raise SeasonSimulationError(
                 "partial-week execution does not support hypothetical initial transactions or rosters"
             )
-        slots = {item.player_id: item.lineup_slot_id for item in partial_week.lineup}
-        evolving = replace(
-            evolving,
-            roster_entries=tuple(
-                replace(item, lineup_slot_id=slots[item.player_id])
+        if current_trades:
+            for trade in current_trades:
+                evolving = apply_effective_trade(
+                    snapshot, evolving, trade, evidence=partial_week.evidence
+                )
+            actual = {
+                (item.player_id, item.team_id, item.lineup_slot_id)
                 for item in evolving.roster_entries
-            ),
-        )
-        validate_evolving_state(evolving, snapshot)
+            }
+            proposed = {
+                (item.player_id, item.team_id, item.lineup_slot_id)
+                for item in partial_week.lineup
+            }
+            if actual != proposed:
+                raise SeasonSimulationError(
+                    "Current-week lineup differs from the atomic trade result."
+                )
+        else:
+            slots = {
+                item.player_id: item.lineup_slot_id for item in partial_week.lineup
+            }
+            evolving = replace(
+                evolving,
+                roster_entries=tuple(
+                    replace(item, lineup_slot_id=slots[item.player_id])
+                    for item in evolving.roster_entries
+                ),
+            )
+            validate_evolving_state(evolving, snapshot)
     postseason: PostseasonState | None = None
     weeks: list[SeasonWeekTransition] = []
     if lineup_workspace is None:
@@ -1012,7 +1076,7 @@ def simulate_deterministic_season(
         )
     native = None
     native_state = None
-    if _native_execution and partial_week is None:
+    if _native_execution and partial_week is None and not effective_trades:
         from fantasy_football.prepared_execution import PreparedExecution
 
         if lineup_workspace.execution is None:
@@ -1120,6 +1184,10 @@ def simulate_deterministic_season(
         is_partial_week = (
             partial_week is not None and scoring_week == snapshot.first_simulation_week
         )
+        if not is_partial_week:
+            for trade in effective_trades:
+                if trade.scoring_week == scoring_week:
+                    evolving = apply_effective_trade(snapshot, evolving, trade)
         if is_partial_week:
             eligible_team_ids = ()
         if native is not None and native.no_actions(native_state, eligible_team_ids):

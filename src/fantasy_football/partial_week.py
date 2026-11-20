@@ -607,6 +607,8 @@ def validate_proposed_lineup(
     snapshot: LeagueSnapshot,
     evidence: PartialWeekEvidence,
     proposed: tuple[ProposedLineupAssignment, ...],
+    *,
+    effective_owners: dict[int, int] | None = None,
 ) -> None:
     """Validate a complete proposed roster assignment without optimizing it."""
 
@@ -625,7 +627,11 @@ def validate_proposed_lineup(
                 f"proposed lineup player {item.player_id}: unknown or duplicate assignment"
             )
         original = observed[item.player_id]
-        if item.team_id != original.team_id:
+        if item.team_id != (
+            original.team_id
+            if effective_owners is None
+            else effective_owners.get(item.player_id, original.team_id)
+        ):
             _fail(f"proposed lineup player {item.player_id}: ownership cannot change")
         if item.lineup_slot_id not in original.eligible_lineup_slot_ids:
             _fail(
@@ -635,10 +641,10 @@ def validate_proposed_lineup(
             _fail(
                 f"proposed lineup player {item.player_id}: proposed slot is unconfigured"
             )
-        if (
-            original.lock_state is not LockState.VERIFIED_CHANGEABLE
-            and item.lineup_slot_id != original.lineup_slot_id
-        ):
+        if original.lock_state is not LockState.VERIFIED_CHANGEABLE and (
+            item.lineup_slot_id,
+            item.team_id,
+        ) != (original.lineup_slot_id, original.team_id):
             _fail(
                 f"proposed lineup player {item.player_id}: locked or unresolved assignment cannot move"
             )
@@ -746,11 +752,15 @@ def compose_partial_week_scores(
     evidence: PartialWeekEvidence,
     proposed_lineup: tuple[ProposedLineupAssignment, ...],
     deterministic_values: tuple[DeterministicPlayerValue, ...],
+    *,
+    effective_owners: dict[int, int] | None = None,
 ) -> PartialWeekScoreComposition:
     """Combine fixed, supplied remaining, and carry-in values exactly once."""
 
     require_executable_partial_week_evidence(snapshot, evidence)
-    validate_proposed_lineup(snapshot, evidence, proposed_lineup)
+    validate_proposed_lineup(
+        snapshot, evidence, proposed_lineup, effective_owners=effective_owners
+    )
     supplied: dict[int, DeterministicPlayerValue] = {}
     for value in deterministic_values:
         if value.player_id in supplied:

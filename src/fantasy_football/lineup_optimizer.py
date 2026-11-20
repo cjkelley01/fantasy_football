@@ -212,22 +212,42 @@ class _State:
         return sum(player_id is not None for player_id in self.assignment)
 
 
-def _assignment_tie_key(assignment: tuple[int | None, ...]) -> tuple[tuple[int, int], ...]:
+def _assignment_tie_key(
+    assignment: tuple[int | None, ...],
+) -> tuple[tuple[int, int], ...]:
     # Assigned players precede vacancies; lower stable IDs win at the earliest
     # configured slot identity. This is policy only for exact objective ties.
-    return tuple((1, 0) if player_id is None else (0, player_id) for player_id in assignment)
+    return tuple(
+        (1, 0) if player_id is None else (0, player_id) for player_id in assignment
+    )
 
 
-def _prefer_projected_points(candidate: _State, incumbent: _State | None) -> bool:
+def _prefer_projected_points(
+    candidate: _State, incumbent: _State | None, starter_count: int | None = None
+) -> bool:
     """Current selection policy, isolated from legal state enumeration."""
 
     if incumbent is None:
         return True
     if candidate.exact_total != incumbent.exact_total:
         return candidate.exact_total > incumbent.exact_total
-    if candidate.filled_count != incumbent.filled_count:
-        return candidate.filled_count > incumbent.filled_count
-    return _assignment_tie_key(candidate.assignment) < _assignment_tie_key(incumbent.assignment)
+    if starter_count is None:
+        candidate_count, incumbent_count = (
+            candidate.filled_count,
+            incumbent.filled_count,
+        )
+    else:
+        candidate_count = sum(
+            pid is not None for pid in candidate.assignment[:starter_count]
+        )
+        incumbent_count = sum(
+            pid is not None for pid in incumbent.assignment[:starter_count]
+        )
+    if candidate_count != incumbent_count:
+        return candidate_count > incumbent_count
+    return _assignment_tie_key(candidate.assignment) < _assignment_tie_key(
+        incumbent.assignment
+    )
 
 
 def validate_roster_state(snapshot: LeagueSnapshot, entries: tuple[RosterEntry, ...]) -> None:
@@ -381,13 +401,25 @@ def _native_unlimited_assignment(candidates, slot_count):
 
 
 def _reference_assignment(
-    candidates, slots, limited_player_ids, maximum_limited_players
+    candidates,
+    slots,
+    limited_player_ids,
+    maximum_limited_players,
+    *,
+    starter_count=None,
 ):
     """Readable general oracle, also used for genuinely limited-player cases."""
     empty_assignment = (None,) * len(slots)
     states = {(0, 0): _State(Decimal(0), empty_assignment)}
+    bench_predecessors = {
+        index: 1 << (index - 1)
+        for index in range(max(1, starter_count or 0), len(slots))
+        if starter_count is not None
+        and index > starter_count
+        and slots[index - 1][0] == slots[index][0]
+    }
     for candidate in candidates:
-        updated = dict(states)
+        updated = dict(states) if starter_count is None else {}
         for (mask, limited_count), state in states.items():
             next_limited_count = limited_count + (
                 candidate.player_id in limited_player_ids
@@ -399,22 +431,67 @@ def _reference_assignment(
                 continue
             for slot_index in candidate.eligible_slot_indices:
                 bit = 1 << slot_index
-                if mask & bit:
+                if mask & bit or (bench_predecessors.get(slot_index, 0) & ~mask):
                     continue
                 assignment = list(state.assignment)
                 assignment[slot_index] = candidate.player_id
                 proposed = _State(
-                    state.exact_total + candidate.exact_projection, tuple(assignment)
+                    state.exact_total
+                    + (
+                        candidate.exact_projection
+                        if starter_count is None or slot_index < starter_count
+                        else Decimal(0)
+                    ),
+                    tuple(assignment),
                 )
                 target_key = mask | bit, next_limited_count
-                if _prefer_projected_points(proposed, updated.get(target_key)):
+                if _prefer_projected_points(
+                    proposed, updated.get(target_key), starter_count
+                ):
                     updated[target_key] = proposed
         states = updated
     best = None
     for state in states.values():
-        if _prefer_projected_points(state, best):
+        if _prefer_projected_points(state, best, starter_count):
             best = state
     return best
+
+
+def optimize_roster_slots(
+    starter_slots, bench_slots, player_slots, starter_projections
+):
+    """Use the reference lineup objective with mandatory legal bench placement.
+
+    Slots are ordered (configured slot ID, ordinal) pairs. Fixed assignments
+    are excluded by the caller. Only explicitly scoreable players have starter
+    edges. Equivalent bench positions are filled in ascending player-ID order.
+    """
+    slots = (*starter_slots, *bench_slots)
+    starter_count = len(starter_slots)
+    candidates = [
+        _Candidate(
+            player_id,
+            starter_projections.get(player_id, 0.0),
+            Decimal.from_float(float(starter_projections.get(player_id, 0.0))),
+            tuple(
+                index
+                for index, (slot_id, _) in enumerate(slots)
+                if slot_id in eligible
+                and (index >= starter_count or player_id in starter_projections)
+            ),
+        )
+        for player_id, eligible in sorted(player_slots.items())
+    ]
+    best = _reference_assignment(
+        candidates, slots, frozenset(), None, starter_count=starter_count
+    )
+    if best is None:
+        return None
+    return {
+        pid: slot_id
+        for (slot_id, _), pid in zip(slots, best.assignment, strict=True)
+        if pid is not None
+    }
 
 
 def optimize_candidate_lineup(

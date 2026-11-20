@@ -15,6 +15,10 @@ from fantasy_football.canonical.model import (
 )
 from fantasy_football.canonical.serialization import snapshot_to_json
 from fantasy_football.canonical.validation import validated_snapshot
+from fantasy_football.effective_trades import (
+    EffectiveTrade,
+    assignments_after_current_trades,
+)
 from fantasy_football.evolving_state import EvolvingLeagueState, IRPolicy
 from fantasy_football.lineup_optimizer import (
     LineupOptimizationWorkspace,
@@ -86,8 +90,15 @@ class MonteCarloConfig:
     require_complete: bool = True
     initial_evolving_state: EvolvingLeagueState | None = None
     partial_week: MonteCarloPartialWeekInput | None = None
+    effective_trades: tuple[EffectiveTrade, ...] = ()
 
     def __post_init__(self) -> None:
+        if not isinstance(self.effective_trades, tuple) or any(
+            not isinstance(trade, EffectiveTrade) for trade in self.effective_trades
+        ):
+            raise MonteCarloError(
+                "effective_trades must be an immutable tuple of EffectiveTrade records"
+            )
         if self.partial_week is not None and not isinstance(
             self.partial_week, MonteCarloPartialWeekInput
         ):
@@ -337,6 +348,18 @@ def simulation_configuration_fingerprint(
                 )
             ),
         }
+    if config.effective_trades:
+        payload["effective_trades_v1"] = _deterministic_value(config.effective_trades)
+        if (
+            any(
+                trade.scoring_week == snapshot.first_simulation_week
+                for trade in config.effective_trades
+            )
+            and config.partial_week is not None
+        ):
+            payload["effective_trade_current_lineup"] = (
+                "exact_legal_roster_assignment_v1"
+            )
     encoded = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True
     ).encode("utf-8")
@@ -561,10 +584,23 @@ def run_monte_carlo_path(
                 scenario = model.generate_scenario(
                     snapshot, master_seed=config.master_seed, path_index=path_index
                 )
+            current_trades = tuple(
+                trade
+                for trade in config.effective_trades
+                if trade.scoring_week == snapshot.first_simulation_week
+            )
+            partial_input = config.partial_week
+            if current_trades and partial_input is not None:
+                partial_input = replace(
+                    partial_input,
+                    lineup=assignments_after_current_trades(
+                        snapshot, partial_input, current_trades
+                    ),
+                )
             season_scenario, partial = (
                 (scenario, None)
-                if config.partial_week is None
-                else _partial_week_draws(snapshot, config.partial_week, scenario)
+                if partial_input is None
+                else _partial_week_draws(snapshot, partial_input, scenario)
             )
             season = simulate_deterministic_season(
                 snapshot,
@@ -576,7 +612,10 @@ def run_monte_carlo_path(
                 initial_evolving_state=config.initial_evolving_state,
                 lineup_workspace=lineup_workspace,
                 partial_week=partial,
-                _native_execution=not retain_result and partial is None,
+                effective_trades=config.effective_trades,
+                _native_execution=not retain_result
+                and partial is None
+                and not config.effective_trades,
             )
     except ValueError as exc:
         raise MonteCarloError(f"invalid path {path_index}: {exc}") from exc

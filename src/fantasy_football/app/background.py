@@ -773,6 +773,12 @@ class BackgroundRunCoordinator:
                 self.store.discard_candidates(run_id)
                 error_code = "background_execution_failed"
                 error_message = "The analytical worker failed. Inspect local application logs."
+                if (
+                    isinstance(exc, ApplicationServiceError)
+                    and exc.code == "partial_week_trade_timing_unresolved"
+                ):
+                    error_code = exc.code
+                    error_message = str(exc)
                 if isinstance(exc, PostseasonCapabilityError):
                     error_code = exc.code
                     error_message = exc.safe_message

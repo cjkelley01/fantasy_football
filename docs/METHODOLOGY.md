@@ -404,6 +404,8 @@ Mid-period matchups need verified finite carry for both teams; first-week eviden
 
 NFL completion or `statsOfficial` alone establishes neither fantasy settlement, standings incorporation nor stat-correction finality. Raw score presence, wall time and hashes cannot close those gaps. Corrections need new immutable snapshot/evidence publication; old bytes/results are not rewritten. The existing [DATA observations](DATA.md#source-observations-and-limitations) remain bounded historical evidence: the 11 November 2026 unplayed sample verified candidate field presence/type, not active-game lock permissions, conditional remainders, live score latency, carry/bench semantics or fantasy finality.
 
+A source-validated effective-dated trade is a separate transition from the observed starting roster. Each trade moves all participants together, before scoring at its effective boundary. Current-week trades preserve locked assignments and score only the eligible remaining players for their new teams. Delayed trades preserve ordinary simulation through the preceding week and recheck ownership against each path's evolving state. Paired runs use identical player-week realizations. See the [Trade Lab timing contract](TECHNICAL_REFERENCE.md#effective-dated-trade-lab-execution).
+
 The opt-in deterministic path uses M3's **same season coordinator**, in this logical dependency sequence (the implementation performs composition during preparation and checks further season gates before returning a result):
 
 1. Validate snapshot/companion linkage, timing, sources and preservation invariants; require the season path's verified companion-level authority and no unresolved dependent capabilities.
@@ -422,7 +424,7 @@ Supported season starts are single-week regular periods and reconstructible **fi
 |---|---|---|
 | Ordinary whole-week V1 | Existing projected lineups, transactions and full-game draws | With live metadata, current unplayed week must start its independently supported full period; cannot skip unresolved preceding contributions/settlement. |
 | Deterministic partial composer | Supplied legal lineup with fixed actuals, approved full-game or deterministic remaining values and verified carry | Exact current observed-score reconciliation, timing, locks, cutoff and field-specific authorities; preservation/serialization alone is insufficient. |
-| Deterministic partial season | First composed week once, then the same ordinary coordinator | Adds verified companion-level authority, immediate period cutoff, pair/bye/history reconstruction and no initial/current transactions. |
+| Deterministic partial season | First composed week once, then the same ordinary coordinator | Adds verified companion-level authority, immediate period cutoff, pair/bye/history reconstruction and no retroactive roster edits. An admitted effective trade uses the separately validated boundary. |
 | Completed/unstarted partial Monte Carlo | Existing full-game draws for unstarted starters; verified completed actuals fixed across paths | Observed assignments, lock evidence, exact standings cutoff and full matchup carry must reconcile. Explicit NFL byes contribute zero; missing nonstarter states remain unavailable and cannot be promoted. |
 | Current-week browser forecasting | Source-bound Stage A input constructed server-side | No client-supplied evidence, conditional in-game sampler or retroactive current-week transaction permission. |
 

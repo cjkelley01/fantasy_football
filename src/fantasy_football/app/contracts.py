@@ -112,6 +112,9 @@ class LiveScoringSummary(ContractModel):
     unresolved_capabilities: tuple[str, ...]
     current_week_execution_available: bool = False
     current_week_limitations: tuple[str, ...] = ()
+    supported_trade_weeks: tuple[int, ...] = ()
+    player_earliest_trade_weeks: tuple[tuple[int, int], ...] = ()
+    trade_timing_limitation: str | None = None
 
 
 class SnapshotSummary(ContractModel):
@@ -276,10 +279,18 @@ class ProtectedPlayerInput(ContractModel):
     player_id: int
 
 
+class EffectiveTradeInput(ContractModel):
+    transfers: tuple[RosterChangeInput, ...] = Field(min_length=1)
+    selected_week: Annotated[int, Field(strict=True, ge=1, le=25)] | None = None
+
+
 class ManualScenarioInput(ContractModel):
     scenario_id: str = Field(min_length=1)
     changes: tuple[RosterChangeInput, ...]
     protected_players: tuple[ProtectedPlayerInput, ...] = ()
+    effective_trades: tuple[EffectiveTradeInput, ...] = Field(
+        default=(), exclude_if=lambda value: not value
+    )
 
 
 class ManualScenarioRequest(ContractModel):

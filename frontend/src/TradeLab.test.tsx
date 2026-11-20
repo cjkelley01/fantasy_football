@@ -38,3 +38,40 @@ test("protected players are synchronized into the submitted request",async()=>{c
 test("snapshot changes isolate drafts and late responses cannot overwrite the new context",async()=>{const user=userEvent.setup(),pending:{resolve?:(value:Response)=>void,promise:Promise<Response>}={promise:Promise.resolve(new Response())};pending.promise=new Promise(resolve=>pending.resolve=resolve);vi.spyOn(globalThis,"fetch").mockImplementation(input=>String(input).endsWith("/runs/manual-scenario")?pending.promise:json(run));const view=render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));view.rerender(<TradeLab snapshot={{...snapshot,snapshot_id:"new-snapshot",canonical_sha256:"9".repeat(64)}}/>);expect(screen.getByText("No transaction steps yet")).toBeInTheDocument();await act(async()=>pending.resolve?.(new Response(JSON.stringify({api_schema_version:"1.0",run_id:run.run_id,run_type:"manual_scenario",status:"queued",created_at_utc:run.created_at_utc}),{headers:{"Content-Type":"application/json"}})));expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
 test("failed submission is recoverable and does not appear successful",async()=>{const user=userEvent.setup();vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("offline"));render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));expect(await screen.findByText("The local decision engine is not reachable.")).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument();expect(screen.getByRole("button",{name:/Evaluate final state/})).toBeEnabled()});
 test("large configurable rosters retain keyboard controls and accessible analysis",async()=>{const large={...snapshot,teams:Array.from({length:14},(_,index)=>({...snapshot.teams[index%4],team_id:index+1,display_name:`Configured Team ${index+1}`}))};const {container}=render(<TradeLab snapshot={large}/>);const first=screen.getByRole("button",{name:/Avery Runner.*Select/});first.focus();expect(first).toHaveFocus();expect((await axe.run(container)).violations).toEqual([])});
+
+test("shows the whole exchange week and remembers a deliberate delay", async () => {
+  const user = userEvent.setup();
+  const timed: SnapshotSummary = {
+    ...snapshot,
+    live_scoring: {
+      current_scoring_period: 8, last_fully_completed_period: 7,
+      earliest_unresolved_period: null, next_fully_unplayed_period: 9,
+      supported_simulation_week: null, partial_week_simulation_required: true,
+      boundary_method: "unresolved", boundary_rationale: "", weeks: [],
+      unresolved_capabilities: [], current_week_execution_available: true,
+      supported_trade_weeks: [8, 9, 10], player_earliest_trade_weeks: [[101, 8], [201, 9]],
+    },
+  };
+  const fetch = mockEvaluation();
+  render(<TradeLab snapshot={timed}/>);
+  await user.click(screen.getByRole("button", {name: /Avery Runner.*Select/}));
+  await user.click(screen.getByRole("button", {name: /Casey Quarterback.*Select/}));
+  await user.click(screen.getByRole("button", {name: "Add transaction step"}));
+  expect(screen.getByText("Effective week 9")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", {name: "Scoring week"})).toBeNull();
+  await user.click(screen.getByRole("button", {name: "Selected week"}));
+  expect(screen.getByRole("option", {name: "Week 8"})).toBeDisabled();
+  await user.selectOptions(screen.getByRole("combobox", {name: "Scoring week"}), "10");
+  await user.click(screen.getByRole("button", {name: "Earliest eligible"}));
+  await user.click(screen.getByRole("button", {name: "Selected week"}));
+  expect(screen.getByRole("combobox", {name: "Scoring week"})).toHaveValue("10");
+  await user.click(screen.getByRole("button", {name: "Evaluate scenario"}));
+  await screen.findByText("Evaluation complete");
+  const posted = fetch.mock.calls.find(([input]) => String(input).endsWith("/runs/manual-scenario"));
+  expect(JSON.parse(String(posted?.[1]?.body)).scenario.effective_trades).toEqual([
+    {selected_week: 10, transfers: [
+      {player_id: 101, from_team_id: 1, to_team_id: 2},
+      {player_id: 201, from_team_id: 2, to_team_id: 1},
+    ]},
+  ]);
+});

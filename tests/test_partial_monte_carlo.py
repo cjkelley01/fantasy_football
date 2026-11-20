@@ -632,3 +632,109 @@ def test_multiple_completed_teams_keep_fixed_points_with_matched_draws():
             summary,
             result,
         )
+
+
+def test_current_and_delayed_exchanges_preserve_fixed_scores_and_matched_paths():
+    from fantasy_football.effective_trades import EffectiveTrade, TradeTransfer
+
+    snapshot, config, model = _case()
+    partial = config.partial_week
+    # Player 3 is completed and locked. The two players in the exchange are
+    # unstarted, and no transaction changes the observed team 3 scorer.
+    lines = tuple(
+        replace(item, lock_state=LockState.VERIFIED_LOCKED)
+        if item.player_id == 3
+        else item
+        for item in partial.evidence.lineups
+    )
+    players = tuple(
+        replace(
+            item,
+            nfl_game_status=NFLGameStatus.COMPLETED,
+            score_state=PlayerScoreState.COMPLETED_FIXED,
+            fixed_actual_points=7.0,
+            remaining_status=RemainingContributionStatus.NOT_APPLICABLE,
+        )
+        if item.player_id == 3
+        else item
+        for item in partial.evidence.players
+    )
+    matchups = tuple(
+        replace(
+            item,
+            home_observed_week_points=7.0
+            if item.home_team_id == 3
+            else item.home_observed_week_points,
+            away_observed_week_points=7.0
+            if item.away_team_id == 3
+            else item.away_observed_week_points,
+        )
+        for item in partial.evidence.matchups
+    )
+    config = replace(
+        config,
+        partial_week=replace(
+            partial,
+            evidence=replace(
+                partial.evidence,
+                lineups=lines,
+                players=players,
+                matchups=matchups,
+            ),
+        ),
+    )
+    transfers = (TradeTransfer(1, 1, 2), TradeTransfer(2, 2, 1))
+    immediate = replace(config, effective_trades=(EffectiveTrade(15, transfers),))
+    delayed = replace(config, effective_trades=(EffectiveTrade(16, transfers),))
+    baseline, before = run_monte_carlo_path(
+        snapshot, config, model, 0, retain_result=True
+    )
+    earlier, after = run_monte_carlo_path(
+        snapshot, immediate, model, 0, retain_result=True
+    )
+    later, delayed_result = run_monte_carlo_path(
+        snapshot, delayed, model, 0, retain_result=True
+    )
+    assert baseline.scenario_sha256 == earlier.scenario_sha256 == later.scenario_sha256
+    assert before.weeks[0] == delayed_result.weeks[0]
+    before_scores = {
+        item.team_id: item.realized_points for item in before.weeks[0].frozen_team_weeks
+    }
+    after_scores = {
+        item.team_id: item.realized_points for item in after.weeks[0].frozen_team_weeks
+    }
+    for season in (after, delayed_result):
+        owners = {
+            entry.player_id: entry.team_id
+            for entry in season.final_evolving_state.roster_entries
+        }
+        assert (owners[1], owners[2]) == (2, 1)
+    reverse = tuple(
+        TradeTransfer(move.player_id, move.to_team_id, move.from_team_id)
+        for move in transfers
+    )
+    sequence = replace(
+        immediate,
+        effective_trades=(
+            EffectiveTrade(15, transfers),
+            EffectiveTrade(16, reverse),
+        ),
+    )
+    matched, sequenced = run_monte_carlo_path(
+        snapshot, sequence, model, 0, retain_result=True
+    )
+    assert matched.scenario_sha256 == baseline.scenario_sha256
+    assert sequenced.weeks[0] == after.weeks[0]
+    reversed_owners = {
+        entry.player_id: entry.team_id
+        for entry in sequenced.final_evolving_state.roster_entries
+    }
+    assert (reversed_owners[1], reversed_owners[2]) == (1, 2)
+    assert before_scores[3] == after_scores[3] == 7.0
+    assert before_scores[1] != after_scores[1]
+    assert simulation_configuration_fingerprint(
+        snapshot, immediate, model
+    ) != simulation_configuration_fingerprint(snapshot, delayed, model)
+    assert run_monte_carlo_batch(snapshot, immediate, model) == run_monte_carlo_batch(
+        snapshot, immediate, model
+    )

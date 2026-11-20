@@ -885,6 +885,63 @@ def evaluate_completed_manual_scenario(
     )
 
 
+def evaluate_effective_trade_plan(
+    snapshot, baseline_state, scenario_id, simulation, model, precision, trades
+):
+    """Compare matched paths with atomic trades at their effective weeks."""
+    if simulation.path_count != precision.maximum_paths:
+        _fail("simulation path_count must equal precision maximum_paths")
+    baseline_config = replace(simulation, initial_evolving_state=baseline_state)
+    hypothetical = replace(baseline_config, effective_trades=trades)
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "contract": "effective-trades-v1",
+                "snapshot": snapshot.snapshot_id,
+                "trades": [asdict(trade) for trade in trades],
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    changes = tuple(
+        ExplicitRosterChange(move.player_id, move.from_team_id, move.to_team_id)
+        for trade in trades
+        for move in trade.transfers
+    )
+    affected = tuple(
+        sorted(
+            {team for move in changes for team in (move.from_team_id, move.to_team_id)}
+        )
+    )
+    description = CompletedManualScenario(
+        scenario_id,
+        digest,
+        snapshot.snapshot_id,
+        baseline_state,
+        changes,
+        (),
+        (),
+        (),
+        affected,
+        (
+            "Immediate hypothetical approval is assumed, including commissioner intervention.",
+            "Effective trade weeks in sequence: "
+            + ", ".join(str(trade.scoring_week) for trade in trades),
+            "Lineup and ownership effects are evaluated at each effective boundary on each path.",
+        ),
+    )
+    return compare_completed_scenario_batches(
+        snapshot,
+        baseline_state,
+        description,
+        _run_batch(snapshot, baseline_config, model, None),
+        _run_batch(snapshot, hypothetical, model, None),
+        precision,
+        include_static_lineup_explanations=False,
+    )
+
+
 def compare_completed_scenario_batches(
     snapshot: LeagueSnapshot,
     baseline_state: EvolvingLeagueState,
@@ -892,6 +949,8 @@ def compare_completed_scenario_batches(
     baseline_batch: MonteCarloBatchResult,
     scenario_batch: MonteCarloBatchResult,
     precision: PrecisionConfiguration,
+    *,
+    include_static_lineup_explanations: bool = True,
 ) -> ManualScenarioComparison:
     """Build the accepted M4 paired result from matched accumulated batches."""
 
@@ -952,7 +1011,11 @@ def compare_completed_scenario_batches(
             for place in range(1, team_count + 1)
         )
         comparisons.append(TeamScenarioComparison(team_id, championship, playoff, placements))
-    lineup_explanations = _lineup_explanations(snapshot, baseline_state, completed.state)
+    lineup_explanations = (
+        _lineup_explanations(snapshot, baseline_state, completed.state)
+        if include_static_lineup_explanations
+        else ()
+    )
     identity_core = {
         "contract": "m4-paired-scenario-comparison-v1",
         "scenario_sha256": completed.scenario_sha256,

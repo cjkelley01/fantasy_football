@@ -6,7 +6,7 @@ import hashlib
 import json
 import os
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib.metadata import PackageNotFoundError, version
 from itertools import islice
 from uuid import uuid4
@@ -48,6 +48,13 @@ from fantasy_football.canonical.model import SlotKind
 from fantasy_football.canonical.validation import (
     authoritative_current_matchup_period_scoring_weeks,
 )
+from fantasy_football.effective_trades import (
+    EffectiveTradeError,
+    TradeTransfer,
+    current_trade_eligibility,
+    resolve_effective_trades,
+    traded_roster,
+)
 from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     IRPolicy,
@@ -65,6 +72,7 @@ from fantasy_football.scenario_evaluator import (
     ExplicitRosterChange,
     ManualScenario,
     ProtectedPlayerPin,
+    evaluate_effective_trade_plan,
     evaluate_manual_scenario,
 )
 from fantasy_football.search_orchestration import (
@@ -329,6 +337,24 @@ class ApplicationService:
                 partial_input = build_current_week_input(
                     snapshot, tuple(item.response for item in loaded.raw_sources)
                 )
+                try:
+                    trade_weeks, player_weeks = current_trade_eligibility(
+                        snapshot,
+                        partial_input,
+                        tuple(item.response for item in loaded.raw_sources),
+                    )
+                    live_summary = live_summary.model_copy(
+                        update={
+                            "supported_trade_weeks": trade_weeks,
+                            "player_earliest_trade_weeks": tuple(
+                                sorted(player_weeks.items())
+                            ),
+                        }
+                    )
+                except EffectiveTradeError as exc:
+                    live_summary = live_summary.model_copy(
+                        update={"trade_timing_limitation": str(exc)}
+                    )
                 missing_count = sum(
                     p.score_state.value == "missing"
                     for p in partial_input.evidence.players
@@ -462,7 +488,9 @@ class ApplicationService:
     def _simulation(
         configuration, *, initial_state=None, loaded=None
     ) -> MonteCarloConfig:
-        from fantasy_football.automatic_rosters import automatic_policy_from_loaded_snapshot
+        from fantasy_football.automatic_rosters import (
+            automatic_policy_from_loaded_snapshot,
+        )
 
         if loaded is None:
             raise ApplicationServiceError(
@@ -615,7 +643,24 @@ class ApplicationService:
             loaded.snapshot, scoring_week=loaded.snapshot.first_simulation_week,
             ir_policy=IRPolicy(request.simulation.ir_policy),
         )
-        simulation = self._simulation(request.simulation, loaded=loaded)
+        simulation_input = request.simulation
+        if request.scenario.effective_trades:
+            simulation_input = simulation_input.model_copy(
+                update={"use_observed_current_week_lineup": True}
+            )
+        simulation = self._simulation(simulation_input, loaded=loaded)
+        if (
+            simulation.partial_week is not None
+            and request.scenario.changes
+            and not request.scenario.effective_trades
+        ):
+            raise ApplicationServiceError(
+                "partial_week_trade_timing_unresolved",
+                "unsupported_configuration",
+                "This snapshot requires observed current-week lineups. Trade timing "
+                "permission is unresolved, so roster changes cannot be applied to "
+                "the observed week.",
+            )
         precision = self._precision(request.precision)
         self._validate_precision_paths(simulation, precision)
         scenario = ManualScenario(
@@ -625,10 +670,102 @@ class ApplicationService:
             tuple(ProtectedPlayerPin(item.team_id, item.player_id)
                   for item in request.scenario.protected_players),
         )
-        result = evaluate_manual_scenario(
-            loaded.snapshot, state, scenario, simulation,
-            self._model(request.outcome_model), precision,
-        )
+        if request.scenario.effective_trades:
+            try:
+                if simulation.partial_week is None:
+                    raise EffectiveTradeError(
+                        "A timed trade requires a verified current-week snapshot."
+                    )
+                weeks, eligibility = current_trade_eligibility(
+                    loaded.snapshot,
+                    simulation.partial_week,
+                    tuple(item.response for item in loaded.raw_sources),
+                )
+                requested = tuple(
+                    (
+                        trade.selected_week,
+                        tuple(
+                            TradeTransfer(
+                                move.player_id, move.from_team_id, move.to_team_id
+                            )
+                            for move in trade.transfers
+                        ),
+                    )
+                    for trade in request.scenario.effective_trades
+                )
+                trades = resolve_effective_trades(
+                    loaded.snapshot, requested, weeks, eligibility
+                )
+                entries = state.roster_entries
+                original = {entry.player_id: entry.team_id for entry in entries}
+                for trade in trades:
+                    entries = traded_roster(
+                        loaded.snapshot,
+                        entries,
+                        trade,
+                        evidence=simulation.partial_week.evidence
+                        if trade.scoring_week == loaded.snapshot.first_simulation_week
+                        else None,
+                    )
+                    from fantasy_football.evolving_state import validate_evolving_state
+
+                    validate_evolving_state(
+                        replace(state, roster_entries=entries), loaded.snapshot
+                    )
+                final = {entry.player_id: entry.team_id for entry in entries}
+                expected = {
+                    (pid, owner, final[pid])
+                    for pid, owner in original.items()
+                    if owner != final[pid]
+                }
+                supplied = {
+                    (move.player_id, move.from_team_id, move.to_team_id)
+                    for move in scenario.changes
+                }
+                if expected != supplied or len(supplied) != len(scenario.changes):
+                    raise EffectiveTradeError(
+                        "The trade sequence does not match the declared roster changes."
+                    )
+                if any(
+                    final.get(pin.player_id) != pin.team_id
+                    for pin in scenario.protected_pins
+                ):
+                    raise EffectiveTradeError(
+                        "A protected player has a different final owner."
+                    )
+            except ValueError as exc:
+                raise ApplicationServiceError(
+                    "partial_week_trade_timing_unresolved",
+                    "unsupported_configuration",
+                    str(exc),
+                ) from exc
+            try:
+                result = evaluate_effective_trade_plan(
+                    loaded.snapshot,
+                    state,
+                    scenario.scenario_id,
+                    simulation,
+                    self._model(request.outcome_model),
+                    precision,
+                    trades,
+                )
+            except ValueError as exc:
+                if not isinstance(exc.__cause__, EffectiveTradeError):
+                    raise
+                raise ApplicationServiceError(
+                    "partial_week_trade_timing_unresolved",
+                    "unsupported_configuration",
+                    str(exc.__cause__),
+                ) from exc
+        else:
+            result = evaluate_manual_scenario(
+                loaded.snapshot,
+                state,
+                scenario,
+                simulation,
+                self._model(request.outcome_model),
+                precision,
+            )
         teams = tuple(
             TeamScenarioResult(
                 team_id=team.team_id,
@@ -671,12 +808,19 @@ class ApplicationService:
             hypothetical_engine_run_identity_sha256=result.hypothetical.run_identity_sha256,
             matched_path_count=result.matched_path_count,
             affected_team_ids=result.scenario.affected_team_ids,
-            forced_drop_player_ids=tuple(item.player_id for item in result.scenario.forced_drops),
+            forced_drop_player_ids=tuple(
+                item.player_id for item in result.scenario.forced_drops
+            ),
             automatic_addition_player_ids=tuple(
                 item.player_id for item in result.scenario.automatic_additions
             ),
-            teams=teams, lineup_explanations=lineup_explanations,
-            assumptions=result.assumptions,
+            teams=teams,
+            lineup_explanations=lineup_explanations,
+            assumptions=(
+                result.assumptions + result.scenario.assumptions
+                if request.scenario.effective_trades
+                else result.assumptions
+            ),
         )
 
     def run_action_search(
