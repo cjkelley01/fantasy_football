@@ -152,7 +152,11 @@ Axe/component tests supplement manual keyboard, screen-reader, contrast, respons
 
 See [README](../README.md#current-capabilities) for availability and [BACKLOG dispositions](BACKLOG.md#interface-and-action-ux) for follow-up. Contextual-help glossary, denominator-backed progress bars and runtime estimation remain unimplemented; estimates would need approved current-hardware evidence and uncertainty, not old timings or stage-name inference. League Insights, Weekly Deep Dive and scenario comparison are deferred.
 
-Visual/trade/waiver improvements remain exploratory under Interface and Action UX. Superseded spatial concepts are not commitments. Helper consolidation and possible virtualization require scoped evidence/approval under Frontend Contract and Helper Consolidation; deletion of obsolete presentation prototypes does not authorize a redesign. Approved undelivered query/benchmark/analytical obligations remain in their owning domains and BACKLOG.
+Visual/trade/waiver improvements remain exploratory under Interface and Action UX. Helper consolidation and possible virtualization require scoped evidence/approval under Frontend Contract and Helper Consolidation; cleanup does not authorize a redesign. Approved undelivered query/benchmark/analytical obligations remain in their owning domains and BACKLOG.
+
+Current-state navigation is a separately gated proposal: automatically determine the current simulation boundary, make the latest validated refresh primary, reconsider routine historical snapshot/earlier-refresh browsing, and compare analyses from the same current snapshot without presenting outdated advice as current. Review source authority, unsupported boundaries, request/snapshot isolation and compatibility first. This does not authorize changes to storage, historical APIs or simulation permissions; internal provenance, numerical evidence and recovery data remain justified.
+
+Refresh-modal accessibility also needs review: source inspection finds dialog semantics without the shell drawer's focus-containment/background-inert helper. Current component tests do not certify equivalent keyboard behavior. Confirm with authorized accessibility review, then scope keyboard/Escape/restore/background regressions. Help/progress/runtime and scenario-comparison work above likewise needs explicit scope, numerical definitions and supported progress denominators; runtime estimates follow [validation requirements](VALIDATION.md#execution-benchmark-and-scope).
 
 ## Source, tests and visual evidence
 

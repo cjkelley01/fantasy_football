@@ -6,7 +6,13 @@ ESPN access is **read-only**. War Room **never submits real transactions**, pred
 
 ## Current capabilities
 
-The default decision objective is **expected championship probability**, evaluated for every manager using ESPN's player-specific future weekly projections, actual league rules and the current snapshot. Paired season analysis measures downstream qualification, seeding, waiver competition and placement consequences; the published aggregate outputs are a documented subset of the broader [required output contract](docs/BACKLOG.md#output-provenance-and-numerical-lifecycle). Secondary objectives remain future scope. War Room converts ESPN means into uncertain league seasons; it does not initially aim to outperform those player-mean forecasts. ESPN is the sole initial projection source. Another source requires demonstrated incremental value and independent approval as a versioned official model, not an automatic missing-data fallback.
+The provisional marginal-lineup roster policy is available through an explicit
+[simulation configuration](docs/TECHNICAL_REFERENCE.md#automatic-roster-execution).
+It retains the shared V1 scoring, postseason and statistical machinery; existing
+V1 calls remain the default. Its provisional ownership-based drop policy and
+modeled future drop release do not establish live ESPN transaction permissions.
+
+The default decision objective is **expected championship probability**, evaluated for every manager using ESPN's player-specific future weekly projections, actual league rules and the current snapshot. Paired season analysis measures downstream qualification, seeding, waiver competition and placement consequences; the published aggregate outputs are a documented subset of the broader [required output contract](docs/VALIDATION.md#release-acceptance-remains-pending). Secondary objectives remain future scope. War Room converts ESPN means into uncertain league seasons; it does not initially aim to outperform those player-mean forecasts. ESPN is the sole initial projection source. Another source requires demonstrated incremental value and independent approval as a versioned official model, not an automatic missing-data fallback.
 
 | Availability | What you can use |
 |---|---|
@@ -32,7 +38,7 @@ The service binds to loopback on a trusted local machine. Host/Origin checks are
 - [User guide](docs/USER_GUIDE.md): install, configure, select validated data, run analyses, interpret results and shut down safely. Installation/startup needs no ESPN credentials; retrieval requires authorized access. Tested versions and unresolved Node Toolchain Compatibility setup limitations are recorded there.
 - [Interface](docs/INTERFACE.md): product design, workspace interactions, visual hierarchy, responsive behavior and accessibility standards, with implemented behavior and remaining acceptance distinguished.
 - [Contributing](CONTRIBUTING.md): branch/fork collaboration, developer setup, verification and independent PR review. [AGENTS](AGENTS.md) defines standing engineering and evidence rules.
-- [Backlog](docs/BACKLOG.md): outstanding work and exact evidence/approval gates; a proposal is not implementation authorization.
+- [Backlog](docs/BACKLOG.md): outstanding work, priorities, status and links to evidence/approval gates; a proposal is not implementation authorization.
 
 ## Understand the system
 
@@ -41,4 +47,4 @@ The service binds to loopback on a trusted local machine. Host/Origin checks are
 - [Validation](docs/VALIDATION.md): what independent tests and retained research establish, what remains unverified, and scientific/decision/release gates. Fixtures prove code behavior, not live ESPN semantics.
 - [Technical reference](docs/TECHNICAL_REFERENCE.md): start at the [architecture map](docs/TECHNICAL_REFERENCE.md#system-architecture-and-integration-map), then follow executable source/model/state, API/query, deterministic/partial, worker/checkpoint, persistence/recovery and frontend contracts.
 
-These ten documents form the permanent reference set. [AGENTS governance](AGENTS.md#authority-and-precedence) defines ownership/precedence; [CONTRIBUTING](CONTRIBUTING.md#documentation-maintenance) explains maintenance. Ordinary history lives in reviewed PRs/Git, including the [accepted final audit and consolidation sources](https://github.com/tdkelley2001/fantasy_football/tree/5701a88a14b7b0017f020a066c9b10129372e6c6/docs) and [earlier governing evidence](https://github.com/tdkelley2001/fantasy_football/tree/14fd6dba46cfe5827c0b3da110bfefa4a683b647/docs). Historical acceptance is not current release approval.
+These ten documents form the permanent reference set. [AGENTS governance](AGENTS.md#authority-and-precedence) defines ownership/precedence; [CONTRIBUTING](CONTRIBUTING.md#documentation-maintenance) explains maintenance. Git commits and reviewed PRs retain development history. Immutable source and numerical compatibility evidence is linked from its owning domain; historical acceptance is not current release approval.

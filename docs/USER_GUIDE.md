@@ -133,6 +133,16 @@ Missing projections are not confirmed actual zeros or proof a player will not pa
 
 ## Run a baseline and evaluate hypothetical changes
 
+Existing application controls continue to use the V1 policy. Advanced API
+callers may explicitly select the
+[optional marginal-lineup roster policy](TECHNICAL_REFERENCE.md#automatic-roster-execution)
+in simulation configuration; it uses ownership observations retained with the
+selected immutable snapshot and fails when evidence needed for a drop is absent.
+An optional standings fallback seed is explicit modeled configuration, not a
+substitute for unsupported source rules. No live permissions are inferred and
+no snapshot needs to be rewritten. Keep ordinary V1 settings to reproduce an
+existing V1 numerical checkpoint; opted-in policy identities are incompatible.
+
 ### First workflow: baseline, then a specific exchange
 
 This walkthrough uses your selected validated snapshot and real roster records. It asserts no observed league result or recommended trade.
@@ -162,7 +172,7 @@ An authorized action, a structural hypothesis and a conditional waiver are diffe
 
 A championship probability is an estimated frequency under the chosen model and snapshot. **Illustration only:** a change from 10% to 12% is an increase of **2 probability points**, not a 2% relative increase. Those numbers are not an observed War Room result.
 
-There is an important current **unit-compatibility limitation**: the browser labels paired changes/intervals `pp` using values supplied by the API without extra scaling, while legacy paired fields pass through engine fraction values. For example, a supplied difference of `0.02` can be displayed as `0.02 pp` although the mathematical change is 2 probability points. Do not assume the printed paired `pp` scale has already been reconciled with displayed percentage probabilities or precision targets. Check the supplied baseline/scenario context and the [current unit contract](TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility); its correction is separately gated under [Interface and Action UX](BACKLOG.md#query-export-and-unit-compatibility). This guide changes neither units nor inputs.
+There is an important current **unit-compatibility limitation**: the browser labels paired changes/intervals `pp` using values supplied by the API without extra scaling, while legacy paired fields pass through engine fraction values. For example, a supplied difference of `0.02` can be displayed as `0.02 pp` although the mathematical change is 2 probability points. Do not assume the printed paired `pp` scale has already been reconciled with displayed percentage probabilities or precision targets. Check the supplied baseline/scenario context and the [current unit contract](TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility); its correction is separately gated under [Interface and Action UX](TECHNICAL_REFERENCE.md#existing-exports-and-deferred-parity-requirements). This guide changes neither units nor inputs.
 
 Use the supplied **paired** interval for a hypothetical comparison. Do not subtract endpoints from two standalone probability intervals to construct one. Different seeds/models/paths or snapshots are not a matched comparison simply because you selected the same manager. Current supported comparisons are the engine's within-analysis paired outputs and Explorer's same-search path tray, not a general saved-scenario comparison library.
 

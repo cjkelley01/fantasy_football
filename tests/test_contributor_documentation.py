@@ -15,28 +15,26 @@ def _read(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8-sig")
 
 
-def _work_rows(section_title: str = "Work items") -> list[list[str]]:
-    section = (
-        _read("docs/BACKLOG.md")
-        .split(f"## {section_title}\n", 1)[1]
-        .split("\n## ", 1)[0]
-    )
+def _work_rows() -> list[list[str]]:
+    section = _read("docs/BACKLOG.md").split("## Work items\n", 1)[1]
     return [
         [cell.strip() for cell in line.strip("|").split("|")]
         for line in section.splitlines()
-        if line.startswith("| ") and "| WR-" in line
+        if line.startswith("| <a id=")
     ]
 
 
-def test_backlog_titles_and_work_metadata_are_unambiguous() -> None:
-    active = _work_rows()
-    completed = _work_rows("Completed work")
-    rows = active + completed
+def _validate_work_rows(rows: list[list[str]]) -> None:
     assert rows
-    titles = [row[0] for row in rows]
-    assert len(set(titles)) == len(titles)
-    assert all(row[3] != "Done" for row in active)
-    assert all(row[3] == "Done" for row in completed)
+    anchors = [re.search(r'id="([^"]+)"', row[0]).group(1) for row in rows]
+    assert len(set(anchors)) == len(anchors)
+    expected_legacy = {f"WR-{number:03d}" for number in (*range(3, 22), *range(23, 27))}
+    legacy = [row[6] for row in rows if row[6].startswith("WR-")]
+    assert expected_legacy <= set(legacy) and len(legacy) == len(set(legacy))
+    assert {
+        "v1-v2-season-simulator-integration",
+        "enhanced-automatic-drop-valuation",
+    } <= set(anchors)
     for row in rows:
         assert len(row) == 7, row
         kind, priority = row[2].split(" / ")
@@ -48,15 +46,32 @@ def test_backlog_titles_and_work_metadata_are_unambiguous() -> None:
             "Research",
         }
         assert priority in {"P0", "P1", "P2", "P3"}
-        assert row[3] in {
-            "Backlog",
-            "Ready",
-            "In Progress",
-            "In Review",
-            "Blocked",
-            "Done",
-        }
+        assert row[3] in {"Backlog", "Ready", "In Progress", "In Review", "Blocked"}
         assert row[1] and row[4] and row[5]
+    integration = rows[anchors.index("v1-v2-season-simulator-integration")]
+    assert integration[3] == "In Review" and "/pull/161" in integration[4]
+
+
+def test_backlog_titles_and_work_metadata_are_unambiguous() -> None:
+    _validate_work_rows(_work_rows())
+    assert "## Completed work" not in _read("docs/BACKLOG.md")
+
+
+@pytest.mark.parametrize(
+    "fault", ("lost-item", "duplicate-anchor", "premature-completion")
+)
+def test_backlog_rejects_lost_duplicate_or_prematurely_completed_work(
+    fault: str,
+) -> None:
+    rows = [row[:] for row in _work_rows()]
+    if fault == "lost-item":
+        rows.pop()
+    elif fault == "duplicate-anchor":
+        rows[1][0] = rows[0][0]
+    else:
+        rows[0][3] = "Done"
+    with pytest.raises(AssertionError):
+        _validate_work_rows(rows)
 
 
 @pytest.mark.parametrize("document", ("README.md", "AGENTS.md"))
@@ -117,15 +132,19 @@ def test_contributor_locked_setup_and_vite_commands_match_sources() -> None:
     assert "not launcher-owned" in document
 
 
-def test_release_signoffs_have_an_explicit_backlog_destination() -> None:
-    section = (
-        _read("docs/BACKLOG.md")
-        .split("## Release Acceptance\n", 1)[1]
-        .split("\n## ", 1)[0]
+def test_release_signoffs_have_an_explicit_domain_owner_and_open_work_item() -> None:
+    backlog = _read("docs/BACKLOG.md")
+    release_row = next(
+        row for row in _work_rows() if 'id="release-acceptance"' in row[0]
     )
+    assert release_row[3] == "Backlog"
+    assert "VALIDATION.md#release-acceptance-remains-pending" in release_row[4]
+    section = _read("docs/VALIDATION.md").split(
+        "### Release acceptance remains pending\n", 1
+    )[1]
     for requirement in (
         "revision, working-tree state",
-        "Clean Windows setup and production-local start",
+        "Clean supported Windows locked installation/build/import/start",
         "Authenticated local identity/static boundary",
         "Refresh and snapshot evidence",
         "Ordinary analytical workflow",
@@ -137,5 +156,6 @@ def test_release_signoffs_have_an_explicit_backlog_destination() -> None:
         "V1 released",
     ):
         assert requirement in section
-    assert "tier-4-release-verification" in section
-    assert "tier-5-explicitly-authorized-integration" in section
+    assert "tier-4-release-verification" in _read("docs/VALIDATION.md")
+    assert "tier-5-explicitly-authorized-integration" in _read("docs/VALIDATION.md")
+    assert "there is no completed-work register" in backlog

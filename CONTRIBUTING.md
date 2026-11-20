@@ -4,7 +4,7 @@ Use [METHODOLOGY](docs/METHODOLOGY.md) for analytical rules, [DATA](docs/DATA.md
 
 The offline [M0 role verifier](docs/DATA.md#m0-consumer-dependency), `.venv\Scripts\python.exe -m fantasy_football.m0_verification --json`, needs no credentials. Contract 3 checks seven roles against DATA, METHODOLOGY, VALIDATION and TECHNICAL_REFERENCE; preserve exact bindings/identities/limits and the distinction between recorded historical identity and unauthenticated historical bytes.
 
-`tdkelley2001/fantasy_football` is the authoritative repository for accepted code and documentation. Both regular contributors use pull requests into its `main` branch, whether the work branch is in the original repository or the existing fork. **PR approval is not required by default**; the author may merge an ordinary change after appropriate checks. Request collaborator review when a change affects methodology, league rules, numerical identity, major architecture, or other agreed high-impact behavior. Keep the fork; no migration, remote replacement or permission change is needed.
+`tdkelley2001/fantasy_football` is the authoritative repository for accepted code and documentation. Both regular contributors use pull requests into its `main` branch, whether the work branch is in the original repository or the existing fork. **PR approval is not required by default**; the author may merge an ordinary change after appropriate checks. Use reviewed pull requests when a change affects methodology, league rules, numerical identity, major architecture, or other explicitly gated high-impact behavior. Keep the fork; no migration, remote replacement or permission change is needed.
 
 Start with the [development backlog](docs/BACKLOG.md), [current capabilities](README.md#current-capabilities), [domain authorities](README.md#understand-the-system) and [authority precedence](AGENTS.md#authority-and-precedence). Independently accepted analytical requirements, dependencies and acceptance gates remain binding in their owning references; historical milestones are Git/PR evidence, not a parallel work queue.
 
@@ -25,7 +25,7 @@ Coordinate overlapping files or interfaces in the backlog entry and PR discussio
 
 The Git examples are instructions, not repository settings. Begin with `git status --short` and `git remote -v`; preserve any local work deliberately. Check which repository each remote names. Do not discard changes, reset main, force-push or rewrite another contributor's published commits. If a fast-forward fails, inspect divergence and coordinate instead of forcing it. “Already up to date” does not prove local main has no extra commits: inspect ahead/behind state and review the complete PR diff against authoritative main.
 
-Use a short branch such as `docs/documentation-consolidation` or `fix/node-toolchain-compatibility`. Replace example names with the actual work title and branch. Use a new branch for each independently reviewable change.
+Use a short branch such as `docs/current-guides` or `fix/node-toolchain-compatibility`. Replace example names with the actual work title and branch. Use a new branch for each independently reviewable change.
 
 ### Working in the original repository
 
@@ -35,10 +35,10 @@ Here `origin` must be `tdkelley2001/fantasy_football`:
 git fetch origin
 git switch main
 git merge --ff-only origin/main
-git switch -c docs/documentation-consolidation
+git switch -c docs/current-guides
 ```
 
-Update an existing work branch with `git fetch origin`, switch to that branch and `git merge origin/main`. Resolve conflicts with the affected contributor, run the relevant checks, then push **the work branch**, for example `git push -u origin docs/documentation-consolidation`. Open a PR with base `tdkelley2001/fantasy_football:main`. Do not push changes directly to upstream main.
+Update an existing work branch with `git fetch origin`, switch to that branch and `git merge origin/main`. Resolve conflicts with the affected contributor, run the relevant checks, then push **the work branch**, for example `git push -u origin docs/current-guides`. Open a PR with base `tdkelley2001/fantasy_football:main`. Do not push changes directly to upstream main.
 
 ### Working in the existing fork
 
@@ -55,7 +55,7 @@ git fetch upstream
 git switch main
 git merge --ff-only upstream/main
 git push origin main
-git switch -c docs/documentation-consolidation
+git switch -c docs/current-guides
 ```
 
 The main push above updates **the fork only**, not authoritative main. If fork/local main contains unrelated commits, preserve that work and agree a branch base containing only the intended contribution; do not reset or delete the fork. Update an existing work branch by fetching upstream and merging `upstream/main` into that branch. Then push the work branch to `origin` and open a PR whose **base repository is the original repository**, not the fork. Both contribution routes receive the same review and verification.
@@ -180,7 +180,7 @@ For an isolated credential-free source/publication exercise, reuse `tests/test_s
 
 ## Tier 4: Release verification
 
-Use for release-readiness work when that scope is agreed, after setup. The authoritative executable is [verify-release.ps1](scripts/verify-release.ps1); [Release Acceptance](docs/BACKLOG.md#release-acceptance) retains exact human signoff and unresolved release dispositions. This is **credential-free but networked**, not an offline or read-only command:
+Use for release-readiness work when that scope is agreed, after setup. The authoritative executable is [verify-release.ps1](scripts/verify-release.ps1); [release criteria](docs/VALIDATION.md#release-acceptance-remains-pending) define human signoff; [Release Acceptance](docs/BACKLOG.md#release-acceptance) tracks unresolved disposition. This is **credential-free but networked**, not an offline or read-only command:
 
 ```powershell
 .\scripts\verify-release.ps1
@@ -220,7 +220,7 @@ Historical capture scripts under `frontend/dev/` may assume a fixed Windows Edge
 
 ## Change-based verification matrix
 
-The [application API and execution reference](docs/TECHNICAL_REFERENCE.md#http-api-dtos-and-evolution) owns current routes/DTOs, refresh, analysis lifecycle, limits, retained results and process-ownership guarantees. Use its [source/test entry points](docs/TECHNICAL_REFERENCE.md#integration-evidence) for application-only contract work; it replaces the separate backend/run handoffs, not the numerical or operational test tiers below.
+The [application API and execution reference](docs/TECHNICAL_REFERENCE.md#http-api-dtos-and-evolution) owns current routes/DTOs, refresh, analysis lifecycle, limits, retained results and process-ownership guarantees. Use its [source/test entry points](docs/TECHNICAL_REFERENCE.md#integration-evidence) for application-only contract work; numerical and operational checks retain their separate verification tiers.
 
 Start with Tier 1, then select relevant tests below. The module lists are useful starting points, not exhaustive signoff or permission to omit an applicable reference/acceptance gate. All test paths are relative to the repository root and can follow `python -m pytest` using the prepared interpreter. Include `-m "not windows_process"` for ordinary credential-free selection.
 
@@ -243,7 +243,7 @@ Partial changes also select `tests/test_partial_week.py`, `tests/test_partial_se
 
 Acceptance checks cover identity/ownership, exact slot matching and impossible rosters; transaction permission/timing; standings and distinct tie cases; championship/consolation progression, full placement reconciliation; snapshot validation and reproducibility. Cross-boundary checks compare direct engine, service, background and HTTP results/configuration/identities, coverage/precision/ranking labels, every supported trade/acquisition/chain/combined family, errors and local security. Preserve representative workload evidence with exact snapshot dimensions and path/worker policies, startup/serialization costs, parent **and aggregate-child** memory, storage and responsive polling/query latency. Historical 14-team/188-player/two-worker measurements are fixtures at their recorded revision, not a universal performance threshold.
 
-Statistical acceptance needs synthetic-known-probability tests, empirical calibration and sequential interval/stopping coverage, not merely a deterministic interval result. Historical/prospective comparisons require authentic as-of inputs, temporal isolation and original forecasts distinct from newer-model replays. A faster compiled/vectorized/parallel implementation must match its readable independent reference in feasible sequences, final states and path-indexed outcomes before promotion; compiler/JIT adoption is conditional on profiling, not required technology. Existing deterministic fixtures and provisional model acceptance do not satisfy every scientific or repeated-look gate; [research](docs/VALIDATION.md#independent-component-specific-promotion) and [Progressive Inference Coverage](docs/BACKLOG.md#numerical-and-partial-evidence-obligations) retain those obligations. Record actual environments, exclusions and limitations instead of transferring obsolete suite totals as current acceptance evidence.
+Statistical acceptance needs synthetic-known-probability tests, empirical calibration and sequential interval/stopping coverage, not merely a deterministic interval result. Historical/prospective comparisons require authentic as-of inputs, temporal isolation and original forecasts distinct from newer-model replays. A faster compiled/vectorized/parallel implementation must match its readable independent reference in feasible sequences, final states and path-indexed outcomes before promotion; compiler/JIT adoption is conditional on profiling, not required technology. Existing deterministic fixtures and provisional model acceptance do not satisfy every scientific or repeated-look gate; [research](docs/VALIDATION.md#independent-component-specific-promotion) and [Progressive Inference Coverage](docs/VALIDATION.md#precision-claims-and-progressive-inference-coverage) retain those obligations. Record actual environments, exclusions and limitations instead of transferring obsolete suite totals as current acceptance evidence.
 
 [outcome methodology](docs/METHODOLOGY.md#player-outcome-generation-and-assumptions), [numerical methodology](docs/METHODOLOGY.md#monte-carlo-simulation-and-estimators) and [partial-week methodology](docs/METHODOLOGY.md#current-week-and-partial-week-treatment) own the current numerical and evidence contracts. M0 contract 3 checks consolidated DATA/METHODOLOGY/VALIDATION/TECHNICAL_REFERENCE evidence sections, including DATA/M2/T2 missing-policy evidence; preserve its substantive/fence-aware and historical identity checks.
 
@@ -275,4 +275,4 @@ Use an ordinary reviewed PR; no extra committee, tracker, template or workflow i
 
 In the PR description, give the backlog title, objective/change, governing contract, acceptance criteria addressed, exact verification results and skipped checks with reasons. State compatibility/evidence risks and any remaining blockers. No issue/PR template, label system, Project board or new workflow configuration is required.
 
-**Pull requests do not require routine approval.** The author can merge ordinary bug fixes, documentation and low-risk implementation changes after appropriate tests and a diff check. For substantive methodological, league-rule, statistical, numerical-identity, security or architectural changes, coordinate and obtain explicit agreement on the change before merging; collaborator review is recommended, and an explicitly agreed acceptance gate still applies. Do not make auto-merge the default. Applicable verification and compatibility requirements remain binding. A successful local check is not acceptance of a new modeling assumption or a declaration of release. Update current capability documentation when behavior actually changes; update the backlog in the same PR or a small follow-up PR when review disposition is known. Keep items In Review until their stated acceptance conditions are met; ordinary changes do not require a separate reviewer. Then retain their titles/anchors in the completed record with the actual PR/decision reference. See [backlog maintenance](docs/BACKLOG.md#maintaining-this-file).
+**Pull requests do not require routine approval.** The author can merge ordinary bug fixes, documentation and low-risk implementation changes after appropriate tests and a diff check. For substantive methodological, league-rule, statistical, numerical-identity, security or architectural changes, coordinate and obtain explicit agreement on the change before merging; collaborator review is recommended, and an explicitly agreed acceptance gate still applies. Do not make auto-merge the default. Applicable verification and compatibility requirements remain binding. A successful local check is not acceptance of a new modeling assumption or a declaration of release. Update current capability documentation when behavior actually changes; update the backlog in the same PR or a small follow-up PR when review disposition is known. Keep items In Review until their stated acceptance conditions are met; ordinary changes do not require a separate reviewer. After acceptance and merge, update current domain documentation and remove the item from the active backlog; Git and the merged PR retain the decision record. See [backlog maintenance](docs/BACKLOG.md#maintaining-this-file).

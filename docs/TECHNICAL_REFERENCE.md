@@ -229,7 +229,7 @@ Nonmissing historical Normal draws stay byte-identical under the independent [Le
 
 Checkpoint recovery checks model ID/complete ordered parameters, snapshot/configuration/seed, precision, saved execution policy, first/max range, exact committed prefix, invariants and recomputed history before new paths/writes. Changed worker/task/start-method/in-flight settings can be incompatible for resume despite equal fixed mathematical paths. A changed adaptive look schedule can select a different final range; equal seeds are insufficient. [numerical methodology recovery](TECHNICAL_REFERENCE.md#numerical-execution-workers-and-checkpoints) retains the implemented durable protocol; T6 specifies recovery; automatic HTTP resume and checkpoint retention/expiry remain separate outstanding obligations.
 
-[Release Acceptance](BACKLOG.md#output-provenance-and-numerical-lifecycle) retains full provenance, output and numerical lifecycle duties. [Progressive Inference Coverage](BACKLOG.md#numerical-and-partial-evidence-obligations) retains unresolved repeated-look coverage: reproducible identities do not prove the stopping claim. V2/V3/V4 separate numerical, scientific and decision acceptance; identity compatibility does not establish scientific promotion or authorize a new model, unit correction or schema/version transition.
+[Release Acceptance](VALIDATION.md#release-acceptance-remains-pending) retains full provenance, output and numerical lifecycle duties. [Progressive Inference Coverage](VALIDATION.md#precision-claims-and-progressive-inference-coverage) retains unresolved repeated-look coverage: reproducible identities do not prove the stopping claim. V2/V3/V4 separate numerical, scientific and decision acceptance; identity compatibility does not establish scientific promotion or authorize a new model, unit correction or schema/version transition.
 
 ### Identity evidence
 
@@ -261,11 +261,98 @@ The manual CLI (`python -m fantasy_football.scenario_evaluator`) requires strict
 
 The coordinator validates canonical inputs, transaction-format/waiver-reset rules and postseason participation provenance before execution. Without partial input it also enforces the available canonical live safe-boundary evidence and rejects a partial first period. Older readable snapshot schemas do not manufacture live authority. [DATA](DATA.md#live-and-temporal-evidence) owns the independent full-period boundary, including earlier weeks outside the simulation horizon.
 
-Each later week advances the evolving cycle, retains holds unless separately authorized for release, and performs any configured waiver reset only from a resolved standings order. `execute_weekly_essential_transactions()` receives the shared state/pool and actor eligibility, returning `WeeklyTransactionResult` with new state, acquisitions, decisions, queue/ledger diagnostics and completeness information. Restricting actors does not remove other teams from ownership, demand or valuation. `IRPolicy`, `WeeklyTransactionPolicy` and postseason participation are explicit model policies, not inferred live permissions; source authority is defined in [DATA](DATA.md#transaction-eligibility-authority). Exact Finite-Score Objective Ordering; Incomplete-Valuation Transaction Selection remain unresolved in the [mechanics obligations](BACKLOG.md#mechanics-review-obligations).
+Each later week advances the evolving cycle, retains holds unless separately authorized for release, and performs any configured waiver reset only from a resolved standings order. `execute_weekly_essential_transactions()` receives the shared state/pool and actor eligibility, returning `WeeklyTransactionResult` with new state, acquisitions, decisions, queue/ledger diagnostics and completeness information. Restricting actors does not remove other teams from ownership, demand or valuation. `IRPolicy`, `WeeklyTransactionPolicy` and postseason participation are explicit model policies, not inferred live permissions; source authority is defined in [DATA](DATA.md#transaction-eligibility-authority). Exact Finite-Score Objective Ordering; Incomplete-Valuation Transaction Selection remain unresolved in the [mechanics obligations](VALIDATION.md#exactness-and-unresolved-mechanics).
 
 `optimize_starting_lineup()` freezes an `OptimizedLineup` from configured slots/eligibility and that week's canonical projections, optionally using validated evolving roster entries. It returns assignments and explicit vacancies; it does not select retrospectively from realized scores. Its snapshot-bound workspace is an execution optimization, not a cross-snapshot authority/cache. `resolve_regular_season_week()` independently validates frozen lineups/rosters and consumes finite realized starter values. It updates modeled standings from source standings through `WeeklyTransition`; a stable presentation order is not a resolved competitive tiebreak. Ordinary multiweek regular resolution lacks aggregate reconciliation, whereas the partial path explicitly rejects it: do not claim universal rejection by ordinary V1. [Season weekly contracts](METHODOLOGY.md#frozen-scoring-and-standings) retain that limitation.
 
 Postseason uses immutable `BracketGraph`/`BracketGraphNode`/`BracketSource` topology and `PostseasonState` from [postseason.py](../src/fantasy_football/postseason.py). Initialization binds uniquely ranked modeled standings to seeds and reconciles canonical first-round pairings. `score_frozen_postseason_week()` consumes player outcomes; `apply_postseason_team_scores()` consumes audited `WeeklyTeamScore(scoring_week, team_id, points)`. Neither changes ownership nor samples. Championship/consolation keep independent round calendars and explicit bye/advancement/placement obligations. Unresolved seeding, authorization or placement can return `SeasonCompletionStatus.INCOMPLETE` with exact reasons rather than a complete champion/placement certificate. Structural contradictions raise at their owning boundary; supported incompleteness is not catch-and-continue repair.
+
+### Automatic-roster execution
+
+`WeeklyTransactionPolicy.automatic_rosters=None` preserves the accepted V1
+interface and policy identity. An explicit `AutomaticRosterPolicy` binds the
+published snapshot, immutable `(source_id, exact JSON text)` ownership sources,
+`policy_id="mandatory-marginal-lineup-v1"` and optional
+`standings_fallback_seed`. Source pairs are sorted by ID for stable identity;
+their exact JSON text is preserved. [METHODOLOGY](METHODOLOGY.md#operational-essential-acquisitions)
+owns its decision algorithm; [DATA](DATA.md#automatic-roster-ownership-observations)
+owns source interpretation. The shared coordinator and V1 Normal model produce
+all-team path summaries, standings, championship/consolation placements and
+existing precision/paired statistics.
+
+`PreparedSeason` holds dense canonical IDs, projection rows and eligibility masks.
+`CompactSeasonState` forks path-local indexed ownership, slots, availability,
+queues and counters while preserving source linkage and transaction diagnostics.
+Selected effects return to the shared season coordinator; canonical snapshots
+remain immutable. A bounded snapshot-bound lineup workspace is reused per batch
+or initialized worker, including exact team-local lineup keys, at most 128
+validated full-roster entries and four source-policy preparations. Validation
+precedes cache admission; changed source text and malformed/changed rosters cannot
+reuse an unrelated entry. No cross-run global snapshot cache is introduced.
+The two per-search opponent valuation caches are separately bounded to 2,048
+entries each; eviction changes reuse, not the selected legal effect.
+
+Summary-only Monte Carlo uses the same coordinator with a native indexed path.
+`PreparedExecution` prepares default initial state once, forks path-local arrays,
+advances cycles/queues without reconstructing canonical rosters, and uses the
+existing regular-season arithmetic and postseason resolver. Weekly transition,
+roster and lineup-plan tables each retain at most 256 entries. Transition keys
+include ownership, slots, availability/clearance, queues, counters, cycle/period,
+complete history, IR evidence/assumptions, actor eligibility and policy; unrelated
+states cannot reuse an effect. A full-lineup shortcut requires validated policy
+and companion evidence and cannot skip reserve reconciliation or held-player
+clearance. Changed states prepare through the readable transaction path; trial
+acquisitions remain indexed until the selected legal effect is materialized.
+
+`PreparedNormalOutcomes` reuses immutable historical JSON key fragments, preserving
+the full player-week universe, both SHA-256 counters and identical Box–Muller
+operations. It is not a new outcome model or identity. Overridden/custom models
+and partial-week inputs retain their existing generation interface. The common
+draw key is hashed once and its SHA-256 context copied before appending the two
+historical counter bytes; uniform conversion and floating-point operation order
+are unchanged. Prepared integer-coordinate JSON prefixes and finite-float
+`repr` reproduce the existing scenario JSON encoding without intermediate row
+tuples. This digest path accepts only the workspace's last immutable generated
+scenario by object identity; other scenarios use the general JSON encoder. Each
+workspace retains at most one such scenario and one prefix per canonical draw.
+The unlimited-lineup kernel preserves the reference Decimal objective and tie order;
+the readable general solver remains its oracle and handles limited-player cases.
+Fixed-width digits encode ascending player-ID ranks with vacancies ordered last,
+so integer assignment comparisons reproduce the reference lexicographic tie key.
+Only the winning assignment is decoded; legal DP edges, candidate order, Decimal
+rounding/traps/flags and every remaining week's valuation remain unchanged.
+Equal ordered projection/eligibility profiles may reuse a week-free candidate
+lineup, with Decimal context/traps/flags preserved; team/week artifacts remain
+separate. These profile/candidate tables are bounded by the workspace's existing
+20,000-entry limit; full-horizon projected-value results have a 2,048-entry bound.
+Every remaining week still contributes, including weeks with equal projections.
+
+Sequential precision/checkpoint runs retain one workspace across batches, as do
+initialized workers. Caches are neither global nor checkpoint contents. Explicit
+`retain_result=True` keeps the full readable season trace; summary-only execution
+does not allocate unused weekly diagnostic artifacts. Partial companions keep
+their separate validated composition path. Differential gates are in
+[test_prepared_execution.py](../tests/test_prepared_execution.py); no fingerprint,
+draw/model policy, checkpoint schema or public result contract changes.
+
+The configuration fingerprint explicitly retains exactly the original two
+transaction-policy fields for ordinary V1 calls. Only an opted-in policy adds
+its complete companion/policy inputs to configuration identity. Existing model
+parameters, draw serialization, path IDs, goldens and checkpoint format remain
+unchanged. A changed companion or policy rejects incompatible numerical resume;
+application retained history remains separate from numerical checkpoints.
+
+A supplied standings fallback seed cannot override a configured secondary rule with `InterpretationStatus.UNSUPPORTED` when winning percentage and points for leave a tie. An understood non-random secondary rule likewise cannot be replaced by a lottery. If earlier supported rules uniquely order every team, that secondary rule is not needed. [Standings methodology](METHODOLOGY.md#operational-essential-acquisitions) owns the policy; [weekly regressions](../tests/test_weekly_engine.py) cover both boundaries.
+
+The existing `SimulationConfiguration` accepts optional
+`automatic_roster_policy="mandatory_marginal_lineup_v1"` and an integer/null
+`standings_fallback_seed`. Omitted/`"legacy_v1"` and null seed retain the previous
+serialized request shape. A fallback seed requires the explicit automatic policy.
+The application loads ownership text from immutable stored sources; it does not
+retrieve ESPN or accept invented ownership defaults. Existing baseline, scenario,
+search and background result handling continue through their shared interfaces.
+No new UI switch or experimental preview route is required. The public interface
+still does not accept engine-only partial-week companions.
 
 ### Companion envelope and preservation contract
 
@@ -329,7 +416,7 @@ The narrower `MonteCarloPartialWeekInput(evidence, lineup, prior_postseason_scor
 
 [Focused T4 checks](../tests/test_deterministic_interface_documentation.py) bind the envelope/example to serializers/composition, exercise checksum-valid semantic forgeries, identity/time/lock/cutoff/score-routing failures and replay/carry. Independent [lineup](../tests/test_lineup_optimizer.py), [weekly](../tests/test_weekly_engine.py), [state](../tests/test_evolving_state.py), [transactions](../tests/test_weekly_transactions.py), [postseason](../tests/test_postseason.py), [season](../tests/test_season_simulator.py), [partial evidence](../tests/test_partial_week.py), [partial season](../tests/test_partial_season.py) and [partial Monte Carlo](../tests/test_partial_monte_carlo.py) tests retain their oracles/adversaries. This is **Verified by tests**, not live ESPN or scientific validation.
 
-[BACKLOG](BACKLOG.md#numerical-and-partial-evidence-obligations) preserves exact outstanding obligations: Partial-Week Error Consistency error consistency; Live-Week Evidence and Integration source/lock/settlement, translation, broader states/history and conditional methods; Release Acceptance release/output/lifecycle; Exact Finite-Score Objective Ordering; Incomplete-Valuation Transaction Selection mechanics and Progressive Inference Coverage sequential coverage. These interfaces grant no additional live permission or public partial-week capability.
+[BACKLOG](BACKLOG.md) tracks outstanding work against its owning domain contracts: Partial-Week Error Consistency error consistency; Live-Week Evidence and Integration source/lock/settlement, translation, broader states/history and conditional methods; Release Acceptance release/output/lifecycle; Exact Finite-Score Objective Ordering; Incomplete-Valuation Transaction Selection mechanics and Progressive Inference Coverage sequential coverage. These interfaces grant no additional live permission or public partial-week capability.
 
 ## HTTP API, DTOs and evolution
 
@@ -426,7 +513,7 @@ After validation, background submission checks closing/queue capacity under lock
 | `LiveScoringSummary` | `current_scoring_period: integer`; `last_fully_completed_period: integer or null`; `earliest_unresolved_period: integer or null`; `next_fully_unplayed_period: integer or null`; `supported_simulation_week: integer or null`; `partial_week_simulation_required: boolean`; `boundary_method: "automatic" / "manual_override" / "unresolved"`; `boundary_rationale: string`; `weeks: ScoringWeekStateSummary[]`; `unresolved_capabilities: string[]` |
 | `SnapshotSummary` | `api_schema_version?: "1.0"="1.0"`; `snapshot_id: string`; `league_id: integer`; `league_name?: string or null=null`; `season: integer`; `canonical_schema_version: integer`; `canonical_sha256: string`; `source_count: integer`; `source_ids?: string[]=[]`; `published_at_utc: string(date-time)`; `retrieval_finished_at_utc: string(date-time)`; `first_simulation_week: integer`; `final_simulation_week: integer`; `team_count: integer or null`; `teams?: TeamSummary[]=[]`; `players?: PlayerSummary[]=[]`; `roster_assignments?: RosterAssignment[]=[]`; `matchup_periods?: MatchupPeriodSummary[]=[]`; `matchups?: MatchupSummary[]=[]`; `league_structure?: LeagueStructure or null=null`; `capabilities?: RuleCapability[]=[]`; `live_scoring?: LiveScoringSummary or null=null` |
 | `NormalOutcomeModelConfiguration` | `model_type?: "provisional_normal"="provisional_normal"`; `base_stddev_points: number{>=0.0}`; `projection_scale: number{>=0.0}` |
-| `SimulationConfiguration` | `master_seed: integer`; `path_count: integer{<=10000,>0}`; `first_path_index?: integer{>=0}=0`; `ir_policy: "projection_based" / "strict"`; `waiver_boundary: "unresolved" / "modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `require_complete?: boolean=true` |
+| `SimulationConfiguration` | `master_seed: integer`; `path_count: integer{<=10000,>0}`; `first_path_index?: integer{>=0}=0`; `ir_policy: "projection_based" / "strict"`; `waiver_boundary: "unresolved" / "modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `require_complete?: boolean=true`; `automatic_roster_policy?: "legacy_v1" / "mandatory_marginal_lineup_v1"="legacy_v1"`; `standings_fallback_seed?: integer or null=null` |
 | `PrecisionSettings` | `family_confidence_level: number{>0.0,<1.0}`; `target_half_width_probability: number{>0.0,<1.0}`; `minimum_paths: integer{<=10000,>0}`; `maximum_paths: integer{<=10000,>0}`; `evaluation_interval_paths: integer{<=10000,>0}` |
 | `BuildProvenance` | `package_version: string`; `build_revision: string or null`; `revision_status: "explicit" / "unknown"` |
 | `RunIdentity` | `identity_schema_version: "application-run-identity-v1"`; `analytical_equivalence_sha256: string`; `application_execution_sha256: string`; `presentation_query_sha256: string`; `execution_nonce: string`; `build: BuildProvenance` |
@@ -473,7 +560,7 @@ After validation, background submission checks closing/queue capacity under lock
 
 ### Numerical units and identity scopes
 
-Absolute probabilities/interval bounds are fractions in [0,1]; unavailable estimates/intervals remain null rather than fabricated zero. Paired fields named `*_probability_points`, including `target_paired_half_width_probability_points`, retain **fraction pass-through without service-side scaling**. For example, stored/returned 0.02 means a +2 probability-point delta mathematically; the adapter does not return 2.0. Baseline target_half_width_probability is an absolute fraction. [INTERFACE](INTERFACE.md) owns existing display behavior; [Interface and Action UX](BACKLOG.md#query-export-and-unit-compatibility) retains a separately approved naming/scaling/presentation migration. No field rename, rescale or second frontend estimator is delivered here.
+Absolute probabilities/interval bounds are fractions in [0,1]; unavailable estimates/intervals remain null rather than fabricated zero. Paired fields named `*_probability_points`, including `target_paired_half_width_probability_points`, retain **fraction pass-through without service-side scaling**. For example, stored/returned 0.02 means a +2 probability-point delta mathematically; the adapter does not return 2.0. The service does not perform the conversion to whole probability points. Baseline target_half_width_probability is an absolute fraction. [INTERFACE](INTERFACE.md) owns existing display behavior; [Interface and Action UX](TECHNICAL_REFERENCE.md#existing-exports-and-deferred-parity-requirements) retains a separately approved naming/scaling/presentation migration. Field renaming, rescaling or a second frontend estimator requires separate approval.
 
 | Identity | Existing binding / limitation |
 |---|---|
@@ -496,7 +583,7 @@ Typed public errors are API 1.0 `ErrorResponse{error: ErrorDetail{code,category,
 | 403 | untrusted_browser_origin on rejected state-changing browser Origin; TrustedHost has its separate framework rejection |
 | 500 | snapshot_integrity_failure and unexpected internal_engine_failure/internal_failure; failures are not converted into successful partial analytics |
 
-Within `/api/v1`, names/types/units/null semantics and meaning remain compatible. Safe additive response fields with defaults are allowed. Removing/renaming fields, incompatible meaning/type/unit/null/enum changes or making an optional request field required needs a new API version. Unknown body fields and unsupported api_schema_version fail. Correcting a bug still needs regression evidence and release notes. API 1.0 is independent of canonical reads 2/3/4, companion artifact 1 and storage schemas. T8/T9 document lifecycle/integration; T8/T9 own runtime/lifecycle details and the error/version contract is defined here.
+Within `/api/v1`, names/types/units/null semantics and meaning remain compatible. Safe additive response fields with defaults are allowed. Removing/renaming fields, incompatible meaning/type/unit/null/enum changes or making an optional request field required needs a new API version. Unknown body fields and unsupported api_schema_version fail. Correcting a bug still needs regression evidence and release notes. API 1.0 is independent of canonical reads 2/3/4, companion artifact 1 and storage schemas. The [lifecycle](#persistence-run-lifecycle-and-recovery) and [application integration](#application-and-frontend-securityintegration-contracts) sections own runtime behavior; this section owns error/version compatibility.
 
 ## Numerical execution, workers and checkpoints
 
@@ -513,7 +600,7 @@ This chapter specifies execution interfaces, not another estimator or season eng
 | `aggregate_monte_carlo_paths()` | Sort supplied summaries by path_index, require unique exact range coverage, validate each path/team/placement/qualification invariant and derive aggregates. It consumes summaries, not an authenticated proof of generated outcomes. |
 | `combine_monte_carlo_batches()` | Require matching configuration/run and snapshot/model/ordered parameters/seed; reject overlaps, duplicates or gaps, then use the same aggregate logic. Partitions may arrive in any order. Source labels or equal aggregate counts cannot replace exact path evidence. |
 
-The worker initializer stores the immutable snapshot/config/model for reuse; each path still enters existing validation scopes and reconstructs independent evolving ownership, counters, standings and brackets. Existing per-season workspaces do not create a global or worker-wide permission bypass. Built-in immutable models follow this contract; process serialization does not freeze or authenticate an arbitrary custom model. No prepared-input cache or changed random stream is introduced.
+The worker initializer stores the immutable snapshot/config/model for reuse; each path still enters existing validation scopes and reconstructs independent evolving ownership, counters, standings and brackets. Existing per-season workspaces do not create a global or worker-wide permission bypass. Built-in immutable models follow this contract; process serialization does not freeze or authenticate an arbitrary custom model. Snapshot-bound workspaces reuse prepared immutable inputs; every path retains independent evolving state and the same random stream.
 
 For supported partial input, validate the unstarted-only subset before requesting draws, generate the unchanged full canonical universe once, map only current non-bye starters to explicit partial values, and remove all current-week ordinary scores. Retain the original complete scenario label/digest for matched-path audit. No second current-week draw or conditional remainder sampler exists; [T4 routing](#first-week-routing-and-compatibility) and [partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence) retain the exact evidence/lineup/equivalence conditions.
 
@@ -543,7 +630,7 @@ Worker/task/completion order changes preserve fixed-path mathematical results un
 
 At each profile look: reconcile the prefix, analyze with in_progress to create its PrecisionCheckpoint, save it if requested, choose a stop, then call progress_callback. Stop precedence is incomplete_capabilities, precision_reached, cooperative cancelled, maximum_paths_reached, otherwise in_progress. A true cancellation callback is checked only after a finished nonconverged range; it does not prevent the initial minimum or preempt a worker, and precision wins when already reached. `ProgressiveExecutionUpdate.is_final` means a stop decision, including cancelled/capped/incomplete, not necessarily adequate precision. SimulationExecutionResult distinguishes recovered_paths and newly_executed_paths.
 
-Compatible sequential/process arrangements and fixed-range batch partitions preserve path summaries and precision analysis. A changed look schedule can change exposure/stopping/history/analysis identity; identical seed alone does not establish equal adaptive results. Standalone `wilson_score_bonferroni_familywise_v1` includes its planned metric/look allocation; this is not proof of exact finite-sample coverage or model calibration. Progressive search's displayed all-team paired intervals have the unresolved repeated-look/across-state issue in [Progressive Inference Coverage](BACKLOG.md#numerical-and-partial-evidence-obligations); candidate-selection contrasts do not certify those intervals. [Progressive selection, multiplicity and unresolved validity](METHODOLOGY.md#progressive-selection-multiplicity-and-unresolved-validity) and [VALIDATION](VALIDATION.md#numerical-correctness-and-reproducibility) retain interpretation and independent obligations, without changing calculations here.
+Compatible sequential/process arrangements and fixed-range batch partitions preserve path summaries and precision analysis. A changed look schedule can change exposure/stopping/history/analysis identity; identical seed alone does not establish equal adaptive results. Standalone `wilson_score_bonferroni_familywise_v1` includes its planned metric/look allocation; this is not proof of exact finite-sample coverage or model calibration. Progressive search's displayed all-team paired intervals have the unresolved repeated-look/across-state issue in [Progressive Inference Coverage](VALIDATION.md#precision-claims-and-progressive-inference-coverage); candidate-selection contrasts do not certify those intervals. [Progressive selection, multiplicity and unresolved validity](METHODOLOGY.md#progressive-selection-multiplicity-and-unresolved-validity) and [VALIDATION](VALIDATION.md#numerical-correctness-and-reproducibility) retain interpretation and independent obligations, without changing calculations here.
 
 The editable convenience profiles are not the governing 95% / 0.005 target and are not runtime guarantees:
 
@@ -574,7 +661,7 @@ Require a nonempty committed path set with consistent count and exact contiguous
 
 Recovery validates saved summary consistency; it does not regenerate player draws or authenticate saved scenario digests against upstream bytes. Identified failures use ExecutionRecoveryError, with owning lower-level errors retained where not wrapped; there is no repair/relabel/fill-in fallback. Complete ordered parameter changes, different seed/range/precision/profile/worker settings or partial evidence invalidate incompatible reuse. Before any new work/writes, determine from the recovered prefix whether capability, precision or maximum already stops the run; a compatible already-final checkpoint returns zero newly executed paths. Otherwise resume at first_path_index + recovered_paths, retaining history, and use the same coordinator to publish new ranges.
 
-Engine resume is distinct from HTTP restart classification, launcher recovery and C13 retained history. There is no automatic HTTP resume, successful-checkpoint deletion, abandoned expiry or global completed-scenario cache. [T8 recovery](#restart-leases-and-bounded-shutdown) owns application/process behavior; [Release Acceptance](BACKLOG.md#output-provenance-and-numerical-lifecycle) retains exact output/provenance/default/cleanup/release gates, and [Search Scratch Cleanup](BACKLOG.md#search-scratch-cleanup) retains separate search scratch cleanup. No closure, release or new concurrency behavior is implied.
+Engine resume is distinct from HTTP restart classification, launcher recovery and C13 retained history. There is no automatic HTTP resume, successful-checkpoint deletion, abandoned expiry or global completed-scenario cache. [T8 recovery](#restart-leases-and-bounded-shutdown) owns application/process behavior; [Release Acceptance](VALIDATION.md#release-acceptance-remains-pending) retains exact output/provenance/default/cleanup/release gates, and [Search Scratch Cleanup](BACKLOG.md#search-scratch-cleanup) retains separate search scratch cleanup. No closure, release or new concurrency behavior is implied.
 
 ### Execution evidence
 
@@ -633,7 +720,15 @@ Engine-only `SearchExportConfiguration(output_directory=None,write_json=False,wr
 
 JSON schema_version=1 includes run_sha256, scope (all/filtered), coverage/precision/ranking flags, overrun, candidate rows and matching compact state_evaluations with matched_path_count and all-team championship/qualification/final-placement metrics. CSV columns are exactly SearchCandidateResult fields: candidate_id, ordering, completed_state_sha256, execution_status, acquisition_status, action_count, evaluated_paths, requester_championship_difference, statistically_competitive, precision_reached, execution_caveats. Caveats are joined by a literal vertical bar. CSV is a candidate summary, **not the JSON all-team/statistical/configuration payload**. Engine differences/intervals retain fraction units; no export scaling occurs. Full mode retains available state comparisons; filtered JSON keeps only evaluated states associated with selected candidates. Candidate and comparison scopes can differ when paths are unevaluated. Streaming candidate pages does not imply streaming/constant-memory statistical payloads or durable resumability.
 
-The current engine export is not an HTTP download endpoint, a shared global HTTP filter/sort export pipeline, a complete transaction/team/player/position export, or proof all richer export metadata requirements are implemented. [Interface and Action UX](BACKLOG.md#query-export-and-unit-compatibility) retains approved future compound/range/multi-sort per-team querying, normalized run/scenario/team summaries, and exports of **all candidates receiving any Monte Carlo evaluation** or the **current filtered subset**, preserving selected sort, filters, scope, complete identity, path counts, all-team deltas/intervals, target/config/model/snapshot/as-of metadata and browser/developer parity without resimulation. Those obligations remain outstanding; no new query operator, export field or compatibility migration is delivered. Optional export files stay user-owned under C13; scratch closure/run deletion must not delete them or silently reuse them in a new search.
+The engine export is not an HTTP download endpoint or proof of a shared browser/export query pipeline. [Interface and Action UX](BACKLOG.md#interface-and-action-ux) tracks the following approved but unimplemented requirements; implementation needs separately scoped compatibility, privacy, query and frontend parity tests.
+
+Retain one normalized scenario summary and related per-team outcomes keyed by run/scenario/team. Records must preserve transaction/scenario/member IDs and names, positions, sending/receiving sides, teams, shape/chronological chain steps; legality, screening/value diagnostics and evaluation status; actual paths, convergence/intervals; all-team baseline/scenario championship probabilities, paired deltas and other measured playoff/placement/roster/starting-point results. Preserve candidate-to-exact-state links and missing values rather than duplicating evaluations or inventing unsimulated outcomes.
+
+The remaining query contract permits combined filters on teams, individual players, positional composition, sizes, probability/statistical ranges, uncertainty and quality/status, including both participants and cross-team conditions; multi-sort with ascending/descending direction and ranges where practical must act globally before pagination. Defaults may rank by the viewer's championship gain but cannot change or rerun underlying outcomes. Use an indexed local query layer, not loading all per-path payloads or arbitrary SQL. Generated/screened, preliminary simulated and converged candidates remain distinguishable; untested candidates cannot be ranked on invented Monte Carlo values. Current allowed filters/sorts are narrower; new operators/DTOs need separately approved compatibility, parity, query, privacy and frontend acceptance tests.
+
+User-initiated export must support **all candidates receiving any Monte Carlo evaluation**, preliminary or refined, and the **current filtered subset**, preserving selected sort, applied filters and scope metadata. Include complete transaction/team/player/position identity, actual path counts, probabilities, league-wide deltas/intervals, target attainment, effective configuration/model and ESPN snapshot/as-of metadata. Use the same query layer for browser and any supported developer export without resimulation. Export is optional, creates files user-owned under C13, and never silently imports stale outcomes into a new search. Existing selected-ID/current JSON/CSV export does not establish every richer query/metadata requirement. [Ownership and lifetime](#ownership-and-lifetime) governs retention.
+
+Any approved probability-unit naming/scaling/presentation change requires request-target, DTO/frontend and retained-result compatibility plus exact once-only conversion tests. The current fraction pass-through remains [the wire contract](#numerical-units-and-identity-scopes); no rescaling is authorized by these outstanding requirements.
 
 ### Transport and query evidence
 
@@ -643,7 +738,9 @@ The current engine export is not an HTTP download endpoint, a shared global HTTP
 
 ### Ownership and lifetime
 
-The [accepted C13 decision](BACKLOG.md#retention-decision), independently accepted at `14fd6dba46cfe5827c0b3da110bfefa4a683b647`, separates ephemeral execution context from separately persisted, bounded application-owned history. Historical MASTER_SPEC §9.4's active-only restriction governs ephemeral engine execution context; the accepted M6.2/M7 contracts are the narrowly scoped successor where that wording would prohibit bounded application history. This permits explicitly owned, provenance-bound copies after execution, not an unbounded stale archive, abandoned scratch accumulation, automatic index promotion or silent new-search reuse. [Decision traceability](BACKLOG.md#retention-decision) retains exact accepted citations. application contracts remains authoritative pending final adoption; the detail below introduces no new TTL, schema, cache, migration or deletion policy.
+C13 separates ephemeral execution context from bounded, separately copied application history. Immutable source snapshots, execution scratch, retained runs, numerical checkpoints and user exports have independent owners and lifetimes. Retention never permits an unbounded stale archive, abandoned scratch accumulation, automatic index promotion or silent new-search/cross-refresh reuse.
+
+The [immutable C13 authority record](https://github.com/tdkelley2001/fantasy_football/blob/14fd6dba46cfe5827c0b3da110bfefa4a683b647/docs/development/d8-authority-transfer-crosswalk.md#c13-proposed-disposition) establishes this boundary: `D8-MS-L0311-C12/C13/C14`, application-history successor `D8-MS-L0513-C01` / `D8-RM-L0145-C01` and the cited M7.2/M7.3/M7.5 clauses. Active-only engine context and bounded application copies are distinct permissions, not conflicting retention policies.
 
 | Data class | Owner and intended lifetime | Boundary / remaining obligation |
 |---|---|---|
@@ -707,7 +804,7 @@ Source is [launcher](../scripts/start-local.ps1), [server](../src/fantasy_footba
 
 [Search Scratch Cleanup](BACKLOG.md#search-scratch-cleanup) requires separately approved later evaluation/progress/export fault injection and deterministic scratch cleanup preserving original exceptions and successful result lifetime. Garbage collection is not acceptance. C13 ownership is accepted; the missing cleanup guard is an implementation gap, not a pending ownership choice.
 
-[Release Acceptance](BACKLOG.md#output-provenance-and-numerical-lifecycle) retains terminal-expiry/count-purge evidence, numerical success cleanup/abandoned expiry, complete provenance/output, representative storage/runtime/parent-and-child memory, cancellation/lease/reference cleanup and recovery evidence. Refresh submission compensation and truthful committed-publication failure inspection remain open under the [application limitations](TECHNICAL_REFERENCE.md#open-lifecycle-and-acceptance-obligations). The exact p95/admission/cleanup, P0/P1, manual-rule/configuration and independent signoff requirements remain in [BACKLOG release acceptance](BACKLOG.md#release-acceptance) and [Operational validation and release limitations](VALIDATION.md#operational-validation-and-release-limitations); this chapter neither replaces their criteria with generic links nor marks them passed. No new failure-window certification, continuous storage bound or release follows from documentation.
+[Release Acceptance](VALIDATION.md#release-acceptance-remains-pending) retains terminal-expiry/count-purge evidence, numerical success cleanup/abandoned expiry, complete provenance/output, representative storage/runtime/parent-and-child memory, cancellation/lease/reference cleanup and recovery evidence. Refresh submission compensation and truthful committed-publication failure inspection remain open under the [application limitations](TECHNICAL_REFERENCE.md#open-lifecycle-and-acceptance-obligations). The exact p95/admission/cleanup, P0/P1, manual-rule/configuration and independent signoff requirements remain in [BACKLOG release acceptance](BACKLOG.md#release-acceptance) and [Operational validation and release limitations](VALIDATION.md#operational-validation-and-release-limitations); this chapter neither replaces their criteria with generic links nor marks them passed. No new failure-window certification, continuous storage bound or release follows from documentation.
 
 ## Application and frontend security/integration contracts
 

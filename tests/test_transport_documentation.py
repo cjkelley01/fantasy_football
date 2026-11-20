@@ -570,7 +570,7 @@ def test_scope_identity_and_future_parity_obligations_remain_explicit() -> None:
         "not the JSON all-team/statistical/configuration payload",
         "all candidates receiving any Monte Carlo evaluation",
         "current filtered subset",
-        "selected sort, filters, scope",
+        "selected sort, applied filters and scope metadata",
         "user-owned under C13",
         "T8/T9",
     ):

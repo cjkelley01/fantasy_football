@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
-from importlib.metadata import PackageNotFoundError, version
-from itertools import islice
 import json
 import os
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
+from itertools import islice
 from uuid import uuid4
 
 from fantasy_football.app.contracts import (
@@ -28,29 +28,33 @@ from fantasy_football.app.contracts import (
     MatchupSummary,
     PairedMetricResult,
     PlacementProbability,
-    ProbabilityValue,
     PlayerSummary,
+    ProbabilityValue,
     RosterAssignment,
     RuleCapability,
-    ScoringWeekStateSummary,
     RunIdentity,
+    ScoringWeekStateSummary,
     SearchCoverageResult,
     SnapshotListQuery,
     SnapshotSelector,
     SnapshotSummary,
-    TeamProbabilityResult,
     TeamLineupResult,
+    TeamProbabilityResult,
     TeamScenarioResult,
     TeamSummary,
     WeeklyLineupResult,
 )
-from fantasy_football.evolving_state import AcquisitionAvailability, IRPolicy, initialize_evolving_state
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.canonical.validation import (
     authoritative_current_matchup_period_scoring_weeks,
 )
-from fantasy_football.monte_carlo import MonteCarloConfig
+from fantasy_football.evolving_state import (
+    AcquisitionAvailability,
+    IRPolicy,
+    initialize_evolving_state,
+)
 from fantasy_football.live_scoring import BoundaryMethod, has_safe_v1_boundary
+from fantasy_football.monte_carlo import MonteCarloConfig
 from fantasy_football.monte_carlo_precision import (
     MonteCarloPrecisionResult,
     PrecisionConfiguration,
@@ -71,11 +75,22 @@ from fantasy_football.search_orchestration import (
     SearchResourceConfiguration,
     execute_search_orchestration,
 )
-from fantasy_football.snapshot_store import LoadedSnapshot, SnapshotStore, SnapshotStoreError
+from fantasy_football.snapshot_store import (
+    LoadedSnapshot,
+    SnapshotStore,
+    SnapshotStoreError,
+)
 from fantasy_football.trade_candidates import TradeShape
 from fantasy_football.trade_search import ProgressiveSamplingConfiguration
-from fantasy_football.unified_actions import ActionFamily, ActionOrdering, UnifiedActionSearchConfiguration
-from fantasy_football.weekly_transactions import WaiverBoundaryPolicy, WeeklyTransactionPolicy
+from fantasy_football.unified_actions import (
+    ActionFamily,
+    ActionOrdering,
+    UnifiedActionSearchConfiguration,
+)
+from fantasy_football.weekly_transactions import (
+    WaiverBoundaryPolicy,
+    WeeklyTransactionPolicy,
+)
 
 
 class ApplicationServiceError(ValueError):
@@ -411,7 +426,32 @@ class ApplicationService:
         )
 
     @staticmethod
-    def _simulation(configuration, *, initial_state=None) -> MonteCarloConfig:
+    def _simulation(
+        configuration, *, initial_state=None, loaded=None
+    ) -> MonteCarloConfig:
+        automatic = None
+        if configuration.automatic_roster_policy == "mandatory_marginal_lineup_v1":
+            from fantasy_football.automatic_rosters import AutomaticRosterPolicy
+            from fantasy_football.espn_adapter import _raw_json_bytes
+
+            if loaded is None:
+                raise ApplicationServiceError(
+                    "automatic_policy_snapshot_required",
+                    "invalid_request",
+                    "Automatic management requires a loaded immutable snapshot.",
+                )
+            automatic = AutomaticRosterPolicy(
+                loaded.snapshot.snapshot_id,
+                tuple(
+                    (
+                        item.response.source_id,
+                        _raw_json_bytes(item.response.payload).decode("utf-8"),
+                    )
+                    for item in loaded.raw_sources
+                    if item.response.view == "kona_player_info"
+                ),
+                configuration.standings_fallback_seed,
+            )
         return MonteCarloConfig(
             master_seed=configuration.master_seed,
             path_count=configuration.path_count,
@@ -420,6 +460,7 @@ class ApplicationService:
             transaction_policy=WeeklyTransactionPolicy(
                 WaiverBoundaryPolicy(configuration.waiver_boundary),
                 configuration.reject_incomplete_valuations,
+                automatic_rosters=automatic,
             ),
             require_complete=configuration.require_complete,
             initial_evolving_state=initial_state,
@@ -486,7 +527,7 @@ class ApplicationService:
 
     def run_baseline(self, request: BaselineAnalysisRequest) -> BaselineAnalysisResult:
         loaded = self._load(request.snapshot)
-        simulation = self._simulation(request.simulation)
+        simulation = self._simulation(request.simulation, loaded=loaded)
         precision = self._precision(request.precision)
         self._validate_precision_paths(simulation, precision)
         result = run_monte_carlo_to_precision(
@@ -521,13 +562,15 @@ class ApplicationService:
             interval_upper_probability_points=item.interval.upper,
         )
 
-    def run_manual_scenario(self, request: ManualScenarioRequest) -> ManualScenarioResult:
+    def run_manual_scenario(
+        self, request: ManualScenarioRequest
+    ) -> ManualScenarioResult:
         loaded = self._load(request.snapshot)
         state = initialize_evolving_state(
             loaded.snapshot, scoring_week=loaded.snapshot.first_simulation_week,
             ir_policy=IRPolicy(request.simulation.ir_policy),
         )
-        simulation = self._simulation(request.simulation)
+        simulation = self._simulation(request.simulation, loaded=loaded)
         precision = self._precision(request.precision)
         self._validate_precision_paths(simulation, precision)
         scenario = ManualScenario(
@@ -654,7 +697,7 @@ class ApplicationService:
             ),
             preflight=SearchPreflightConfiguration(enabled=False),
         )
-        simulation = self._simulation(request.simulation)
+        simulation = self._simulation(request.simulation, loaded=loaded)
         result = execute_search_orchestration(
             loaded.snapshot, state, search_config, simulation,
             self._model(request.outcome_model),
@@ -720,7 +763,10 @@ class _SyntheticBatch:
     """Identity-only adapter for a valid zero-candidate search result."""
 
     def __init__(self, simulation, model, loaded):
-        from fantasy_football.monte_carlo import monte_carlo_run_identity, simulation_configuration_fingerprint
+        from fantasy_football.monte_carlo import (
+            monte_carlo_run_identity,
+            simulation_configuration_fingerprint,
+        )
         self.simulation_config_sha256 = simulation_configuration_fingerprint(
             loaded.snapshot, simulation, model
         )

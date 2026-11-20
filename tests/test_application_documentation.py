@@ -204,7 +204,7 @@ def _check_retained_store_contract(text: str) -> None:
     ):
         assert boundary in plain, f"Lost retained-store boundary: {boundary}"
     assert "14fd6dba46cfe5827c0b3da110bfefa4a683b647" in section
-    assert "narrowly scoped successor" in plain
+    assert "bounded application copies are distinct permissions" in plain
 
 
 def test_transferred_retention_distinguishes_logical_storage_and_owned_lifetimes():

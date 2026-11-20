@@ -49,18 +49,12 @@ REQUIREMENTS = {
         "feasible sequences, final states and path-indexed outcomes",
         "obsolete suite totals",
     ],
-    "docs/BACKLOG.md": [
+    "docs/VALIDATION.md": [
         "peak parent and aggregate-child memory",
         "ordering and selected drops/additions",
         "named-player retention/drop probability and weeks held",
         "representative and analytically interesting",
         "Finalist validation",
-        "run/scenario/team",
-        "multi-sort",
-        "all candidates receiving any Monte Carlo evaluation",
-        "current filtered subset",
-        "without resimulation",
-        "does not perform the conversion",
         "sealed final-test protocol",
         "Ratios at zero are undefined",
         "exactly once in sampled outcomes",
@@ -77,15 +71,25 @@ REQUIREMENTS = {
         "no orphan analytical child",
         "No P0 or P1 finding remains open",
         "Independent release decision",
+        "terminal-expiry/count-purge regression coverage",
+        "numerical-checkpoint cleanup/abandoned expiry",
+    ],
+    "docs/TECHNICAL_REFERENCE.md": [
+        "run/scenario/team",
+        "multi-sort",
+        "all candidates receiving any Monte Carlo evaluation",
+        "current filtered subset",
+        "without resimulation",
+        "does not perform the conversion",
+        "D8-MS-L0311-C12/C13/C14",
+        "D8-RM-L0145-C01",
+    ],
+    "docs/INTERFACE.md": [
         "current simulation boundary",
         "latest validated refresh",
         "same current snapshot",
         "historical APIs",
         "separately gated proposal",
-        "terminal-expiry/count-purge regression coverage",
-        "numerical-checkpoint cleanup/abandoned expiry",
-        "D8-MS-L0311-C12/C13/C14",
-        "D8-RM-L0145-C01",
     ],
 }
 
@@ -101,7 +105,7 @@ def _validate(documents: dict[str, str]) -> None:
             assert fragment in documents[path], (path, fragment)
     backlog = documents["docs/BACKLOG.md"]
     for title in (
-        "Documentation Consolidation",
+        "Season Simulator Integration",
         "Node Toolchain Compatibility",
         "Simulation Performance Evaluation",
         "Interface and Action UX",
@@ -156,11 +160,14 @@ def test_inventory_rejects_temporary_retired_or_unexpected_markdown(unexpected) 
     [
         ("AGENTS.md", "Only an explicitly approved successor"),
         ("CONTRIBUTING.md", "sequential interval/stopping coverage"),
-        ("docs/BACKLOG.md", "abandoned-checkpoint expiration"),
-        ("docs/BACKLOG.md", "No P0 or P1 finding remains open"),
-        ("docs/BACKLOG.md", "all candidates receiving any Monte Carlo evaluation"),
-        ("docs/BACKLOG.md", "sealed final-test protocol"),
-        ("docs/BACKLOG.md", "D8-RM-L0145-C01"),
+        ("docs/VALIDATION.md", "abandoned-checkpoint expiration"),
+        ("docs/VALIDATION.md", "No P0 or P1 finding remains open"),
+        (
+            "docs/TECHNICAL_REFERENCE.md",
+            "all candidates receiving any Monte Carlo evaluation",
+        ),
+        ("docs/VALIDATION.md", "sealed final-test protocol"),
+        ("docs/TECHNICAL_REFERENCE.md", "D8-RM-L0145-C01"),
     ],
 )
 def test_reject_lost_binding_obligation(path: str, requirement: str) -> None:

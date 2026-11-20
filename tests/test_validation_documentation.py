@@ -264,7 +264,7 @@ EVIDENCE = {
         "post-commit",
     ),
     "O4": (
-        "BACKLOG.md#retention-decision",
+        "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
         "search_orchestration.py",
         "test_application_documentation.py",
         "Search Scratch Cleanup",
@@ -328,12 +328,12 @@ def _check_operational_gates(text: str) -> None:
         assert gate.lower() in section.lower(), f"Lost operational gate: {gate}"
 
 
-def test_operational_gates_match_existing_backlog_without_closing_it() -> None:
+def test_operational_gates_have_one_owner_and_remain_open() -> None:
     text = _read("docs/VALIDATION.md")
     _check_operational_gates(text)
-    source = _plain(_read("docs/BACKLOG.md"))
-    for gate in GATES:
-        assert gate.lower() in source.lower(), gate
+    backlog = _read("docs/BACKLOG.md")
+    assert "VALIDATION.md#release-acceptance-remains-pending" in backlog
+    assert "VALIDATION.md#exact-operational-and-retention-obligations" in backlog
     assert "Release Acceptance disposition remain open" in text
     assert "P0 recovery disposition remains open" in text
     assert "manual-rule configuration follow-ups" in text
@@ -470,32 +470,28 @@ def test_release_gate_inventory_retains_all_nine_current_checklist_obligations()
     None
 ):
     text = _chapter(_read("docs/VALIDATION.md"), HEADINGS[5])
-    source = _chapter(_read("docs/BACKLOG.md"), "Release Acceptance")
-    source_rows = re.findall(r"^\| ([^|]+) \|", source, re.MULTILINE)[1:]
-    source_to_destination = {
-        "Automated release verification": "Automated release verification",
-        "Clean Windows setup and production-local start": "Clean supported Windows locked installation/build/import/start",
-        "Authenticated local identity/static boundary": "Authenticated local identity/static boundary",
-        "Refresh and snapshot evidence": "Refresh and snapshot evidence",
-        "Ordinary analytical workflow": "Ordinary analytical workflow",
-        "Shutdown, restart and recovery": "Shutdown, restart and recovery",
-        "Findings and limitation review": "Findings and limitations",
-        "Repository privacy": "Repository privacy",
-        "Independent release decision": "Independent release decision",
+    required_rows = {
+        "Automated release verification",
+        "Clean supported Windows locked installation/build/import/start",
+        "Authenticated local identity/static boundary",
+        "Refresh and snapshot evidence",
+        "Ordinary analytical workflow",
+        "Shutdown, restart and recovery",
+        "Findings and limitations",
+        "Repository privacy",
+        "Independent release decision",
     }
-    assert set(source_rows) == set(source_to_destination)
     release = text.split("### Release acceptance remains pending", 1)[1].split(
         "Release Acceptance also retains", 1
     )[0]
     destination_rows = re.findall(r"^\| ([^|]+) \|", release, re.MULTILINE)[1:]
     assert len(destination_rows) == 9
-    assert set(destination_rows) == set(source_to_destination.values())
+    assert set(destination_rows) == required_rows
     for fragment in (
         "Ruff E9/F63/F7/F82",
         "pip check",
         "npm audit at high threshold",
         "no audit-fix or policy relaxation",
-        "Documentation Consolidation",
         "Node Toolchain Compatibility",
         "Contributor Verification and CI",
         "process tests run once",

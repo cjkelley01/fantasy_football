@@ -432,7 +432,7 @@ def _validate_mechanics(text: str) -> None:
         "no aggregate multiweek regular-period reconciliation or equivalent universal preflight rejection",
         "unchanged correctness defects",
         "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
-        "BACKLOG.md#mechanics-review-obligations",
+        "VALIDATION.md#exactness-and-unresolved-mechanics",
     ):
         assert requirement in text, f"Missing mechanics contract: {requirement}"
 

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import asdict, dataclass, replace
-from enum import Enum
 import hashlib
 import json
 import os
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, replace
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from fantasy_football.canonical.model import LeagueSnapshot
+from fantasy_football.lineup_optimizer import prepare_lineup_optimization
 from fantasy_football.monte_carlo import (
     MonteCarloBatchResult,
     MonteCarloConfig,
@@ -402,6 +403,9 @@ def execute_monte_carlo_profile(
             return SimulationExecutionResult(
                 profile, final, True, recovered_paths, 0, str(checkpoint_store.path)
             )
+    workspace = (
+        prepare_lineup_optimization(snapshot) if profile.parallel is None else None
+    )
     context = (
         ParallelMonteCarloExecutor(
             snapshot, simulation_configuration, model, profile.parallel
@@ -424,7 +428,9 @@ def execute_monte_carlo_profile(
                 path_count=next_total - used,
             )
             batch = (
-                run_monte_carlo_batch(snapshot, chunk, model)
+                run_monte_carlo_batch(
+                    snapshot, chunk, model, _lineup_workspace=workspace
+                )
                 if executor is None
                 else executor.run_batch(chunk).batch
             )

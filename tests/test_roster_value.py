@@ -772,3 +772,79 @@ def test_waiver_players_require_explicit_current_waiver_context() -> None:
     assert future.weeks[0].remaining_vacancy_count == 1
     assert imminent.weeks[0].remaining_vacancy_count == 0
     assert imminent.weeks[1].remaining_vacancy_count == 1
+
+
+def test_opponent_search_cache_reuses_exact_allocations_without_changing_values() -> (
+    None
+):
+    from fantasy_football.roster_value import (
+        opponent_search_diagnostics,
+        opponent_valuation_cache_scope,
+    )
+
+    snapshot = _valuation_snapshot(competing_teams=1, pool_values=(8.0, 6.0))
+    state = _state(snapshot)
+    target = 1
+
+    @opponent_valuation_cache_scope
+    def evaluate_twice():
+        return (
+            value_roster(snapshot, state, target),
+            value_roster(snapshot, state, target),
+        )
+
+    with opponent_search_diagnostics(cache_enabled=False) as uncached_metrics:
+        uncached = evaluate_twice()
+    with opponent_search_diagnostics(cache_enabled=True) as cached_metrics:
+        cached = evaluate_twice()
+
+    assert cached == uncached
+    assert cached_metrics["hits"] > 0
+    assert (
+        cached_metrics["actual_allocation_states"]
+        < uncached_metrics["actual_allocation_states"]
+    )
+
+
+def test_starting_lineup_reuses_exact_result_when_only_opponents_change() -> None:
+    """An unrelated roster edit cannot change a team's optimized starters."""
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+
+    snapshot = _valuation_snapshot(competing_teams=1)
+    workspace = prepare_lineup_optimization(snapshot)
+    original = optimize_starting_lineup(
+        snapshot,
+        1,
+        snapshot.first_simulation_week,
+        roster_entries=snapshot.roster_entries,
+        workspace=workspace,
+    )
+    # A distinct tuple of the same canonical entries models a fresh league-state
+    # container without altering this team's roster.
+    reordered = tuple(reversed(snapshot.roster_entries))
+    assert reordered != snapshot.roster_entries
+    reused = optimize_starting_lineup(
+        snapshot,
+        1,
+        snapshot.first_simulation_week,
+        roster_entries=reordered,
+        workspace=workspace,
+    )
+    assert reused == original
+    assert workspace.starting_hits == 1
+
+
+@pytest.mark.parametrize("competing_teams", [0, 1, 2, 3])
+@pytest.mark.parametrize("pool_values", [(8.0, 6.0), (0.0, 6.0), (12.0, 4.0)])
+def test_optimistic_roster_bound_never_understates_reference_points(
+    competing_teams, pool_values
+) -> None:
+    from fantasy_football.transaction_value_bound import optimistic_roster_value_bound
+
+    snapshot = _valuation_snapshot(
+        competing_teams=competing_teams, pool_values=pool_values
+    )
+    state = _state(snapshot)
+    actual = value_roster(snapshot, state, 1)
+    upper = optimistic_roster_value_bound(snapshot, state, 1)
+    assert upper >= actual.total_value
