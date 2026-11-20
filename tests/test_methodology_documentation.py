@@ -238,15 +238,7 @@ def _validate_methodology(text: str) -> None:
     assert "Exactly `0.0`" in classes["`MISSING`"][1]
     assert "nonmissing draw path" in classes["`EXPLICIT_ZERO`"][1]
     assert "Exactly `0.0`" in classes["`EXPLICIT_ZERO`"][2]
-    for owner in (
-        "PLAYER_OUTCOME_MODEL.md#normal-distribution-and-draw-bytes",
-        "PLAYER_OUTCOME_MODEL.md#identity-and-compatibility",
-        "DATA.md#projection-contract",
-        "RESEARCH.md#component-specific-promotion",
-        "SEASON_SIMULATOR.md#weekly-progression",
-        "MONTE_CARLO.md#aggregation-and-probability-estimators",
-    ):
-        assert f"]({owner})" in text, f"Missing current owner: {owner}"
+    assert "](VALIDATION.md#independent-component-specific-promotion)" in text
 
 
 def test_methodology_preserves_mathematical_and_evidence_contracts() -> None:
@@ -260,7 +252,7 @@ def test_methodology_preserves_mathematical_and_evidence_contracts() -> None:
         r"q_\ell=\mathbf1\{A_\ell=0\}",
         "nonmissing draw path",
         "unconditional probability estimates are suppressed",
-        "RESEARCH.md#component-specific-promotion",
+        "VALIDATION.md#independent-component-specific-promotion",
         "Earlier Normal checkpoints are incompatible",
     ),
 )
@@ -439,7 +431,7 @@ def _validate_mechanics(text: str) -> None:
         "not a certified maximum over unresolved alternatives",
         "no aggregate multiweek regular-period reconciliation or equivalent universal preflight rejection",
         "unchanged correctness defects",
-        "TRANSACTIONS.md#independent-reference-contracts",
+        "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
         "BACKLOG.md#mechanics-review-obligations",
     ):
         assert requirement in text, f"Missing mechanics contract: {requirement}"
@@ -865,9 +857,8 @@ def _validate_partial_methodology(text: str) -> None:
         "not all companion content",
         "prescribed path range",
         "No public partial request fields",
-        "S128–S136 and S165",
-        "PARTIAL_WEEK.md#standings-and-period-authority",
-        "PARTIAL_WEEK.md#monte-carlo-subset",
+        "METHODOLOGY.md#standings-cutoff-period-carry-and-season-integration",
+        "METHODOLOGY.md#supported-execution-states-and-pregame-equivalence",
     ):
         assert contract in chapter, f"Missing partial-week contract: {contract}"
 
@@ -1511,9 +1502,8 @@ def _validate_decision_methodology(text: str) -> None:
         "leaves ranking_resolved=False",
         "WR-025 still qualifies ranking/inference interpretation",
         r"\Delta_r(c)=p_{\mathrm{champ},r}(E_c)-p_{\mathrm{champ},r}(E_0)",
-        "transfers no authority",
-        "MANUAL_SCENARIOS.md#protected-pins-and-completion-chronology",
-        "UNIFIED_ACTION_SEARCH.md#identities-and-state-equivalence",
+        "METHODOLOGY.md#explicit-scenarios-and-one-time-completion",
+        "METHODOLOGY.md#screening-and-complete-state-equivalence",
     ):
         assert contract in text, f"Missing decision-method contract: {contract}"
     for false_claim in (

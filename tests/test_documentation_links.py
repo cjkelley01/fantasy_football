@@ -10,6 +10,26 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 MARKDOWN_LINK = re.compile(r"!?\[[^]]*]\(([^)]+)\)")
 
 
+def _anchors(text: str) -> set[str]:
+    used: set[str] = set()
+    for title in re.findall(r"^#{1,6}\s+(.+)$", text, re.MULTILINE):
+        base = re.sub(r"[^\w -]", "", title.strip().lower()).replace(" ", "-")
+        candidate, suffix = base, 0
+        while candidate in used:
+            suffix += 1
+            candidate = f"{base}-{suffix}"
+        used.add(candidate)
+    return used
+
+
+def test_duplicate_heading_fragments_are_distinct() -> None:
+    assert _anchors("# Sample\n## Sample\n## Sample\n") == {
+        "sample",
+        "sample-1",
+        "sample-2",
+    }
+
+
 def _documentation_files() -> tuple[Path, ...]:
     return (
         *sorted(REPOSITORY_ROOT.glob("*.md")),
@@ -22,29 +42,21 @@ def test_relative_documentation_links_resolve(document: Path) -> None:
     missing: list[str] = []
     for raw_target in MARKDOWN_LINK.findall(document.read_text(encoding="utf-8")):
         target = raw_target.strip().split(maxsplit=1)[0].strip("<>")
-        if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+        if not target or target.startswith(("http://", "https://", "mailto:")):
             continue
-        relative_path = unquote(target.split("#", 1)[0])
-        if relative_path and not (document.parent / relative_path).resolve().exists():
+        relative_path, _, fragment = unquote(target).partition("#")
+        destination = (
+            (document.parent / relative_path).resolve() if relative_path else document
+        )
+        if not destination.exists() or (
+            fragment
+            and destination.suffix == ".md"
+            and fragment not in _anchors(destination.read_text(encoding="utf-8"))
+        ):
             missing.append(raw_target)
     assert not missing, (
         f"{document.relative_to(REPOSITORY_ROOT)} has missing links: {missing}"
     )
-
-
-def test_historical_acceptance_and_current_release_disposition_are_distinct() -> None:
-    readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
-    checkpoint = (REPOSITORY_ROOT / "docs" / "MONTE_CARLO.md").read_text(
-        encoding="utf-8"
-    )
-    assert "not formally released" in readme
-    assert "M8.4 release disposition remains pending" in readme
-    assert "independently accepted LW2.3A checkpoint at d630887" in checkpoint
-    assert "No prepared-input cache/validation bypass was justified" in checkpoint
-    assert "lw23a_baseline_four.json" in checkpoint
-    assert "No LW2.3B work is authorized" in (
-        REPOSITORY_ROOT / "docs" / "PARTIAL_WEEK.md"
-    ).read_text(encoding="utf-8")
 
 
 def test_current_release_contract_and_verification_entrypoint_are_present() -> None:
@@ -54,7 +66,7 @@ def test_current_release_contract_and_verification_entrypoint_are_present() -> N
         encoding="utf-8"
     )
 
-    assert "OPERATIONS.md" in guide
+    assert "USER_GUIDE.md" in guide
     assert "Confidence intervals" in guide
     assert "ESPN submission remain unsupported" in guide
     assert "never submits real transactions" in (

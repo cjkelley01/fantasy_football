@@ -78,7 +78,7 @@ def test_developer_research_recipe_executes_without_claiming_pregame_evidence() 
         research_outcome_distributions(expected, configuration)
     )
     assert all(not row.eligible_authenticated_pair for row in expected.rows)
-    assert "materialization requires separate authorization" in _read("RESEARCH.md")
+    assert "requiring explicit authorization" in section
 
 
 def _check_research_operating_boundary(text: str) -> None:
@@ -439,34 +439,3 @@ def test_v3_exploratory_recommendation_and_t2_report_identity_are_distinct() -> 
                 report, recommended_candidate_id=report.exploratory_best_candidate_id
             )
         )
-
-
-def test_d1_d6_and_deferred_mapping_preserve_existing_owners() -> None:
-    data = _read("DATA.md")
-    assert {
-        "Data lifecycle and source provenance",
-        "Source trust, coverage and research data",
-        "Inputs, transformations and league-rule authority",
-        "Quality, canonical invariants and immutable publication",
-        "Current-week temporal evidence and permissions",
-        "Evidence-role register and verification references",
-    } <= set(re.findall(r"^## (.+)$", data, re.MULTILINE))
-    mapping = data.split("### P7a source-section mapping and retained ownership", 1)[1]
-    for retained in (
-        "S071–S072",
-        "S073, S083",
-        "S074–S078, S080",
-        "S079, S082",
-        "S081",
-        "S084–S085",
-        "S144–S149",
-        "S145, S149–S154",
-        "S146–S148",
-        "S139, S141, S143",
-    ):
-        assert retained in mapping
-    assert (
-        "executable bindings use contract 3, with authority retirement separately gated"
-        in mapping
-    )
-    assert "permanent authority adoption remains separately gated" in mapping

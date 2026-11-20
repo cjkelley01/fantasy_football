@@ -168,79 +168,79 @@ def test_empirical_validity_rejects_forged_trust_or_promotion(old, new, message)
 # the repository link/fragment suite; this protects meaningful row attribution.
 EVIDENCE = {
     "I1": (
-        "SEASON_SIMULATOR.md#exact-lineup-selection",
+        "METHODOLOGY.md#exact-projected-lineup-objective-and-ties",
         "lineup_optimizer.py",
         "test_lineup_optimizer.py",
         "WR-023",
     ),
     "I2": (
-        "TRANSACTIONS.md#independent-reference-contracts",
+        "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
         "weekly_transactions.py",
         "test_weekly_transactions.py",
         "WR-024",
     ),
     "I3": (
-        "TRANSACTIONS.md#independent-reference-contracts",
+        "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
         "roster_value.py",
         "test_roster_value.py",
         "target-adverse",
     ),
     "I4": (
-        "TRANSACTIONS.md#independent-reference-contracts",
+        "METHODOLOGY.md#independent-correctness-and-remaining-obligations",
         "transaction_cycle.py",
         "test_transaction_cycle.py",
         "determinate choices",
     ),
     "I5": (
-        "SEASON_SIMULATOR.md#weekly-scoring-and-standings",
+        "METHODOLOGY.md#frozen-scoring-and-standings",
         "weekly_engine.py",
         "test_postseason.py",
         "WR-014",
     ),
     "I6": (
-        "PARTIAL_WEEK.md#observed-assignments-and-locks",
+        "TECHNICAL_REFERENCE.md#permission-and-realization-interfaces",
         "partial_week.py",
         "test_partial_week.py",
         "cannot rewrite observed evidence",
     ),
     "I7": (
-        "APPLICATION_SERVICE.md#public-dtos-units-and-validation",
+        "TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility",
         "app/service.py",
         "test_backend_validation.py",
         "not actual browser",
     ),
     "N1": (
-        "MONTE_CARLO.md#aggregation-and-probability-estimators",
+        "METHODOLOGY.md#complete-path-estimators-and-reconciliation",
         "monte_carlo.py",
         "test_monte_carlo.py",
         "requested paths",
     ),
     "N2": (
-        "MONTE_CARLO.md#precision-and-stopping",
+        "METHODOLOGY.md#absolute-precision-and-stopping",
         "monte_carlo_precision.py",
         "test_monte_carlo_precision.py",
         "not exact nominal coverage",
     ),
     "N3": (
-        "PLAYER_OUTCOME_MODEL.md#identity-and-compatibility",
+        "TECHNICAL_REFERENCE.md#normal-private-draw-bytes-and-public-policy-identity",
         "player_outcomes.py",
         "legacy_normal_reference.py",
         "custom version",
     ),
     "N4": (
-        "MONTE_CARLO.md#workers-and-bounded-execution",
+        "TECHNICAL_REFERENCE.md#process-workers-and-resource-policies",
         "monte_carlo_parallel.py",
         "test_monte_carlo_parallel.py",
         "do not validate launcher",
     ),
     "N5": (
-        "MONTE_CARLO.md#checkpoints-and-recovery",
+        "TECHNICAL_REFERENCE.md#numerical-execution-workers-and-checkpoints",
         "monte_carlo_execution.py",
         "test_monte_carlo_execution.py",
         "without rewriting stored bytes",
     ),
     "N6": (
-        "PARTIAL_WEEK.md#monte-carlo-subset",
+        "METHODOLOGY.md#supported-execution-states-and-pregame-equivalence",
         "test_partial_monte_carlo.py",
         "test_partial_season.py",
         "identical observed",
@@ -252,13 +252,13 @@ EVIDENCE = {
         "not universal predictions",
     ),
     "O2": (
-        "APPLICATION_SERVICE.md#admission-and-analytical-budgets",
+        "TECHNICAL_REFERENCE.md#application-admission-and-resource-policies",
         "app/background.py",
         "test_background_runs.py",
         "below 100 ms",
     ),
     "O3": (
-        "APPLICATION_SERVICE.md#snapshot-selection-and-refresh",
+        "TECHNICAL_REFERENCE.md#commit-and-cancellation-boundaries",
         "app/refresh.py",
         "test_snapshot_store.py",
         "post-commit",
@@ -266,11 +266,11 @@ EVIDENCE = {
     "O4": (
         "BACKLOG.md#retention-decision",
         "search_orchestration.py",
-        "test_c13_retention_documentation.py",
+        "test_application_documentation.py",
         "WR-026",
     ),
     "O5": (
-        "APPLICATION_SERVICE.md#process-ownership-shutdown-and-recovery",
+        "TECHNICAL_REFERENCE.md#restart-leases-and-bounded-shutdown",
         "local-runtime.ps1",
         "test_release_verification.py",
         "No orphan analytical child",
@@ -282,7 +282,7 @@ EVIDENCE = {
         "not live proof",
     ),
     "O7": (
-        "APPLICATION_SERVICE.md#local-security-boundary",
+        "TECHNICAL_REFERENCE.md#local-request-and-static-file-boundary",
         "test_backend_validation.py",
         "test_repository_security.py",
         "Local trusted-machine",
@@ -525,36 +525,3 @@ def test_evidence_links_cover_distinct_independent_oracle_definitions() -> None:
         }
         for name in names:
             assert name in definitions and f"`{name}()" in text, (path, name)
-
-
-def test_source_mapping_does_not_retire_owners_or_authorize_later_packages() -> None:
-    text = _read("docs/VALIDATION.md")
-    mapping = text.split("### Source-to-validation mapping and continuing owners", 1)[1]
-    identifiers = set(re.findall(r"S\d{3}", mapping))
-    for first, last in re.findall(r"S(\d{3})–S(\d{3})", mapping):
-        identifiers.update(
-            f"S{number:03d}" for number in range(int(first), int(last) + 1)
-        )
-    for source in (
-        "S022",
-        "S179",
-        "S128",
-        "S084",
-        "S108",
-        "S117",
-        "S143",
-        "S144",
-        "S154",
-        "S019",
-        "S035",
-        "S050",
-        "S055",
-        "S066",
-    ):
-        assert source in identifiers
-    assert (
-        "all outstanding criteria, priorities/statuses and independent gates remain unchanged in BACKLOG"
-        in mapping
-    )
-    assert "No authority is retired; executable role bindings follow" in text
-    assert "all seven role names/identities/limits remain unchanged" in mapping

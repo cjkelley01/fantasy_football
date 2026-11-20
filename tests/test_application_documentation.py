@@ -96,17 +96,17 @@ OWNERSHIP = {
         "never deletes or rewrites snapshots",
     ),
     "Execution scratch": (
-        "UNIFIED_ACTION_SEARCH.md#engine-artifact-lifecycle",
+        "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
         "explicitly closed",
         "WR-026",
     ),
     "Application history": (
-        "APPLICATION_SERVICE.md#ownership-and-lifecycle-assessment",
+        "TECHNICAL_REFERENCE.md#ownership-and-lifetime",
         "retention policy",
         "not snapshots/checkpoints/user exports",
     ),
     "Numerical checkpoints": (
-        "MONTE_CARLO.md#checkpoints-and-recovery",
+        "TECHNICAL_REFERENCE.md#numerical-execution-workers-and-checkpoints",
         "Compatible engine resume",
         "WR-021",
     ),
@@ -344,12 +344,3 @@ def test_frontend_isolation_replay_and_accessibility_claims_keep_their_limits() 
         "SimulationCenter",
     ):
         assert f"../frontend/src/{panel}.test.tsx" in text
-    for current_owner in (
-        "INTERFACE.md",
-        "OPERATIONS.md",
-        "USER_GUIDE.md",
-        "CONTRIBUTING.md",
-        "BACKLOG.md",
-        "VALIDATION.md",
-    ):
-        assert current_owner in text

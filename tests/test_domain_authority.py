@@ -1,12 +1,8 @@
-"""Permanent requirements and evidence guards, not scientific/release acceptance.
-
-These replace migration-inventory assertions; functional suites remain independent.
-"""
+"""Permanent authority, binding acceptance and historical byte-integrity checks."""
 
 from __future__ import annotations
 
 import hashlib
-import re
 from pathlib import Path
 
 import pytest
@@ -16,34 +12,14 @@ PERMANENT = {
     "AGENTS.md",
     "CONTRIBUTING.md",
     "README.md",
-    "docs/APPLICATION_SERVICE.md",
     "docs/BACKLOG.md",
     "docs/DATA.md",
     "docs/INTERFACE.md",
-    "docs/MANUAL_SCENARIOS.md",
-    "docs/MONTE_CARLO.md",
-    "docs/OPERATIONS.md",
-    "docs/PARTIAL_WEEK.md",
-    "docs/PLAYER_OUTCOME_MODEL.md",
-    "docs/RESEARCH.md",
-    "docs/SEASON_SIMULATOR.md",
-    "docs/TRANSACTIONS.md",
-    "docs/UNIFIED_ACTION_SEARCH.md",
-    "docs/architecture/overview.md",
+    "docs/METHODOLOGY.md",
+    "docs/TECHNICAL_REFERENCE.md",
+    "docs/USER_GUIDE.md",
+    "docs/VALIDATION.md",
 }
-# Authorized only during this architecture planning/migration phase. P9 must
-# remove the plan and check inventory with migration_complete=True before closure.
-TEMPORARY_PLAN = "docs/development/model-documentation-architecture.md"
-# P1 pilot, not a replacement for any current permanent authority. At final
-# migration review, explicitly accept its permanent role and retire this label.
-USER_GUIDE_PILOT = "docs/USER_GUIDE.md"
-# P2 pilot under the same explicit final transfer-review gate as the user guide.
-METHODOLOGY_PILOT = "docs/METHODOLOGY.md"
-# P7a scoped V3/T2 pilots; current domain owners and M0 bindings remain.
-# Final migration review must explicitly accept their permanent roles.
-VALIDATION_PILOT = "docs/VALIDATION.md"
-TECHNICAL_PILOT = "docs/TECHNICAL_REFERENCE.md"
-PILOTS = {USER_GUIDE_PILOT, METHODOLOGY_PILOT, VALIDATION_PILOT, TECHNICAL_PILOT}
 REQUIREMENTS = {
     "README.md": [
         "expected championship probability",
@@ -72,15 +48,6 @@ REQUIREMENTS = {
         "aggregate-child",
         "feasible sequences, final states and path-indexed outcomes",
         "obsolete suite totals",
-    ],
-    "docs/RESEARCH.md": [
-        (
-            "uncertainty distributions, roster valuation, waiver behavior, candidate "
-            "pruning and numerical methods"
-        ),
-        "incumbent approved version",
-        "selection bias and runtime regression",
-        "latest approved official combination",
     ],
     "docs/BACKLOG.md": [
         "peak parent and aggregate-child memory",
@@ -115,46 +82,16 @@ REQUIREMENTS = {
         "same current snapshot",
         "historical APIs",
         "separately gated proposal",
-    ],
-    "docs/APPLICATION_SERVICE.md": [
-        "Binding run-provenance requirement",
-        "source-completeness indicators",
-        "code/build version",
-        "not evidence that every artifact",
-    ],
-    "docs/MONTE_CARLO.md": [
-        "95% family confidence",
-        "0.5 probability-point",
-        "h=0.005",
-        "lack of a native profile wall-clock field",
-        "without service-side scaling",
-        "there is no conversion in that adapter",
-        "Mathematical conversion to probability points",
-        "seed-bearing **run identity**",
-        "complete ordered parameters",
-        "planned-look or across-state multiplier",
-    ],
-    "docs/architecture/overview.md": [
-        "A — frontend",
-        "J — aggregation/persistence/reporting",
-        "Dependencies run frontend",
-        "reference-equivalent",
+        "terminal-expiry/count-purge regression coverage",
+        "numerical-checkpoint cleanup/abandoned expiry",
+        "D8-MS-L0311-C12/C13/C14",
+        "D8-RM-L0145-C01",
     ],
 }
 
 
-def _validate_inventory(paths: set[str], *, migration_complete: bool = False) -> None:
-    assert paths - {TEMPORARY_PLAN} - PILOTS == PERMANENT, (
-        "Missing/unexpected permanent authority"
-    )
-    assert USER_GUIDE_PILOT in paths, "Missing authorized USER_GUIDE pilot"
-    assert METHODOLOGY_PILOT in paths, "Missing authorized METHODOLOGY pilot"
-    assert VALIDATION_PILOT in paths, "Missing authorized VALIDATION pilot"
-    assert TECHNICAL_PILOT in paths, "Missing authorized TECHNICAL_REFERENCE pilot"
-    if migration_complete:
-        assert TEMPORARY_PLAN not in paths, (
-            "Temporary architecture plan must retire at final migration completion"
-        )
+def _validate_inventory(paths: set[str]) -> None:
+    assert paths == PERMANENT, "Missing/unexpected permanent authority"
 
 
 def _validate(documents: dict[str, str]) -> None:
@@ -162,18 +99,12 @@ def _validate(documents: dict[str, str]) -> None:
     for path, fragments in REQUIREMENTS.items():
         for fragment in fragments:
             assert fragment in documents[path], (path, fragment)
-    for path, text in documents.items():
-        for target in re.findall(r"\]\(([^)]+)\)", text):
-            if target.startswith(("https://", "http://")):
-                continue
-            assert not re.search(
-                r"(MASTER_SPEC|ROADMAP|R1_REPOSITORY_AUDIT|documentation-consolidation|d8-authority-transfer-crosswalk)\.md",
-                target,
-            ), (path, target)
     backlog = documents["docs/BACKLOG.md"]
     for number in (2, 3, 8, 17, 18, 19, 21, 23, 24, 25, 26):
         row = next(
-            l for l in backlog.splitlines() if l.startswith(f"| WR-{number:03d} |")
+            line
+            for line in backlog.splitlines()
+            if line.startswith(f"| WR-{number:03d} |")
         )
         assert "| Done |" not in row, row
     for path in PERMANENT:
@@ -189,87 +120,27 @@ def test_permanent_authority_and_acceptance_contracts() -> None:
     _validate(documents)
 
 
-@pytest.mark.parametrize(
-    ("include_plan", "migration_complete"),
-    [(False, False), (True, False), (False, True)],
-    ids=[
-        "permanent-and-pilots",
-        "authorized-interim-set",
-        "plan-retired-pilots-retained",
-    ],
-)
-def test_inventory_accepts_only_authorized_phase_contents(
-    include_plan: bool, migration_complete: bool
-) -> None:
-    paths = PERMANENT | PILOTS | ({TEMPORARY_PLAN} if include_plan else set())
-    _validate_inventory(paths, migration_complete=migration_complete)
-
-
 @pytest.mark.parametrize("missing", sorted(PERMANENT))
-def test_temporary_plan_cannot_replace_any_permanent_authority(missing: str) -> None:
-    paths = (PERMANENT - {missing}) | {TEMPORARY_PLAN} | PILOTS
+def test_inventory_rejects_missing_authority(missing: str) -> None:
     with pytest.raises(AssertionError, match="Missing/unexpected permanent authority"):
-        _validate_inventory(paths)
-
-
-def test_p1_inventory_requires_the_exact_user_guide_pilot() -> None:
-    with pytest.raises(AssertionError, match="Missing authorized USER_GUIDE pilot"):
-        _validate_inventory(PERMANENT | {TEMPORARY_PLAN, METHODOLOGY_PILOT})
-
-
-def test_p2_inventory_requires_the_exact_methodology_pilot() -> None:
-    with pytest.raises(AssertionError, match="Missing authorized METHODOLOGY pilot"):
-        _validate_inventory(PERMANENT | {TEMPORARY_PLAN, USER_GUIDE_PILOT})
+        _validate_inventory(PERMANENT - {missing})
 
 
 @pytest.mark.parametrize(
     "unexpected",
     [
-        "docs/development/another-plan.md",
-        "docs/development/model-documentation-architecture-copy.md",
-        "docs/USER_GUIDE_COPY.md",
-        "docs/METHODOLOGY_COPY.md",
-        "docs/VALIDATION_COPY.md",
-        "docs/TECHNICAL_REFERENCE_COPY.md",
-        "docs/development/VALIDATION.md",
-        "docs/development/TECHNICAL_REFERENCE.md",
-        "docs/development/METHODOLOGY.md",
+        "docs/development/model-documentation-architecture.md",
+        "docs/MONTE_CARLO.md",
         "docs/UNEXPECTED.md",
-        "UNEXPECTED.md",
     ],
 )
-@pytest.mark.parametrize("include_plan", [False, True])
-def test_inventory_rejects_additional_markdown_even_with_authorized_plan(
-    unexpected: str, include_plan: bool
-) -> None:
-    paths = (
-        PERMANENT
-        | PILOTS
-        | {unexpected}
-        | ({TEMPORARY_PLAN} if include_plan else set())
-    )
+def test_inventory_rejects_temporary_retired_or_unexpected_markdown(unexpected) -> None:
     with pytest.raises(AssertionError, match="Missing/unexpected permanent authority"):
-        _validate_inventory(paths)
-
-
-@pytest.mark.parametrize("missing", [VALIDATION_PILOT, TECHNICAL_PILOT])
-def test_p7a_inventory_requires_each_exact_scoped_pilot(missing: str) -> None:
-    with pytest.raises(AssertionError, match="Missing authorized .* pilot"):
-        _validate_inventory((PERMANENT | PILOTS | {TEMPORARY_PLAN}) - {missing})
-
-
-def test_final_migration_completion_rejects_unretired_temporary_plan() -> None:
-    with pytest.raises(
-        AssertionError,
-        match="Temporary architecture plan must retire at final migration completion",
-    ):
-        _validate_inventory(
-            PERMANENT | {TEMPORARY_PLAN} | PILOTS, migration_complete=True
-        )
+        _validate_inventory(PERMANENT | {unexpected})
 
 
 @pytest.mark.parametrize(
-    ("path", "requirement"),
+    "path,requirement",
     [
         ("AGENTS.md", "Only an explicitly approved successor"),
         ("CONTRIBUTING.md", "sequential interval/stopping coverage"),
@@ -277,20 +148,12 @@ def test_final_migration_completion_rejects_unretired_temporary_plan() -> None:
         ("docs/BACKLOG.md", "No P0 or P1 finding remains open"),
         ("docs/BACKLOG.md", "all candidates receiving any Monte Carlo evaluation"),
         ("docs/BACKLOG.md", "sealed final-test protocol"),
-        ("docs/MONTE_CARLO.md", "h=0.005"),
-        ("docs/MONTE_CARLO.md", "seed-bearing **run identity**"),
+        ("docs/BACKLOG.md", "D8-RM-L0145-C01"),
     ],
 )
 def test_reject_lost_binding_obligation(path: str, requirement: str) -> None:
-    documents = {p: (ROOT / p).read_text(encoding="utf-8") for p in PERMANENT | PILOTS}
+    documents = {p: (ROOT / p).read_text(encoding="utf-8") for p in PERMANENT}
     documents[path] = documents[path].replace(requirement, "")
-    with pytest.raises(AssertionError):
-        _validate(documents)
-
-
-def test_reject_retired_master_as_current_authority() -> None:
-    documents = {p: (ROOT / p).read_text(encoding="utf-8") for p in PERMANENT | PILOTS}
-    documents["README.md"] += "\n[spec](docs/MASTER_SPEC.md)"
     with pytest.raises(AssertionError):
         _validate(documents)
 

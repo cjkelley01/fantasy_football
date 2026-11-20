@@ -376,16 +376,12 @@ def test_t3_keeps_contracts_and_proof_limits_with_their_owners() -> None:
         "no caller label upgrades their trust",
         "WR-021",
         "WR-025",
-        "M0 contract 3",
-        "T4/T6",
     ):
         assert meaning.lower() in text.lower(), meaning
     for source in (
         "METHODOLOGY.md",
         "DATA.md",
         "VALIDATION.md",
-        "PLAYER_OUTCOME_MODEL.md",
-        "MONTE_CARLO.md",
         "evolving_state.py",
         "trade_evaluation.py",
         "legacy_normal_reference.py",

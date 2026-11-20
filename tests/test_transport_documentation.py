@@ -571,7 +571,6 @@ def test_scope_identity_and_future_parity_obligations_remain_explicit() -> None:
         "selected sort, filters, scope",
         "user-owned under C13",
         "T8/T9",
-        "no authority retirement or release declaration",
     ):
         assert fragment in text, fragment
 

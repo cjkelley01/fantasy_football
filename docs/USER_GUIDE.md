@@ -2,7 +2,7 @@
 
 War Room helps you examine a league's remaining season and compare hypothetical roster changes. Start with a validated snapshot, run a baseline, then inspect paired results for a specific exchange or a bounded search. It retrieves ESPN data **read-only** and never submits trades, waiver claims or other real transactions.
 
-This guide covers the current operator workflows. [OPERATIONS](OPERATIONS.md) and [INTERFACE](INTERFACE.md) retain their detailed operating and interface contracts; the other linked references retain their analytical and technical authority. The [approved final audit](development/model-documentation-architecture.md#final-documentation-audit) defines remaining consolidation; completed chapters do not establish permanent authority adoption. War Room is **not formally released**.
+This guide owns current operating procedures. [INTERFACE](INTERFACE.md) owns product/design standards, [METHODOLOGY](METHODOLOGY.md) analytical meaning, [DATA](DATA.md) source authority, [VALIDATION](VALIDATION.md) evidence and [TECHNICAL_REFERENCE](TECHNICAL_REFERENCE.md) executable contracts. Requirements remain binding under [authority and precedence](../AGENTS.md#authority-and-precedence). War Room is **not formally released**.
 
 ## Contents
 
@@ -29,7 +29,7 @@ Use the guide in order for a first session, or jump to the task you need:
 
 Opening a viewer or selecting players does not launch an analysis. The application uses a provisional outcome model; results are conditional on its assumptions and the available evidence. A search can finish with incomplete coverage or unresolved rankings. See [current capabilities and limitations](../README.md#current-capabilities) before treating an output as advice.
 
-Partial-week composition and fully-unstarted partial Monte Carlo are **engine-only** capabilities under separate evidence gates. They do not provide a browser live-game forecast, conditional in-game outcome model or current-week transaction recommendation. Weekly Deep Dive, League Insights, automatic application-analysis resume and a saved manual-scenario comparison library remain unavailable. Exact support is in [PARTIAL_WEEK](PARTIAL_WEEK.md#current-capability-map).
+Partial-week composition and fully-unstarted partial Monte Carlo are **engine-only** capabilities under separate evidence gates. They do not provide a browser live-game forecast, conditional in-game outcome model or current-week transaction recommendation. Weekly Deep Dive, League Insights, automatic application-analysis resume and a saved manual-scenario comparison library remain unavailable. Exact support is in [partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence).
 
 ## Install and launch safely
 
@@ -127,9 +127,9 @@ Read the refresh finding **Simulation boundary: week …** and the selected snap
 
 The advanced **Use advanced manual week override** is an explicit override, not new automatic evidence. It still cannot bypass unknown full matchup-period membership, earlier contributions, standings/carry or unresolved game evidence. Do not choose a later week to get around a rejection. Kickoff timestamps, absent scores or remaining unplayed games alone do not authorize a safe start. See [live evidence](DATA.md#live-and-temporal-evidence).
 
-If refresh reports a late error, inspect any publication identity/committed indicator before retrying: publication may already have committed. Closing the refresh view stops observation, not server work; publication itself cannot be cancelled. Reopen the panel to inspect the process-local refresh. [Refresh semantics](APPLICATION_SERVICE.md#snapshot-selection-and-refresh) describe the precise limitation.
+If refresh reports a late error, inspect any publication identity/committed indicator before retrying: publication may already have committed. Closing the refresh view stops observation, not server work; publication itself cannot be cancelled. Reopen the panel to inspect the process-local refresh. [Refresh semantics](TECHNICAL_REFERENCE.md#commit-and-cancellation-boundaries) describe the precise limitation.
 
-Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. The WR-017 **current-state-first simplification remains a proposal**; P1 does not change current snapshot selection or history.
+Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. The WR-017 **current-state-first simplification remains a proposal**; current snapshot selection and history remain explicit.
 
 ## Run a baseline and evaluate hypothetical changes
 
@@ -144,7 +144,7 @@ This walkthrough uses your selected validated snapshot and real roster records. 
 5. Inspect **League-wide paired impact**, **Forced drops**, **Automatic additions**, and **Projected lineup consequences**. Separate your explicit exchange from the engine's roster-completion changes. Its paired comparison includes its own matched baseline; an earlier Overview run with different model/settings/paths is not automatically that same comparison.
 6. If you commit a changed step, pin or evaluation setting, evaluate again. Prior results do not certify the new draft. Navigating away can discard local drafts; accepted backend work may continue. Reopening a retained manual result does not reconstruct its original editable draft.
 
-Review [interpretation](#interpret-and-compare-results) before acting outside War Room. No counterparty acceptance, waiver-claim success or ESPN submission is predicted. Backend legality/evidence validation remains authoritative and can reject the scenario. Manual completion and ordinary future-week transactions have different roles; [MANUAL_SCENARIOS](MANUAL_SCENARIOS.md#protected-pins-and-completion-chronology) owns the exact analytical rules.
+Review [interpretation](#interpret-and-compare-results) before acting outside War Room. No counterparty acceptance, waiver-claim success or ESPN submission is predicted. Backend legality/evidence validation remains authoritative and can reject the scenario. Manual completion and ordinary future-week transactions have different roles; [MANUAL_SCENARIOS](METHODOLOGY.md#explicit-scenarios-and-one-time-completion) owns the exact analytical rules.
 
 ### Search a finite set of alternatives
 
@@ -154,7 +154,7 @@ Review [interpretation](#interpret-and-compare-results) before acting outside Wa
 4. Filter **Action**, **Authorization**, **Acquisition** and **Evaluation** and select a supported sort. Inspect the selected path's ordered actions, required assumptions, caveats and all-team effects, not only its requesting-manager impact.
 5. Compare up to four paths in the local comparison tray for that retained search. Distinct paths can share the same completed state and numerical evidence; they are not independent replications. Changing snapshot/run clears incompatible local comparison context.
 
-An authorized action, a structural hypothesis and a conditional waiver are different categories; none promises success on ESPN. Unevaluated candidates have unavailable analytical impacts. “Competitive” or top displayed impact is not a proven global optimum. [UNIFIED_ACTION_SEARCH](UNIFIED_ACTION_SEARCH.md#coverage-limitations-and-verification) defines coverage and unresolved ranking.
+An authorized action, a structural hypothesis and a conditional waiver are different categories; none promises success on ESPN. Unevaluated candidates have unavailable analytical impacts. “Competitive” or top displayed impact is not a proven global optimum. [action-search methodology](METHODOLOGY.md#decision-evaluation-ranking-and-limitations) defines coverage and unresolved ranking.
 
 ## Interpret and compare results
 
@@ -162,11 +162,11 @@ An authorized action, a structural hypothesis and a conditional waiver are diffe
 
 A championship probability is an estimated frequency under the chosen model and snapshot. **Illustration only:** a change from 10% to 12% is an increase of **2 probability points**, not a 2% relative increase. Those numbers are not an observed War Room result.
 
-There is an important current **unit-compatibility limitation**: the browser labels paired changes/intervals `pp` using values supplied by the API without extra scaling, while legacy paired fields pass through engine fraction values. For example, a supplied difference of `0.02` can be displayed as `0.02 pp` although the mathematical change is 2 probability points. Do not assume the printed paired `pp` scale has already been reconciled with displayed percentage probabilities or precision targets. Check the supplied baseline/scenario context and the [current unit contract](APPLICATION_SERVICE.md#public-dtos-units-and-validation); its correction is separately gated under [WR-017](BACKLOG.md#wr-017-query-export-and-unit-compatibility). This guide changes neither units nor inputs.
+There is an important current **unit-compatibility limitation**: the browser labels paired changes/intervals `pp` using values supplied by the API without extra scaling, while legacy paired fields pass through engine fraction values. For example, a supplied difference of `0.02` can be displayed as `0.02 pp` although the mathematical change is 2 probability points. Do not assume the printed paired `pp` scale has already been reconciled with displayed percentage probabilities or precision targets. Check the supplied baseline/scenario context and the [current unit contract](TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility); its correction is separately gated under [WR-017](BACKLOG.md#wr-017-query-export-and-unit-compatibility). This guide changes neither units nor inputs.
 
 Use the supplied **paired** interval for a hypothetical comparison. Do not subtract endpoints from two standalone probability intervals to construct one. Different seeds/models/paths or snapshots are not a matched comparison simply because you selected the same manager. Current supported comparisons are the engine's within-analysis paired outputs and Explorer's same-search path tray, not a general saved-scenario comparison library.
 
-Confidence intervals describe **Monte Carlo sampling uncertainty** under the configured model. They do not establish player-model calibration, real-world accuracy, causal certainty or optimal decisions. More paths cannot repair missing source evidence or a wrong model. Repeated-look paired precision has an unresolved statistical review boundary under WR-025; narrow displayed intervals are not a blanket certification. [MONTE_CARLO](MONTE_CARLO.md#paired-scenario-inference) owns the numerical definitions.
+Confidence intervals describe **Monte Carlo sampling uncertainty** under the configured model. They do not establish player-model calibration, real-world accuracy, causal certainty or optimal decisions. More paths cannot repair missing source evidence or a wrong model. Repeated-look paired precision has an unresolved statistical review boundary under WR-025; narrow displayed intervals are not a blanket certification. [numerical methodology](METHODOLOGY.md#paired-comparisons-and-probability-units) owns the numerical definitions.
 
 ### Read status before ranking
 
@@ -193,7 +193,7 @@ History is bounded, not indefinite. A confirmed terminal-run deletion removes th
 
 Application [admission limits](TECHNICAL_REFERENCE.md#application-admission-and-resource-policies) can reject a valid request or a full queue before work is accepted; a displayed-row limit is not a computation budget. [Retention starts at submission](TECHNICAL_REFERENCE.md#retained-run-store-and-retention-policy), so a long-running analysis can leave little time to reopen its result after completion. Keep needed user-owned exports separately; history is not a backup or permanent archive.
 
-The current Simulation Center export downloads **run metadata JSON only**, not a saved request/draft or the full candidate/state dataset. The engine's configured all/filtered JSON/CSV export is a different advanced capability. Exported files are user-owned; they are not automatically reimported or reused as current search context. Details remain in [retained-result ownership](APPLICATION_SERVICE.md#retention-authority) and [export boundaries](UNIFIED_ACTION_SEARCH.md#result-indexing-pagination-and-cleanup).
+The current Simulation Center export downloads **run metadata JSON only**, not a saved request/draft or the full candidate/state dataset. The engine's configured all/filtered JSON/CSV export is a different advanced capability. Exported files are user-owned; they are not automatically reimported or reused as current search context. Details remain in [retained-result ownership](TECHNICAL_REFERENCE.md#ownership-and-lifetime) and [export boundaries](TECHNICAL_REFERENCE.md#existing-exports-and-deferred-parity-requirements).
 
 ## Local persistence, troubleshooting and safe shutdown
 
@@ -208,7 +208,7 @@ The current Simulation Center export downloads **run metadata JSON only**, not a
 | Explicit exported files | Your files; normal application/index cleanup must not silently delete or reimport them. |
 | Logs/runtime metadata | Private `outputs/logs/war-room-<run-id>.stdout.log` / `.stderr.log`, plus `outputs/runtime/war-room-server.json` ownership and `war-room-shutdown.txt` control; preserve them for authenticated stop/recovery. |
 
-This is the accepted C13 storage distinction. An output directory is not disposable. Keep settings/cookies, manual rules, databases and WAL/SHM sidecars, research/diagnostic reports, logs/checkpoints and exports private and out of Git, including at custom paths. Browser preferences do not back up server results. Use SQLite-safe backups with the application stopped; do not copy an actively written database or remove a live lease. Exact storage/security contracts stay in [OPERATIONS](OPERATIONS.md#local-data-and-privacy) and [APPLICATION_SERVICE](APPLICATION_SERVICE.md#results-retention-and-ownership).
+This is the accepted C13 storage distinction. An output directory is not disposable. Keep settings/cookies, manual rules, databases and WAL/SHM sidecars, research/diagnostic reports, logs/checkpoints and exports private and out of Git, including at custom paths. Browser preferences do not back up server results. Use SQLite-safe backups with the application stopped; do not copy an actively written database or remove a live lease. Exact storage/security contracts stay in [user guide](USER_GUIDE.md#know-what-is-stored) and [application contracts](TECHNICAL_REFERENCE.md#retained-run-store-and-retention-policy).
 
 ### Safe shutdown and recovery
 
@@ -240,7 +240,7 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 | Slow/capped run or pending cancellation | Inspect actual work/resource/precision status; page size is not a computation bound. Cancellation is cooperative, not a reason to kill an unknown process. |
 | Missing older result | Check current snapshot, browser history limits, expiry and deletion. A viewer cannot reconstruct data that is no longer retained. |
 
-Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. OPERATIONS retains its governing contracts pending adoption. Current source/rule limits, provisional projections, WR-003 and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
+Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, WR-003 and independently gated clean-machine/release evidence remain unresolved; neither setup success nor this guide declares release readiness.
 
 ## Advanced existing CLI workflows
 
@@ -264,4 +264,4 @@ Replace `<snapshot-id>` with a listed UUID and change the database argument to t
 
 The manual-scenario CLI consumes strict scenario JSON and explicit snapshot/output/model/sampling settings; use the current [CLI contract](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries), not an invented draft-export/import workflow. The offline `python -m fantasy_football.m0_verification --json` checks historical evidence roles, not live compatibility or release readiness.
 
-Actually running `live_scoring_diagnostic --json`, `espn_adapter` or snapshot publication retrieval performs **live network access**. The **adapter and snapshot-publication CLIs** require an explicit `--first-simulation-week` and explicit `--manual-config` when needed; they are not the browser's automatic refresh flow. The diagnostic inspects evidence and does not accept that week argument. A manual week still must pass source/boundary validation. Live credentials/private stores are not needed for developer synthetic checks and are not required for credential-free documentation verification. Follow [retrieval boundaries](OPERATIONS.md#manual-league-rules) before any authorized live operation.
+Actually running `live_scoring_diagnostic --json`, `espn_adapter` or snapshot publication retrieval performs **live network access**. The **adapter and snapshot-publication CLIs** require an explicit `--first-simulation-week` and explicit `--manual-config` when needed; they are not the browser's automatic refresh flow. The diagnostic inspects evidence and does not accept that week argument. A manual week still must pass source/boundary validation. Live credentials/private stores are not needed for developer synthetic checks and are not required for credential-free documentation verification. Follow [retrieval boundaries](USER_GUIDE.md#when-espn-cannot-establish-a-rule) before any authorized live operation.

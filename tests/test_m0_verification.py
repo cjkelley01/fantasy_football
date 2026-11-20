@@ -179,7 +179,7 @@ def test_legacy_bindings_cannot_be_relabelled_as_contract_three(tmp_path: Path) 
         build_report(tmp_path)
 
 
-def test_former_checked_documents_are_not_implicit_dependencies_or_retired(
+def test_former_checked_documents_are_not_implicit_dependencies(
     tmp_path: Path,
 ) -> None:
     evidence_tree(tmp_path)
@@ -190,7 +190,6 @@ def test_former_checked_documents_are_not_implicit_dependencies_or_retired(
         (tmp_path / "docs" / name).write_text(
             "Unrelated local content is not checked by M0.", encoding="utf-8"
         )
-        assert (Path(__file__).resolve().parents[1] / "docs" / name).is_file()
     assert build_report(tmp_path).to_dict() == expected
 
 

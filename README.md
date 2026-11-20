@@ -1,7 +1,5 @@
 # War Room
 
-[Transactions](docs/TRANSACTIONS.md) owns evolving roster legality, essential acquisitions, V(R) and distinct correctness references.
-
 War Room is a local web application for ESPN fantasy football managers who want to understand league-wide season outcomes and compare hypothetical roster changes. It preserves immutable league snapshots, simulates the remaining season and compares actions using matched player-week draws.
 
 ESPN access is **read-only**. War Room **never submits real transactions**, predicts manager acceptance or estimates waiver-claim success.
@@ -19,7 +17,7 @@ The default decision objective is **expected championship probability**, evaluat
 
 Ordinary V1 simulation requires a verified safe whole-week boundary. An explicit override or later unplayed games cannot bypass unresolved matchup-period membership, preceding contributions or standings evidence. NFL completion or score presence alone does not prove participation, fantasy settlement or stat-correction finality. Validated configuration determines league behavior; unknown rules and permissions fail closed.
 
-Canonical snapshots preserve source provenance and historical schema reads without rewriting bytes/IDs. Read compatibility does not guarantee every consumer capability. Missing projections, explicit ESPN zeros and policy-imputed zeros remain distinct; the approved deterministic-zero correction preserves nonmissing draws while distinguishing numerical policy identity. See [data contracts](docs/DATA.md#canonical-validation-and-serialization) and [outcome models](docs/PLAYER_OUTCOME_MODEL.md).
+Canonical snapshots preserve source provenance and historical schema reads without rewriting bytes/IDs. Read compatibility does not guarantee every consumer capability. Missing projections, explicit ESPN zeros and policy-imputed zeros remain distinct; the approved deterministic-zero correction preserves nonmissing draws while distinguishing numerical policy identity. See [data contracts](docs/DATA.md#canonical-validation-and-serialization) and [outcome models](docs/METHODOLOGY.md#player-outcome-generation-and-assumptions).
 
 ## Limitations and release status
 
@@ -31,19 +29,16 @@ The service binds to loopback on a trusted local machine. Host/Origin checks are
 
 ## Start here
 
-- [User guide](docs/USER_GUIDE.md): a practical path from setup and validated data through baseline/scenario analysis, interpretation and safe shutdown. OPERATIONS and INTERFACE retain their binding operating/interface contracts pending final consolidation.
-- [Install and operate](docs/OPERATIONS.md): Windows prerequisites, locked setup, public/private ESPN configuration, launch, first analysis, private storage and safe shutdown. Installation/startup needs no ESPN credentials. Tested versions and the unresolved Node-policy mismatch (WR-003) are recorded there.
-- [Use the interface](docs/INTERFACE.md): workspace journeys, analytical presentation, provenance, accessibility and frontend contracts.
-- [Contribute](CONTRIBUTING.md): original-repository/fork branches, safe synchronization, developer environment, verification tiers and independent PR review. [AGENTS](AGENTS.md) supplies standing development rules.
-- [Development backlog](docs/BACKLOG.md): authoritative outstanding work and evidence/approval gates; a proposal is not implementation approval.
+- [User guide](docs/USER_GUIDE.md): install, configure, select validated data, run analyses, interpret results and shut down safely. Installation/startup needs no ESPN credentials; retrieval requires authorized access. Tested versions and unresolved WR-003 setup limitations are recorded there.
+- [Interface](docs/INTERFACE.md): product design, workspace interactions, visual hierarchy, responsive behavior and accessibility standards, with implemented behavior and remaining acceptance distinguished.
+- [Contributing](CONTRIBUTING.md): branch/fork collaboration, developer setup, verification and independent PR review. [AGENTS](AGENTS.md) defines standing engineering and evidence rules.
+- [Backlog](docs/BACKLOG.md): outstanding work and exact evidence/approval gates; a proposal is not implementation authorization.
 
 ## Understand the system
 
-- [Methodology](docs/METHODOLOGY.md), [validation](docs/VALIDATION.md) and [technical reference](docs/TECHNICAL_REFERENCE.md): completed M1–M9, V0–V5 and T1–T9 chapters for model meaning, evidence and executable interfaces. DATA covers D1–D6. The existing domain authorities below remain binding pending independently reviewed final consolidation; chapter completion does not retire an owner or declare release.
+- [Methodology](docs/METHODOLOGY.md): analytical framework, player outcomes, season/transaction/partial-week mechanics, Monte Carlo/inference and hypothetical decision ranking.
+- [Data](docs/DATA.md): ESPN field interpretation, provenance, canonical validation, source permissions and immutable publication. The [offline M0 verifier](docs/DATA.md#m0-consumer-dependency) checks evidence roles and diagnostic availability, not current live readiness.
+- [Validation](docs/VALIDATION.md): what independent tests and retained research establish, what remains unverified, and scientific/decision/release gates. Fixtures prove code behavior, not live ESPN semantics.
+- [Technical reference](docs/TECHNICAL_REFERENCE.md): start at the [architecture map](docs/TECHNICAL_REFERENCE.md#system-architecture-and-integration-map), then follow executable source/model/state, API/query, deterministic/partial, worker/checkpoint, persistence/recovery and frontend contracts.
 
-- [Architecture map](docs/architecture/overview.md) and [application API/execution](docs/APPLICATION_SERVICE.md): source ownership, runtime boundaries and public contracts.
-- [Data lifecycle](docs/DATA.md): ESPN sources, canonical structures/validation, league-rule evidence and immutable snapshot storage. The [offline M0 verifier](docs/DATA.md#m0-consumer-dependency) checks historical evidence roles and diagnostic availability; it does not certify current live readiness.
-- [Season simulation](docs/SEASON_SIMULATOR.md), [outcome models](docs/PLAYER_OUTCOME_MODEL.md) and [Monte Carlo](docs/MONTE_CARLO.md): mechanics, provisional mathematics and reproducibility. [Partial-week contracts](docs/PARTIAL_WEEK.md) define the separate evidence boundary.
-- [Manual scenarios](docs/MANUAL_SCENARIOS.md) and [action search](docs/UNIFIED_ACTION_SEARCH.md): explicit hypothetical completion, finite action grammar, state grouping and search orchestration.
-- [Research](docs/RESEARCH.md) and [live-source evidence](docs/DATA.md#live-and-temporal-evidence): temporal trust, evaluation/promotion gates and unresolved capabilities. Fixtures prove code behavior, not live ESPN semantics.
-- The domain references above are the analytical authorities; [AGENTS governance](AGENTS.md#authority-and-precedence) defines precedence and [CONTRIBUTING](CONTRIBUTING.md#documentation-maintenance) defines maintenance. Former specifications, audits and migration evidence remain at the [accepted pre-retirement revision](https://github.com/tdkelley2001/fantasy_football/tree/14fd6dba46cfe5827c0b3da110bfefa4a683b647/docs) and reviewed PRs; historical acceptance is not current release approval.
+These ten documents form the permanent reference set. [AGENTS governance](AGENTS.md#authority-and-precedence) defines ownership/precedence; [CONTRIBUTING](CONTRIBUTING.md#documentation-maintenance) explains maintenance. Ordinary history lives in reviewed PRs/Git, including the [accepted final audit and consolidation sources](https://github.com/tdkelley2001/fantasy_football/tree/5701a88a14b7b0017f020a066c9b10129372e6c6/docs) and [earlier governing evidence](https://github.com/tdkelley2001/fantasy_football/tree/14fd6dba46cfe5827c0b3da110bfefa4a683b647/docs). Historical acceptance is not current release approval.

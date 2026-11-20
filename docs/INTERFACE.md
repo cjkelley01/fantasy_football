@@ -1,8 +1,8 @@
 # Interface and user workflows
 
-This is the current user-workflow and frontend reference. [README](../README.md) owns product capabilities/release status; [OPERATIONS](OPERATIONS.md) owns setup, configuration, private data and shutdown. Presentation does not own estimators, legality, API definitions or process recovery. Approved requirements in this domain and linked [BACKLOG](BACKLOG.md) obligations remain binding under [engineering governance](../AGENTS.md#authority-and-precedence).
+This is the current user-workflow and frontend reference. [README](../README.md) owns product capabilities/release status; [user guide](USER_GUIDE.md#install-and-launch-safely) owns setup, configuration, private data and shutdown. Presentation does not own estimators, legality, API definitions or process recovery. Approved requirements in this domain and linked [BACKLOG](BACKLOG.md) obligations remain binding under [engineering governance](../AGENTS.md#authority-and-precedence).
 
-For operating steps use [USER_GUIDE](USER_GUIDE.md); [T5](TECHNICAL_REFERENCE.md#http-api-dtos-and-evolution) and [T9](TECHNICAL_REFERENCE.md#application-and-frontend-securityintegration-contracts) describe executable transport and integration. This focused product reference retains visual hierarchy, responsive/interaction standards and accessibility requirements. Its implemented workspace descriptions are distinct from desired design treatments and outstanding WR-017 acceptance; component tests do not establish actual-browser accessibility. Current authority precedence is unchanged.
+For operating steps use [USER_GUIDE](USER_GUIDE.md); [T5](TECHNICAL_REFERENCE.md#http-api-dtos-and-evolution) and [T9](TECHNICAL_REFERENCE.md#application-and-frontend-securityintegration-contracts) describe executable transport and integration. This focused product reference retains visual hierarchy, responsive/interaction standards and accessibility requirements. Its implemented workspace descriptions are distinct from desired design treatments and outstanding WR-017 acceptance; component tests do not establish actual-browser accessibility.
 
 - [Visual standards](#visual-first-design-standard), [journey](#user-journey-and-navigation)
 - [Identity and requests](#identity-and-request-isolation), [interpretation and units](#analytical-presentation-and-units)
@@ -29,7 +29,7 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [OPERATIONS first use](OPERATIONS.md#launch-and-first-use), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses horizontal navigation; narrow screens use a menu. League Insights is visibly deferred.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses horizontal navigation; narrow screens use a menu. League Insights is visibly deferred.
 
 | Task | Workspace |
 |---|---|
@@ -38,19 +38,19 @@ Follow [OPERATIONS first use](OPERATIONS.md#launch-and-first-use), then delibera
 | Test a specific exchange | Commit a Trade Lab draft, review pins/settings and intentionally evaluate aggregate final ownership. |
 | Follow or reopen work | Monitor/cancel/select retained runs in Simulation Center and navigate to their matching result workspace. |
 
-Opening a viewer or selecting a player does not silently launch analysis. Refresh is separately intentional: the panel exposes sanitized configured league/access mode, automatic safe-week detection and an advanced explicit override. Successful publication appends/selects an immutable snapshot. Closing stops observation, not work; reopening can rediscover the process-local refresh. Credentials stay server-side. [APPLICATION_SERVICE](APPLICATION_SERVICE.md#snapshot-selection-and-refresh) owns commit/error semantics; after a late failure, publication metadata can still identify a committed snapshot.
+Opening a viewer or selecting a player does not silently launch analysis. Refresh is separately intentional: the panel exposes sanitized configured league/access mode, automatic safe-week detection and an advanced explicit override. Successful publication appends/selects an immutable snapshot. Closing stops observation, not work; reopening can rediscover the process-local refresh. Credentials stay server-side. [application contracts](TECHNICAL_REFERENCE.md#commit-and-cancellation-boundaries) owns commit/error semantics; after a late failure, publication metadata can still identify a committed snapshot.
 
 ## Identity and request isolation
 
 Stable canonical IDs and snapshot joins determine team/player/ownership/eligibility/slot/schedule/postseason context. Names are presentation, not identity. No universal league size, slot map, IR/flex rule or bracket is hardcoded into the interaction contract. A valid snapshot may lack a consumer capability.
 
-The browser reads relative API 1.0 URLs through [lib/api.ts](../frontend/src/lib/api.ts); [types/api.ts](../frontend/src/types/api.ts) mirrors consumed DTOs. TypeScript assertions are not independent runtime authentication. Viewers explicitly validate schema, run/type, snapshot and canonical checksum before retained analytics; path/state/scenario identities are checked where applicable. Expired, deleted, unavailable and mismatched evidence cannot authorize mixing runs or reconstructing omitted results. [APPLICATION_SERVICE](APPLICATION_SERVICE.md#provenance-and-identity) owns public identity and evolution.
+The browser reads relative API 1.0 URLs through [lib/api.ts](../frontend/src/lib/api.ts); [types/api.ts](../frontend/src/types/api.ts) mirrors consumed DTOs. TypeScript assertions are not independent runtime authentication. Viewers explicitly validate schema, run/type, snapshot and canonical checksum before retained analytics; path/state/scenario identities are checked where applicable. Expired, deleted, unavailable and mismatched evidence cannot authorize mixing runs or reconstructing omitted results. [application contracts](TECHNICAL_REFERENCE.md#numerical-units-and-identity-scopes) owns public identity and evolution.
 
 Effect-owned AbortControllers plus latest-request/version and response-identity checks protect results, errors, status and loading, even if transport resolves after abort. Retry replaces the relevant local request. Detail/page/state failures settle independently instead of stranding loading. Rapid shell selection remains available while an earlier detail request is pending; late data cannot overwrite the active snapshot or stored selection. Team focus cannot bridge leagues just because numeric IDs coincide.
 
 Trade Lab is keyed by snapshot UUID/checksum; Explorer detail state by snapshot/run. Snapshot/run changes reset incompatible workspace selections. Simulation Center resets snapshot-specific selectors and observation. Local drafts/comparisons/filters are not a durable scenario library; navigating away can discard them. Context change or aborted fetch **does not cancel an accepted backend job**. Explicit run cancellation is separate; ambiguous submission failures are not automatically retried.
 
-Only `war-room-theme` and `war-room-snapshot` preference identifiers persist in localStorage. Private rosters, drafts and results do not. The source/build drawer displays snapshot/schema/time/horizon and package/revision metadata; unavailable revision stays unavailable. An explicit revision string is not authenticated source bytes. [OPERATIONS](OPERATIONS.md#local-data-and-privacy) owns privacy safeguards.
+Only `war-room-theme` and `war-room-snapshot` preference identifiers persist in localStorage. Private rosters, drafts and results do not. The source/build drawer displays snapshot/schema/time/horizon and package/revision metadata; unavailable revision stays unavailable. An explicit revision string is not authenticated source bytes. [user guide](USER_GUIDE.md#know-what-is-stored) owns privacy safeguards.
 
 ## Analytical presentation and units
 
@@ -59,14 +59,14 @@ The frontend formats supplied results; it does not recompute probabilities, inte
 | Value/status | Presentation |
 |---|---|
 | Absolute probability and interval | API decimals in [0,1] become displayed percentages; use supplied interval endpoints. |
-| Paired `*_probability_points` fields | Display signed supplied values/paired intervals as `pp`, with no extra multiplication by 100. Preserve the existing public contract; [APPLICATION_SERVICE](APPLICATION_SERVICE.md#public-dtos-units-and-validation) documents its engine/service units. Do not subtract standalone interval endpoints to construct paired bounds. |
+| Paired `*_probability_points` fields | Display signed supplied values/paired intervals as `pp`, with no extra multiplication by 100. Preserve the existing public contract; [application contracts](TECHNICAL_REFERENCE.md#validation-nulls-and-compatibility) documents its engine/service units. Do not subtract standalone interval endpoints to construct paired bounds. |
 | Precision controls | Baseline submits `target_half_width_probability` as probability, then converts for probability-point display. Action search submits/displays `target_paired_half_width_probability_points` directly. |
 | Null estimate/interval | **Unavailable** / **Interval unavailable**, never zero. An estimate can remain without a whisker; no invented zero-width marker. Explicit zero is a real value. |
 | Completion/confidence | Execution, completed paths/capabilities, candidate generation, state evaluation, individual/league precision and ranking resolution are independent facts. |
 
 Confidence intervals measure Monte Carlo sampling uncertainty, not model error. Incomplete paths/capabilities need prominent qualification: estimates conditional on completed valid paths are not unconditional league probabilities. Never silently renormalize missing work or call capped output exhaustive. A visible positive difference is not automatically significant; competitive does not mean confirmed best. Numerical attractiveness does not prove authorization or waiver success. Observed standings/points/seeds remain snapshot facts, not forecasts.
 
-[Monte Carlo](MONTE_CARLO.md), [manual scenarios](MANUAL_SCENARIOS.md) and [search](UNIFIED_ACTION_SEARCH.md) own formulas, paired sampling, multiplicity and stopping. The interface does not redefine them.
+[Monte Carlo](METHODOLOGY.md#monte-carlo-simulation-and-estimators), [manual scenarios](METHODOLOGY.md#manual-scenarios-and-action-search-methodology) and [search](METHODOLOGY.md#manual-scenarios-and-action-search-methodology) own formulas, paired sampling, multiplicity and stopping. The interface does not redefine them.
 
 ## League Overview
 
@@ -167,4 +167,4 @@ Visual/trade/waiver improvements remain exploratory under WR-017. Superseded spa
 
 [CONTRIBUTING](../CONTRIBUTING.md#tier-1-fast-local-checks) owns current verification commands and side effects. Synthetic fixtures establish **Verified by tests**, not live ESPN or actual-browser evidence.
 
-Selected visual references: [precision-qualified Overview](images/m7-2/league-analytics-precision-limited-dark-1440x1100.png), [shared-path comparison](images/m7-3/opportunity-comparison-dark-1440x1100.png), [edit-in-place](images/m7-4/trade-lab-edit-in-place-dark-1440x1200.png), [cancellation pending](images/m7-5/simulation-center-cancellation-requested-dark-1440x1200.png). These are **historical sanitized implementation captures**, not current live output or new screenshots. Source/tests determine current behavior. Old shell captures and spatial prototypes are historical/superseded, not active layouts. D3 retains all assets and capture/prototype tools unchanged; retention does not prove current accuracy.
+Selected visual references: [precision-qualified Overview](images/m7-2/league-analytics-precision-limited-dark-1440x1100.png), [shared-path comparison](images/m7-3/opportunity-comparison-dark-1440x1100.png), [edit-in-place](images/m7-4/trade-lab-edit-in-place-dark-1440x1200.png), [cancellation pending](images/m7-5/simulation-center-cancellation-requested-dark-1440x1200.png). These are **historical sanitized implementation captures**, not current live output or new screenshots. Source/tests determine current behavior. Old shell captures and spatial prototypes are historical/superseded, not active layouts. Retained assets and capture/prototype tools do not prove current accuracy.
