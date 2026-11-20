@@ -23,7 +23,8 @@ from espn_api.requests.espn_requests import (
     ESPNUnknownError,
 )
 from requests import ConnectionError as RequestsConnectionError
-from requests import RequestException, Timeout, get as http_get
+from requests import RequestException, Timeout
+from requests import get as http_get
 
 from fantasy_football.canonical.model import (
     SCHEMA_VERSION,
@@ -68,7 +69,6 @@ from fantasy_football.canonical.validation import (
     validate_snapshot,
 )
 from fantasy_football.config import Settings, SettingsError, load_settings
-from fantasy_football.logging_config import configure_logging
 from fantasy_football.live_scoring import (
     LiveScoringError,
     NFLGameStatus,
@@ -76,6 +76,7 @@ from fantasy_football.live_scoring import (
     ScoreEvidenceStatus,
     resolve_live_scoring_state,
 )
+from fantasy_football.logging_config import configure_logging
 
 LOGGER = logging.getLogger(__name__)
 LEAGUE_VIEWS = ("mTeam", "mRoster", "mMatchup", "mSettings", "mStandings")
@@ -89,6 +90,17 @@ _TRANSIENT_HTTP = re.compile(r"HTTP 5\d\d\b")
 
 class EspnAdapterError(RuntimeError):
     """Raised when retrieval or translation cannot produce an authoritative snapshot."""
+
+    def __init__(self, message, *, phase="translation"):
+        super().__init__(message)
+        if phase not in {
+            "translation",
+            "transport",
+            "authentication",
+            "canonical_validation",
+        }:
+            raise ValueError("invalid adapter diagnostic phase")
+        self.phase = phase
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +149,7 @@ class EspnSourceBundle:
     league_reconciliation: CapturedResponse
     simulation_week_automatically_detected: bool = False
     nfl_scoreboard: CapturedResponse | None = None
+    preserve_current_week: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,7 +390,8 @@ def request_with_retries(
             cause = exc
         if not transient or attempt == max_retries:
             raise EspnAdapterError(
-                f"{context}: request failed after {attempt + 1} attempt(s): {type(cause).__name__}: {cause}"
+                f"{context}: request failed after {attempt + 1} attempt(s): {type(cause).__name__}: {cause}",
+                phase="transport",
             ) from cause
         sleep(0.25 * (2**attempt))
     raise AssertionError("unreachable")
@@ -1415,13 +1429,14 @@ def translate_bundle(
     mapping_source_id = bundle.current_player_pages[0].response.source_id
     rules = replace(
         rules,
-        interpretations=rules.interpretations + (
+        interpretations=rules.interpretations
+        + (
             RuleInterpretation(
                 "undroppable_player_mapping",
                 "players[].player.droppable",
                 "boolean",
-                None,
-                InterpretationStatus.UNVERIFIED,
+                "false_is_protected",
+                InterpretationStatus.UNDERSTOOD,
                 mapping_source_id,
             ),
         ),
@@ -1437,15 +1452,23 @@ def translate_bundle(
     )
     try:
         live_scoring = resolve_live_scoring_state(
-            current_scoring_period=_int(initial.get("scoringPeriodId"), "league response", "scoringPeriodId", minimum=1),
-            scoring_weeks=all_weeks, games=nfl_games,
+            current_scoring_period=_int(
+                initial.get("scoringPeriodId"),
+                "league response",
+                "scoringPeriodId",
+                minimum=1,
+            ),
+            scoring_weeks=all_weeks,
+            games=nfl_games,
             matchup_period_scoring_weeks=period_map.values(),
             observations=_translate_live_observations(
                 bundle.current_player_pages,
                 season=bundle.season,
                 current_week=_int(
                     initial.get("scoringPeriodId"),
-                    "league response", "scoringPeriodId", minimum=1,
+                    "league response",
+                    "scoringPeriodId",
+                    minimum=1,
                 ),
             ),
             source_ids=(
@@ -1454,11 +1477,26 @@ def translate_bundle(
                 *((bundle.nfl_scoreboard.source_id,) if bundle.nfl_scoreboard else ()),
                 *(page.response.source_id for page in bundle.current_player_pages),
             ),
-            manual_override=None if bundle.simulation_week_automatically_detected else bundle.first_simulation_week,
+            manual_override=None
+            if (
+                bundle.simulation_week_automatically_detected
+                or bundle.preserve_current_week
+            )
+            else bundle.first_simulation_week,
         )
     except LiveScoringError as exc:
         raise EspnAdapterError(f"live scoring boundary resolution failed: {exc}") from exc
-    if live_scoring.supported_simulation_week != bundle.first_simulation_week:
+    if (
+        bundle.preserve_current_week
+        and bundle.first_simulation_week != live_scoring.current_scoring_period
+    ):
+        raise EspnAdapterError(
+            "current-state horizon must begin at the observed ESPN scoring period"
+        )
+    if (
+        not bundle.preserve_current_week
+        and live_scoring.supported_simulation_week != bundle.first_simulation_week
+    ):
         raise EspnAdapterError(
             "automatic live scoring boundary conflicts with the retrieved simulation horizon"
         )
@@ -1524,7 +1562,9 @@ def translate_bundle(
     try:
         validate_snapshot(snapshot)
     except CanonicalValidationError as exc:
-        raise EspnAdapterError(f"canonical snapshot validation failed: {exc}") from exc
+        raise EspnAdapterError(
+            f"canonical snapshot validation failed: {exc}", phase="canonical_validation"
+        ) from exc
     values = [item for item in player_weeks]
     present = [item for item in values if item.raw_projection is not None]
     canonical_json = snapshot_to_json(snapshot)
@@ -2043,6 +2083,7 @@ def retrieve_bundle(
     first_simulation_week: int | None,
     page_size: int = 250,
     max_retries: int = 2,
+    preserve_current_week: bool = False,
 ) -> EspnSourceBundle:
     """Sequentially retrieve all source responses required for one candidate snapshot."""
 
@@ -2133,9 +2174,11 @@ def retrieve_bundle(
             ),
             source_ids=(initial.source_id, pro_schedule.source_id, scoreboard.source_id),
         )
-        if state.supported_simulation_week is None:
+        if state.supported_simulation_week is None and not preserve_current_week:
             raise EspnAdapterError(state.boundary_rationale)
-        first_simulation_week = state.supported_simulation_week
+        first_simulation_week = (
+            current_week if preserve_current_week else state.supported_simulation_week
+        )
     future_pages = tuple(
         page
         for week in range(first_simulation_week, final_week + 1)
@@ -2171,6 +2214,7 @@ def retrieve_bundle(
         league_reconciliation=reconciliation,
         simulation_week_automatically_detected=automatically_detected,
         nfl_scoreboard=scoreboard,
+        preserve_current_week=preserve_current_week,
     )
 
 
@@ -2182,13 +2226,20 @@ def fetch_and_translate(
     manual_config: str | Path | None = None,
     page_size: int = 250,
     max_retries: int = 2,
+    preserve_current_week: bool = False,
 ) -> AdapterResult:
-    bundle = retrieve_bundle(
-        settings,
-        first_simulation_week=first_simulation_week,
-        page_size=page_size,
-        max_retries=max_retries,
-    )
+    try:
+        bundle = retrieve_bundle(
+            settings,
+            first_simulation_week=first_simulation_week,
+            page_size=page_size,
+            max_retries=max_retries,
+            preserve_current_week=preserve_current_week,
+        )
+    except (ESPNAccessDenied, ESPNInvalidLeague) as exc:
+        raise EspnAdapterError(
+            "ESPN authentication or league access failed.", phase="authentication"
+        ) from exc
     overrides = load_manual_rule_config(
         manual_config, league_id=settings.league_id, season=settings.season
     )

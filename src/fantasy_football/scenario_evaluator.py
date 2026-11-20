@@ -1042,7 +1042,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     approved_root = Path("outputs").resolve()
     if output == approved_root or approved_root not in output.parents:
         _fail(f"private scenario output must be a file beneath {approved_root}")
-    snapshot = SnapshotStore(arguments.database).load(arguments.snapshot_id).snapshot
+    from fantasy_football.automatic_rosters import automatic_policy_from_loaded_snapshot
+
+    loaded = SnapshotStore(arguments.database).load(arguments.snapshot_id)
+    snapshot = loaded.snapshot
     scenario = manual_scenario_from_json(arguments.scenario.read_text(encoding="utf-8"))
     baseline = initialize_evolving_state(
         snapshot,
@@ -1050,7 +1053,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ir_policy=IRPolicy.PROJECTION_BASED,
     )
     transaction_policy = WeeklyTransactionPolicy(
-        waiver_boundary=WaiverBoundaryPolicy.MODELED_WEEKLY_V1
+        waiver_boundary=WaiverBoundaryPolicy.MODELED_WEEKLY_V1,
+        automatic_rosters=automatic_policy_from_loaded_snapshot(loaded),
     )
     simulation = MonteCarloConfig(
         arguments.master_seed,

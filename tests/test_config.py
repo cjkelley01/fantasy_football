@@ -6,7 +6,6 @@ import pytest
 
 from fantasy_football.config import SettingsError, load_settings
 
-
 VALID_ENV = {
     "ESPN_LEAGUE_ID": "123456",
     "ESPN_SEASON": "2026",
@@ -145,3 +144,23 @@ def test_invalid_log_level_fails() -> None:
 def test_explicit_missing_env_file_fails(tmp_path: Path) -> None:
     with pytest.raises(SettingsError, match="does not exist"):
         load_settings(env_file=tmp_path / "missing.env", environ={})
+
+
+@pytest.mark.parametrize("raw, expected", [("true", True), ("false", False)])
+def test_startup_refresh_is_explicit_configuration(raw, expected):
+    assert (
+        load_settings(
+            env_file=None, environ={**VALID_ENV, "WAR_ROOM_AUTO_REFRESH": raw}
+        ).auto_refresh_on_startup
+        is expected
+    )
+    assert (
+        load_settings(env_file=None, environ=VALID_ENV).auto_refresh_on_startup is False
+    )
+
+
+def test_startup_refresh_invalid_value_fails_closed():
+    with pytest.raises(SettingsError, match="WAR_ROOM_AUTO_REFRESH"):
+        load_settings(
+            env_file=None, environ={**VALID_ENV, "WAR_ROOM_AUTO_REFRESH": "yes"}
+        )

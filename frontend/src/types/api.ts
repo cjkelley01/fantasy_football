@@ -20,8 +20,8 @@ export interface HealthResponse {
 }
 
 export type RefreshStatus = "queued"|"running"|"cancel_requested"|"completed"|"cancelled"|"failed"|"interrupted";
-export interface LeagueRefreshProfile {readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly credential_mode:"public"|"private_credentials_configured";readonly manual_rule_configuration_available:boolean;}
-export interface SnapshotRefreshRequest {readonly api_schema_version:"1.0";readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly first_simulation_week:number|null;}
+export interface LeagueRefreshProfile {readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly credential_mode:"public"|"private_credentials_configured";readonly manual_rule_configuration_available:boolean;readonly automatic_refresh_enabled?:boolean;}
+export interface SnapshotRefreshRequest {readonly api_schema_version:"1.0";readonly profile_id:"configured_local_league";readonly league_id:number;readonly season:number;readonly first_simulation_week:number|null;readonly startup_refresh?:boolean;}
 export interface SnapshotRefreshSubmission {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly created_at_utc:string;}
 export interface SnapshotRefreshRecord {readonly api_schema_version:"1.0";readonly refresh_id:string;readonly status:RefreshStatus;readonly stage:"queued"|"retrieving_and_validating"|"publishing"|"verifying"|"completed"|"cancelled"|"failed"|"interrupted";readonly league_id:number;readonly season:number;readonly first_simulation_week:number|null;readonly created_at_utc:string;readonly started_at_utc:string|null;readonly finished_at_utc:string|null;readonly snapshot_id:string|null;readonly publication_committed:boolean;readonly error_code:string|null;readonly error_message:string|null;}
 export interface SnapshotRefreshResult {readonly api_schema_version:"1.0";readonly refresh:SnapshotRefreshRecord;readonly snapshot:SnapshotSummary;readonly validation_findings:readonly string[];readonly unresolved_capabilities:readonly string[];}
@@ -95,6 +95,8 @@ export interface LiveScoringSummary {
   readonly next_fully_unplayed_period:number|null;
   readonly supported_simulation_week:number|null;
   readonly partial_week_simulation_required:boolean;
+  readonly current_week_execution_available?:boolean;
+  readonly current_week_limitations?:readonly string[];
   readonly boundary_method:"automatic"|"manual_override"|"unresolved";
   readonly boundary_rationale:string;
   readonly weeks:readonly {readonly scoring_week:number;readonly status:"completed"|"partial"|"unplayed"|"unresolved";readonly rationale:string}[];
@@ -223,7 +225,7 @@ export interface BackgroundBaselineResultSummary {
 
 export interface RosterChangeInput { readonly player_id:number; readonly from_team_id:number|null; readonly to_team_id:number|null; }
 export interface ProtectedPlayerInput { readonly team_id:number; readonly player_id:number; }
-export interface SimulationConfiguration { readonly master_seed:number;readonly path_count:number;readonly first_path_index:number;readonly ir_policy:"projection_based"|"strict";readonly waiver_boundary:"unresolved"|"modeled_weekly_v1";readonly reject_incomplete_valuations:boolean;readonly require_complete:boolean; }
+export interface SimulationConfiguration { readonly master_seed:number;readonly path_count:number;readonly first_path_index:number;readonly ir_policy:"projection_based"|"strict";readonly waiver_boundary:"unresolved"|"modeled_weekly_v1";readonly reject_incomplete_valuations:boolean;readonly require_complete:boolean; readonly use_observed_current_week_lineup?:boolean; }
 export interface PrecisionSettings { readonly family_confidence_level:number;readonly target_half_width_probability:number;readonly minimum_paths:number;readonly maximum_paths:number;readonly evaluation_interval_paths:number; }
 export interface NormalOutcomeModelConfiguration { readonly model_type:"provisional_normal";readonly base_stddev_points:number;readonly projection_scale:number; }
 export interface ManualScenarioRequest { readonly api_schema_version:"1.0";readonly snapshot:{readonly snapshot_id:string;readonly league_id:number;readonly season:number};readonly simulation:SimulationConfiguration;readonly precision:PrecisionSettings;readonly outcome_model:NormalOutcomeModelConfiguration;readonly scenario:{readonly scenario_id:string;readonly changes:readonly RosterChangeInput[];readonly protected_players:readonly ProtectedPlayerInput[]}; }

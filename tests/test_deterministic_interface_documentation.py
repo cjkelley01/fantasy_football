@@ -286,7 +286,9 @@ def test_documented_composition_example_reaches_the_same_weekly_resolver_once():
         _config(0, 1),
         partial_week=MonteCarloPartialWeekInput(partial.evidence, partial.lineup),
     )
-    with pytest.raises(MonteCarloError, match="requires unstarted players"):
+    with pytest.raises(
+        MonteCarloError, match="requires completed-fixed or unstarted players"
+    ):
         run_monte_carlo_path(snapshot, config, NoSampling(), 0)
 
 

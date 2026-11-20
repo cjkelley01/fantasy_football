@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-import os
 from pathlib import Path
 
 from dotenv import dotenv_values
@@ -32,6 +32,7 @@ class Settings:
     snapshot_db_path: Path = Path("outputs/fantasy_football.sqlite3")
     credentials: EspnCredentials | None = field(default=None, repr=False)
     manual_rule_config_path: Path | None = field(default=None, repr=False)
+    auto_refresh_on_startup: bool = False
 
 
 _LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
@@ -116,6 +117,9 @@ def load_settings(
         allowed = ", ".join(sorted(_LOG_LEVELS))
         raise SettingsError(f"LOG_LEVEL must be one of: {allowed}")
 
+    auto_refresh = values.get("WAR_ROOM_AUTO_REFRESH", "false").strip().lower()
+    if auto_refresh not in {"true", "false"}:
+        raise SettingsError("WAR_ROOM_AUTO_REFRESH must be true or false")
     return Settings(
         league_id=_required_positive_int(values, "ESPN_LEAGUE_ID"),
         season=_required_positive_int(values, "ESPN_SEASON"),
@@ -125,4 +129,5 @@ def load_settings(
         manual_rule_config_path=_manual_rule_config_path(
             values, base_directory=configuration_base
         ),
+        auto_refresh_on_startup=auto_refresh == "true",
     )

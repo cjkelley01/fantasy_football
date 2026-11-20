@@ -55,7 +55,7 @@ class MonteCarloError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class MonteCarloPartialWeekInput:
-    """Pregame evidence and legal assignments; realizations come from existing draws."""
+    """Fixed/completed and unstarted evidence; realizations use existing draws."""
 
     evidence: PartialWeekEvidence
     lineup: tuple[ProposedLineupAssignment, ...]
@@ -404,15 +404,33 @@ def _validate_pregame_partial_week(
         for item in snapshot.player_weeks
         if item.scoring_week == evidence.scoring_period
     }
+    starter_slots = {
+        r.slot_id for r in snapshot.rules.lineup_slots if r.kind is SlotKind.STARTER
+    }
+    selected_starters = {
+        a.player_id for a in partial.lineup if a.lineup_slot_id in starter_slots
+    }
     for state in evidence.players:
         if state.player_id not in rostered:
+            continue
+        if (
+            state.score_state is PlayerScoreState.MISSING
+            and state.player_id not in selected_starters
+        ):
+            continue
+        if state.score_state in {
+            PlayerScoreState.COMPLETED_FIXED,
+            PlayerScoreState.NONPARTICIPATING,
+        }:
+            # Full-universe draws remain generated and hashed, but the composer
+            # receives no resimulation input for a fixed player.
             continue
         if (
             state.score_state is not PlayerScoreState.UNSTARTED
             or state.remaining_status is not RemainingContributionStatus.APPROVED
         ):
             raise MonteCarloError(
-                f"LW2.3A requires unstarted players with approved full-game projections; player {state.player_id} has {state.score_state!r}"
+                f"partial Monte Carlo requires completed-fixed or unstarted players with approved full-game projections; player {state.player_id} has {state.score_state!r}"
             )
         projection = projections.get(state.player_id)
         if (
@@ -475,7 +493,14 @@ def _partial_week_draws(
     required = tuple(
         item.player_id
         for item in partial.lineup
-        if item.lineup_slot_id in starter_slots and item.team_id not in bye_teams
+        if item.lineup_slot_id in starter_slots
+        and item.team_id not in bye_teams
+        and next(
+            state
+            for state in partial.evidence.players
+            if state.player_id == item.player_id
+        ).score_state
+        is PlayerScoreState.UNSTARTED
     )
     missing = set(required) - set(first_scores)
     if missing:

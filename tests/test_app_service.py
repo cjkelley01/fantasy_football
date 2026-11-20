@@ -24,6 +24,7 @@ from fantasy_football.app.contracts import (
     UnifiedCandidateConfiguration,
 )
 from fantasy_football.app.http import create_app
+from fantasy_football.automatic_rosters import AutomaticRosterPolicy
 from fantasy_football.app.server import LOOPBACK_HOST, main as server_main
 from fantasy_football.app.service import (
     ApplicationDependencies,
@@ -197,7 +198,10 @@ def test_baseline_service_exactly_matches_direct_engine(service, snapshot) -> No
     actual = service.run_baseline(request)
     simulation = MonteCarloConfig(
         8128, 2, 0, IRPolicy.PROJECTION_BASED,
-        WeeklyTransactionPolicy(WaiverBoundaryPolicy.MODELED_WEEKLY_V1),
+        WeeklyTransactionPolicy(
+            WaiverBoundaryPolicy.MODELED_WEEKLY_V1,
+            automatic_rosters=AutomaticRosterPolicy(snapshot.snapshot_id),
+        ),
     )
     expected = run_monte_carlo_to_precision(
         snapshot, simulation, ProvisionalNormalModel(3.0, 0.35),
@@ -226,7 +230,10 @@ def test_manual_service_exactly_matches_direct_engine(service, snapshot) -> None
         snapshot, state, ManualScenario("identity", ()),
         MonteCarloConfig(
             8128, 1, 0, IRPolicy.PROJECTION_BASED,
-            WeeklyTransactionPolicy(WaiverBoundaryPolicy.MODELED_WEEKLY_V1),
+            WeeklyTransactionPolicy(
+            WaiverBoundaryPolicy.MODELED_WEEKLY_V1,
+            automatic_rosters=AutomaticRosterPolicy(snapshot.snapshot_id),
+        ),
         ),
         ProvisionalNormalModel(3.0, 0.35),
         PrecisionConfiguration(0.95, 0.9, 1, 1, 1),

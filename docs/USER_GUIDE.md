@@ -29,7 +29,7 @@ Use the guide in order for a first session, or jump to the task you need:
 
 Opening a viewer or selecting players does not launch an analysis. The application uses a provisional outcome model; results are conditional on its assumptions and the available evidence. A search can finish with incomplete coverage or unresolved rankings. See [current capabilities and limitations](../README.md#current-capabilities) before treating an output as advice.
 
-Partial-week composition and fully-unstarted partial Monte Carlo are **engine-only** capabilities under separate evidence gates. They do not provide a browser live-game forecast, conditional in-game outcome model or current-week transaction recommendation. Weekly Deep Dive, League Insights, automatic application-analysis resume and a saved manual-scenario comparison library remain unavailable. Exact support is in [partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence).
+Current-week simulation supports completed fixed scores plus unstarted-player draws when source evidence reconciles. In-progress games remain unsupported without an approved remaining-performance model; current-week transactions cannot retroactively change observed assignments or points. Weekly Deep Dive, League Insights, automatic application-analysis resume and a saved manual-scenario comparison library remain unavailable. Exact support is in [partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence).
 
 ## Install and launch safely
 
@@ -116,8 +116,11 @@ Profile availability requires YAML to parse and validate for the configured leag
 
 ## Refresh and choose validated data
 
+If the app reports that the configured store is unavailable, restore access to the original database and choose **Try again**. If the database moved, restart with the correct database path. **Open refresh** shows refresh status and allows a retry after storage is available. Refresh uses the same configured store and checks it before contacting ESPN.
+
+
 1. Open **Refresh ESPN league**. Confirm the configured league, season and public/private access mode. If the profile is unavailable, correct its reported configuration problem first; credentials remain server-side.
-2. Submit the refresh. The browser defaults to **automatic safe-week detection**: it sends no explicit first week and the server attempts to establish one from supported source evidence. Detection can fail closed. It is not a guarantee that an arbitrary live week is simulatable.
+2. Submit the refresh. The browser sends no explicit first week and preserves the ESPN current scoring period. Completed and unstarted games can be simulated when lineup, score, standings and carry evidence reconcile. In-progress games or unresolved evidence still block execution.
 3. Review validation findings, missing projections, explicit zeros, unresolved capabilities and the published snapshot ID. A snapshot is an immutable as-of collection of league evidence, not a continuously updated live model. Each publication appends a new identity rather than rewriting the earlier snapshot.
 4. Confirm which snapshot is active. A successful publication selects its new snapshot; you can also deliberately choose a retained snapshot in **Active snapshot**. Check league, season, publication/retrieval context and simulation horizon in **League context → Source & build**. Older data can remain selectable; it must not be mistaken for current advice.
 
@@ -125,23 +128,16 @@ Profile availability requires YAML to parse and validate for the configured leag
 
 Read the refresh finding **Simulation boundary: week …** and the selected snapshot's **Simulation horizon**. Simulation Center also exposes **Live scoring boundary**, including **Supported V1 start** when established; unresolved values remain unresolved. Analyses use the selected published snapshot's first simulation week and evidence, not a newly inferred week just because you opened a viewer later.
 
-The advanced **Use advanced manual week override** is an explicit override, not new automatic evidence. It still cannot bypass unknown full matchup-period membership, earlier contributions, standings/carry or unresolved game evidence. Do not choose a later week to get around a rejection. Kickoff timestamps, absent scores or remaining unplayed games alone do not authorize a safe start. See [live evidence](DATA.md#live-and-temporal-evidence).
+The normal refresh panel has no week override. Advanced CLI explicit weeks retain their strict source/boundary checks. Do not choose a later week to bypass missing evidence. Kickoff timestamps and absent scores do not establish completion.
 
-If refresh reports a late error, inspect any publication identity/committed indicator before retrying: publication may already have committed. Closing the refresh view stops observation, not server work; publication itself cannot be cancelled. Reopen the panel to inspect the process-local refresh. [Refresh semantics](TECHNICAL_REFERENCE.md#commit-and-cancellation-boundaries) describe the precise limitation.
+If refresh reports a late error, inspect any publication identity/committed indicator before retrying: publication may already have committed. Closing the refresh view keeps background status observation and server work running; publication itself cannot be cancelled. Reopen the panel to inspect the process-local refresh. [Refresh semantics](TECHNICAL_REFERENCE.md#commit-and-cancellation-boundaries) describe the precise limitation.
 
-Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. The Interface and Action UX **current-state-first simplification remains a proposal**; current snapshot selection and history remain explicit.
+Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. Startup selects the newest saved snapshot for the configured league/season; saved snapshots remain in league context. Set `WAR_ROOM_AUTO_REFRESH=true` in local configuration to opt into read-only retrieval on startup; the default displays cached data and offers **Refresh now**. The header shows the actual league name and retrieval time; cached data is not a claim of a fresh ESPN observation.
 
 ## Run a baseline and evaluate hypothetical changes
 
-Existing application controls continue to use the V1 policy. Advanced API
-callers may explicitly select the
-[optional marginal-lineup roster policy](TECHNICAL_REFERENCE.md#automatic-roster-execution)
-in simulation configuration; it uses ownership observations retained with the
-selected immutable snapshot and fails when evidence needed for a drop is absent.
-An optional standings fallback seed is explicit modeled configuration, not a
-substitute for unsupported source rules. No live permissions are inferred and
-no snapshot needs to be rewritten. Keep ordinary V1 settings to reproduce an
-existing V1 numerical checkpoint; opted-in policy identities are incompatible.
+Baseline, Trade Lab and action search use the [mandatory marginal-lineup roster policy](TECHNICAL_REFERENCE.md#automatic-roster-execution) for new simulations. When a required acquisition needs a drop, the policy uses the approved full-horizon lineup valuation and snapshot ownership evidence. Missing evidence required for a drop stops the run. Retained historical results keep their original policy and identity.
+
 
 ### First workflow: baseline, then a specific exchange
 
@@ -272,6 +268,6 @@ For an existing authorized local snapshot store, explicit paths avoid launcher/s
 
 Replace `<snapshot-id>` with a listed UUID and change the database argument to the actual private file. These inspect/verify stored evidence; they do not refresh ESPN or establish current live eligibility. Keep output private. Verification failure needs diagnosis, not editing an immutable row. [DATA](DATA.md#immutable-storage) owns read integrity.
 
-The manual-scenario CLI consumes strict scenario JSON and explicit snapshot/output/model/sampling settings; use the current [CLI contract](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries), not an invented draft-export/import workflow. The offline `python -m fantasy_football.m0_verification --json` checks historical evidence roles, not live compatibility or release readiness.
+The manual-scenario CLI uses the same mandatory marginal-lineup policy for new runs. It consumes strict scenario JSON and explicit snapshot/output/model/sampling settings; use the current [CLI contract](TECHNICAL_REFERENCE.md#weekly-integration-and-execution-boundaries), not an invented draft-export/import workflow. The offline `python -m fantasy_football.m0_verification --json` checks historical evidence roles, not live compatibility or release readiness.
 
 Actually running `live_scoring_diagnostic --json`, `espn_adapter` or snapshot publication retrieval performs **live network access**. The **adapter and snapshot-publication CLIs** require an explicit `--first-simulation-week` and explicit `--manual-config` when needed; they are not the browser's automatic refresh flow. The diagnostic inspects evidence and does not accept that week argument. A manual week still must pass source/boundary validation. Live credentials/private stores are not needed for developer synthetic checks and are not required for credential-free documentation verification. Follow [retrieval boundaries](USER_GUIDE.md#when-espn-cannot-establish-a-rule) before any authorized live operation.

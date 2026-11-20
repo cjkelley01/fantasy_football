@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,6 +39,11 @@ from fantasy_football.snapshot_store import (
 LOGGER = logging.getLogger(__name__)
 
 
+def fetch_current_state(settings, **kwargs):
+    """Preserve the source current week without granting V1 permission."""
+    return fetch_and_translate(settings, preserve_current_week=True, **kwargs)
+
+
 def _now() -> datetime:
     return datetime.now(UTC)
 
@@ -49,7 +55,7 @@ class RefreshDependencies:
     store: SnapshotStore
     application: ApplicationService
     settings_loader: Callable[[], Settings] = load_settings
-    adapter: Callable[..., AdapterResult] = fetch_and_translate
+    adapter: Callable[..., AdapterResult] = fetch_current_state
     manual_config: Path | None = None
 
 
@@ -112,10 +118,17 @@ class SnapshotRefreshCoordinator:
                 "private_credentials_configured" if settings.credentials else "public"
             ),
             manual_rule_configuration_available=manual_config is not None,
+            automatic_refresh_enabled=settings.auto_refresh_on_startup,
         )
 
     def submit(self, request: SnapshotRefreshRequest) -> SnapshotRefreshSubmission:
         profile = self.profile()
+        if request.startup_refresh and not profile.automatic_refresh_enabled:
+            raise ApplicationServiceError(
+                "automatic_refresh_not_authorized",
+                "unsupported_configuration",
+                "Automatic ESPN refresh is not enabled in the local configuration.",
+            )
         if request.profile_id != profile.profile_id:
             raise ApplicationServiceError(
                 "refresh_profile_not_found", "not_found",
@@ -128,6 +141,25 @@ class SnapshotRefreshCoordinator:
                 league_id=request.league_id, season=request.season,
             )
         with self._lock:
+            if request.startup_refresh:
+                # Reuse a process-local active/recent attempt across tabs and
+                # StrictMode mounts. Explicit manual retry is never throttled.
+                candidates = [
+                    j.record
+                    for j in self._jobs.values()
+                    if (j.record.league_id, j.record.season)
+                    == (request.league_id, request.season)
+                ]
+                latest = max(candidates, key=lambda r: r.created_at_utc, default=None)
+                if latest is not None and (
+                    latest.status in {"queued", "running", "cancel_requested"}
+                    or (_now() - latest.created_at_utc).total_seconds() < 300
+                ):
+                    return SnapshotRefreshSubmission(
+                        refresh_id=latest.refresh_id,
+                        status=latest.status,
+                        created_at_utc=latest.created_at_utc,
+                    )
             if any(
                 job.record.status in {"queued", "running", "cancel_requested"}
                 for job in self._jobs.values()
@@ -146,7 +178,16 @@ class SnapshotRefreshCoordinator:
             )
             self._jobs[refresh_id] = _Job(record)
             self._cancel[refresh_id] = Event()
-            future = self._executor.submit(self._execute, refresh_id, request)
+            try:
+                future = self._executor.submit(self._execute, refresh_id, request)
+            except Exception:  # noqa: BLE001 - compensate any executor rejection before exposing a job
+                self._jobs.pop(refresh_id, None)
+                self._cancel.pop(refresh_id, None)
+                raise ApplicationServiceError(
+                    "refresh_submission_failed",
+                    "resource_exhausted",
+                    "Refresh could not be queued; retry when the server is available.",
+                ) from None
             self._futures[refresh_id] = future
             future.add_done_callback(lambda _future, key=refresh_id: self._release(key))
         return SnapshotRefreshSubmission(
@@ -163,8 +204,12 @@ class SnapshotRefreshCoordinator:
     def _execute(self, refresh_id: str, request: SnapshotRefreshRequest) -> None:
         cancel = self._cancel[refresh_id]
         self._set(refresh_id, status="running", stage="retrieving_and_validating", started_at_utc=_now())
+        operation = "configuration"
         try:
             settings, manual_config = self._configuration()
+            operation = "storage"
+            self.dependencies.store.check_available()
+            operation = "retrieval"
             result = self.dependencies.adapter(
                 settings,
                 first_simulation_week=request.first_simulation_week,
@@ -203,6 +248,7 @@ class SnapshotRefreshCoordinator:
                 )
                 return
             # Cancellation is no longer accepted beyond this atomic boundary.
+            operation = "publication"
             self._set(refresh_id, stage="publishing")
             try:
                 metadata = publish_and_verify(self.dependencies.store, result)
@@ -220,6 +266,7 @@ class SnapshotRefreshCoordinator:
                 refresh_id, stage="verifying", snapshot_id=metadata.snapshot_id,
                 publication_committed=True,
             )
+            operation = "inspection"
             snapshot = self.dependencies.application.inspect_snapshot(
                 SnapshotSelector(
                     snapshot_id=metadata.snapshot_id,
@@ -250,13 +297,56 @@ class SnapshotRefreshCoordinator:
             with self._lock:
                 # Terminal completion and its result become observable atomically.
                 self._jobs[refresh_id] = _Job(final, completed)
-        except (SettingsError, EspnAdapterError, SnapshotStoreError, ValueError):
+        except (
+            SettingsError,
+            EspnAdapterError,
+            SnapshotStoreError,
+            ValueError,
+            ApplicationServiceError,
+        ) as exc:
             # Public state intentionally excludes upstream payloads, request URLs and secrets.
-            code = "refresh_validation_failed"
-            message = "ESPN retrieval or canonical validation failed before publication."
+            from fantasy_football.canonical.validation import CanonicalValidationError
+
+            category = (
+                "canonical_validation"
+                if isinstance(exc, CanonicalValidationError)
+                else {
+                    "translation": "source_translation",
+                    "transport": "transport",
+                    "authentication": "authentication",
+                    "canonical_validation": "canonical_validation",
+                }[exc.phase]
+                if isinstance(exc, EspnAdapterError)
+                else "storage"
+                if isinstance(exc, SnapshotStoreError)
+                else operation
+            )
+            messages = {
+                "configuration": "League configuration or its approved rules could not be loaded.",
+                "source_translation": "ESPN source retrieval or translation failed; check the safe server diagnostic category.",
+                "canonical_validation": "Retrieved league data failed canonical validation; no validation rules were bypassed.",
+                "publication": "Snapshot publication failed; inspect the recorded publication status before retrying.",
+                "storage": "The snapshot database could not be accessed or verified.",
+                "inspection": "The snapshot was published, but application inspection failed.",
+                "retrieval": "ESPN retrieval or source validation failed.",
+                "transport": "ESPN could not be reached or returned a transport error. Retry the refresh.",
+                "authentication": "ESPN denied league access. Check the server-side league configuration and credentials.",
+            }
+            code = f"refresh_{category}_failed"
+            message = messages[category]
+            LOGGER.error(
+                "Snapshot refresh failed code=%s operation=%s exception_type=%s",
+                code,
+                operation,
+                type(exc).__name__,
+            )
             self._set(
-                refresh_id, status="failed", stage="failed", finished_at_utc=_now(),
-                error_code=code, error_message=message,
+                refresh_id,
+                status="failed",
+                stage="failed",
+                finished_at_utc=_now(),
+                error_code=code,
+                error_message=message,
             )
         except Exception as exc:
             # Upstream exception text can contain request URLs, cookies, or raw
@@ -266,7 +356,10 @@ class SnapshotRefreshCoordinator:
                 type(exc).__name__,
             )
             self._set(
-                refresh_id, status="failed", stage="failed", finished_at_utc=_now(),
+                refresh_id,
+                status="failed",
+                stage="failed",
+                finished_at_utc=_now(),
                 error_code="refresh_internal_failure",
                 error_message="The snapshot refresh failed unexpectedly before completion.",
             )

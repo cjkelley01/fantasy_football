@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 from collections import Counter
 from dataclasses import asdict, replace
 
@@ -240,10 +241,8 @@ def test_changed_partial_input_invalidates_checkpoint(tmp_path, change):
 @pytest.mark.parametrize(
     "state",
     (
-        PlayerScoreState.COMPLETED_FIXED,
         PlayerScoreState.IN_PROGRESS,
         PlayerScoreState.MISSING,
-        PlayerScoreState.NONPARTICIPATING,
     ),
 )
 def test_nonpregame_states_reject_before_sampling(state):
@@ -288,7 +287,9 @@ def test_nonpregame_states_reject_before_sampling(state):
         def generate_scenario(self, *args, **kwargs):
             pytest.fail("unsupported states must be rejected before sampling")
 
-    with pytest.raises(MonteCarloError, match="LW2.3A requires unstarted"):
+    with pytest.raises(
+        MonteCarloError, match="completed-fixed or unstarted|nonparticipation requires"
+    ):
         run_monte_carlo_path(
             snapshot, replace(config, partial_week=partial), NoSampling(), 0
         )
@@ -416,3 +417,218 @@ def test_pregame_lock_evidence_still_forbids_lineup_movement():
     )
     with pytest.raises(MonteCarloError, match="cannot move"):
         run_monte_carlo_path(snapshot, replace(config, partial_week=partial), model, 0)
+
+
+def _completed_case(actual, bench=False):
+    snapshot, config, model = _case()
+    partial = config.partial_week
+    from fantasy_football.partial_week import LineupRole
+
+    if bench:
+        snapshot = replace(
+            snapshot,
+            roster_entries=tuple(
+                replace(e, lineup_slot_id=20) if e.player_id == 1 else e
+                for e in snapshot.roster_entries
+            ),
+        )
+    evidence = replace(
+        partial.evidence,
+        players=tuple(
+            replace(
+                p,
+                score_state=PlayerScoreState.COMPLETED_FIXED,
+                nfl_game_status=NFLGameStatus.COMPLETED,
+                fixed_actual_points=actual,
+                remaining_status=RemainingContributionStatus.NOT_APPLICABLE,
+            )
+            if p.player_id == 1
+            else p
+            for p in partial.evidence.players
+        ),
+        lineups=tuple(
+            replace(
+                e,
+                lock_state=LockState.VERIFIED_LOCKED,
+                lineup_slot_id=20 if bench else e.lineup_slot_id,
+                role=LineupRole.BENCH if bench else e.role,
+            )
+            if e.player_id == 1
+            else e
+            for e in partial.evidence.lineups
+        ),
+    )
+    evidence = replace(
+        evidence,
+        matchups=tuple(
+            replace(
+                m,
+                home_observed_week_points=actual
+                if not bench and m.home_team_id == 1
+                else m.home_observed_week_points,
+                away_observed_week_points=actual
+                if not bench and m.away_team_id == 1
+                else m.away_observed_week_points,
+            )
+            for m in evidence.matchups
+        ),
+    )
+    lineup = tuple(
+        replace(e, lineup_slot_id=20) if bench and e.player_id == 1 else e
+        for e in partial.lineup
+    )
+    return (
+        snapshot,
+        replace(
+            config, partial_week=replace(partial, evidence=evidence, lineup=lineup)
+        ),
+        model,
+    )
+
+
+@pytest.mark.parametrize("actual", (13.25, 0.0, -3.5))
+def test_completed_starter_fixed_actuals_and_full_draw_identity(actual):
+    from fantasy_football.monte_carlo import _scenario_digest
+
+    snapshot, config, model = _completed_case(actual)
+    for path in config.path_indices:
+        generated = model.generate_scenario(
+            snapshot, master_seed=config.master_seed, path_index=path
+        )
+        summary, result = run_monte_carlo_path(
+            snapshot, config, model, path, retain_result=True
+        )
+        assert summary.scenario_sha256 == _scenario_digest(generated)
+        team = next(t for t in result.weeks[0].frozen_team_weeks if t.team_id == 1)
+        other = next(
+            s.points
+            for s in generated.scores
+            if s.player_id == -101 and s.scoring_week == 15
+        )
+        assert team.realized_points == math.fsum((actual, other))
+        assert run_monte_carlo_path(
+            snapshot, config, model, path, retain_result=True
+        ) == (summary, result)
+    assert run_monte_carlo_batch(snapshot, config, model) == run_monte_carlo_batch(
+        snapshot, config, model
+    )
+
+
+def test_completed_bench_player_does_not_contribute_or_get_moved():
+    snapshot, config, model = _completed_case(99.0, bench=True)
+    generated = model.generate_scenario(
+        snapshot, master_seed=config.master_seed, path_index=0
+    )
+    _, result = run_monte_carlo_path(snapshot, config, model, 0, retain_result=True)
+    team = next(t for t in result.weeks[0].frozen_team_weeks if t.team_id == 1)
+    assert 1 not in {a.player_id for a in team.lineup.assignments}
+    assert team.realized_points == next(
+        s.points
+        for s in generated.scores
+        if s.player_id == -101 and s.scoring_week == 15
+    )
+    with pytest.raises(MonteCarloError, match="cannot move"):
+        changed = replace(
+            config.partial_week,
+            lineup=tuple(
+                replace(e, lineup_slot_id=0) if e.player_id == 1 else e
+                for e in config.partial_week.lineup
+            ),
+        )
+        run_monte_carlo_path(snapshot, replace(config, partial_week=changed), model, 0)
+
+
+def test_completed_actuals_preserve_batch_worker_and_checkpoint_results(tmp_path):
+    snapshot, config, model = _completed_case(8.5)
+    expected = run_monte_carlo_batch(snapshot, config, model)
+    assert (
+        run_monte_carlo_batch_parallel(
+            snapshot, config, model, ParallelExecutionConfiguration(2, 1)
+        ).batch
+        == expected
+    )
+    batches = tuple(
+        run_monte_carlo_batch(
+            snapshot, replace(config, first_path_index=i, path_count=2), model
+        )
+        for i in (0, 2)
+    )
+    assert combine_monte_carlo_batches(snapshot, config, model, batches) == expected
+    store = _store(tmp_path)
+    profile = _profile()
+    execute_monte_carlo_profile(
+        snapshot,
+        config,
+        model,
+        profile,
+        checkpoint_store=store,
+        cancellation_requested=lambda: True,
+    )
+    resumed = execute_monte_carlo_profile(
+        snapshot, config, model, profile, checkpoint_store=store, resume=True
+    )
+    assert (
+        resumed.result
+        == execute_monte_carlo_profile(snapshot, config, model, profile).result
+    )
+
+
+def test_multiple_completed_teams_keep_fixed_points_with_matched_draws():
+    snapshot, config, model = _completed_case(13.25)
+    partial = config.partial_week
+    evidence = replace(
+        partial.evidence,
+        players=tuple(
+            replace(
+                p,
+                score_state=PlayerScoreState.COMPLETED_FIXED,
+                nfl_game_status=NFLGameStatus.COMPLETED,
+                fixed_actual_points=-2.0,
+                remaining_status=RemainingContributionStatus.NOT_APPLICABLE,
+            )
+            if p.player_id == 2
+            else p
+            for p in partial.evidence.players
+        ),
+        lineups=tuple(
+            replace(a, lock_state=LockState.VERIFIED_LOCKED) if a.player_id == 2 else a
+            for a in partial.evidence.lineups
+        ),
+        matchups=tuple(
+            replace(
+                m,
+                home_observed_week_points=-2.0
+                if m.home_team_id == 2
+                else m.home_observed_week_points,
+                away_observed_week_points=-2.0
+                if m.away_team_id == 2
+                else m.away_observed_week_points,
+            )
+            for m in partial.evidence.matchups
+        ),
+    )
+    config = replace(config, partial_week=replace(partial, evidence=evidence))
+    for seed in (7, 11):
+        seeded = replace(config, master_seed=seed)
+        generated = model.generate_scenario(snapshot, master_seed=seed, path_index=0)
+        summary, result = run_monte_carlo_path(
+            snapshot, seeded, model, 0, retain_result=True
+        )
+        teams = {
+            t.team_id: t.realized_points for t in result.weeks[0].frozen_team_weeks
+        }
+        assert teams[1] == math.fsum(
+            (
+                13.25,
+                next(
+                    s.points
+                    for s in generated.scores
+                    if s.player_id == -101 and s.scoring_week == 15
+                ),
+            )
+        )
+        assert teams[2] == -2.0
+        assert run_monte_carlo_path(snapshot, seeded, model, 0, retain_result=True) == (
+            summary,
+            result,
+        )

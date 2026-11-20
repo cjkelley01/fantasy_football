@@ -123,8 +123,8 @@ def test_product_workspace_availability_matches_shell_navigation() -> None:
                 in product.split("| Unsupported / deferred |", 1)[1].split("\n", 1)[0]
             )
     for boundary in (
-        "Accepted engine interfaces, not exposed in the browser/API",
-        "fully unstarted",
+        "Current-week analysis and engine interfaces",
+        "completed fixed actuals plus unstarted-player draws",
         "Provisional / evidence-limited",
         "M8.4 release disposition remains pending",
         "safe whole-week boundary",

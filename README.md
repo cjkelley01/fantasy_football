@@ -6,20 +6,19 @@ ESPN access is **read-only**. War Room **never submits real transactions**, pred
 
 ## Current capabilities
 
-The provisional marginal-lineup roster policy is available through an explicit
-[simulation configuration](docs/TECHNICAL_REFERENCE.md#automatic-roster-execution).
-It retains the shared V1 scoring, postseason and statistical machinery; existing
-V1 calls remain the default. Its provisional ownership-based drop policy and
-modeled future drop release do not establish live ESPN transaction permissions.
+New application simulations use the provisional mandatory marginal-lineup
+acquisition and full-horizon drop policy. The policy uses the shared scoring,
+postseason and statistical machinery. Its modeled drop and waiver rules apply
+to simulations. See the [roster execution contract](docs/TECHNICAL_REFERENCE.md#automatic-roster-execution).
 
 The default decision objective is **expected championship probability**, evaluated for every manager using ESPN's player-specific future weekly projections, actual league rules and the current snapshot. Paired season analysis measures downstream qualification, seeding, waiver competition and placement consequences; the published aggregate outputs are a documented subset of the broader [required output contract](docs/VALIDATION.md#release-acceptance-remains-pending). Secondary objectives remain future scope. War Room converts ESPN means into uncertain league seasons; it does not initially aim to outperform those player-mean forecasts. ESPN is the sole initial projection source. Another source requires demonstrated incremental value and independent approval as a versioned official model, not an automatic missing-data fallback.
 
 | Availability | What you can use |
 |---|---|
-| Application | Explicit ESPN refresh/publication and snapshot selection; League Overview championship/playoff/placement estimates; Opportunity Explorer retained candidate exploration; Trade Lab final-state scenarios; Simulation Center bounded baseline/action execution, cancellation and retained history. |
-| Accepted engine interfaces, not exposed in the browser/API | Validated partial-week evidence and deterministic fixed/remaining/carry composition; opt-in partial-season execution with verified standings cutoff/history; partial Monte Carlo for **fully unstarted** current players with approved matching full-game projections. Unresolved evidence and completed/in-progress/missing/ambiguous MC player states fail closed. Pregame equivalence requires matching starters/policies and no first-week acquisition changing ownership. Partial-season execution rejects current transactions/hypothetical initial rosters; later-round starts without reconstructible history and multiweek regular-period cases remain unsupported. |
+| Application | Latest configured-league data, optional authorized startup refresh and secondary saved-snapshot selection; League Overview championship/playoff/placement estimates; Opportunity Explorer retained candidate exploration; Trade Lab final-state scenarios; Simulation Center bounded baseline/action execution, cancellation and retained history. |
+| Current-week analysis and engine interfaces | Source-bound browser/API Stage A uses completed fixed actuals plus unstarted-player draws, observed lineups and verified standings/carry. Active games, missing starter contributions and ambiguous permissions fail closed. Arbitrary deterministic partial companions remain engine-only. Pregame equivalence requires matching starters/policies and no first-week acquisition changing ownership. Partial-season execution rejects current transactions/hypothetical initial rosters; later-round starts without reconstructible history and multiweek regular-period cases remain unsupported. |
 | Provisional / evidence-limited | The application uses the provisional Normal outcome model; an empirical research path is engine-only. Sampling intervals quantify Monte Carlo uncertainty, not model error. Historical returned ESPN projections do not prove authenticated pregame vintages. Live observations are bounded to documented retrievals, not universal ESPN guarantees. |
-| Unsupported / deferred | Automatic live-to-partial translation, conditional in-game distributions, current-week transaction/lineup advice, automatic injury forecasts, a joint-score model, Weekly Deep Dive, League Insights, application-level job resume, public hosting and accounts. A backlog proposal does not authorize implementation or new modeling assumptions. |
+| Unsupported / deferred | Unrestricted live-to-partial translation, conditional in-game distributions, current-week transaction/lineup advice, automatic injury forecasts, a joint-score model, Weekly Deep Dive, League Insights, application-level job resume, public hosting and accounts. A backlog proposal does not authorize implementation or new modeling assumptions. |
 
 Ordinary V1 simulation requires a verified safe whole-week boundary. An explicit override or later unplayed games cannot bypass unresolved matchup-period membership, preceding contributions or standings evidence. NFL completion or score presence alone does not prove participation, fantasy settlement or stat-correction finality. Validated configuration determines league behavior; unknown rules and permissions fail closed.
 

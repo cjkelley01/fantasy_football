@@ -631,7 +631,7 @@ def test_cached_preparation_cannot_hide_malformed_rosters_or_changed_source_evid
         )
 
 
-def test_application_opt_in_uses_shared_aggregation_and_keeps_default_request_bytes():
+def test_application_defaults_to_approved_policy_and_rejects_legacy_requests():
     from fantasy_football.app.contracts import (
         BaselineAnalysisRequest,
         SimulationConfiguration,
@@ -653,30 +653,14 @@ def test_application_opt_in_uses_shared_aggregation_and_keeps_default_request_by
         precision=_precision(),
         outcome_model=_model(),
     )
-    assert set(request.simulation.model_dump()) == {
-        "master_seed",
-        "path_count",
-        "first_path_index",
-        "ir_policy",
-        "waiver_boundary",
-        "reject_incomplete_valuations",
-        "require_complete",
-    }
-    baseline = service.run_baseline(request)
-    configured = request.model_copy(
-        update={
-            "simulation": request.simulation.model_copy(
-                update={"automatic_roster_policy": "mandatory_marginal_lineup_v1"}
-            )
-        }
-    )
-    actual = service.run_baseline(configured)
-    assert actual.teams == baseline.teams
-    assert (
-        actual.provenance.simulation_config_sha256
-        != baseline.provenance.simulation_config_sha256
-    )
-    with pytest.raises(ValueError, match="standings fallback requires"):
-        SimulationConfiguration(
-            **request.simulation.model_dump(), standings_fallback_seed=123
-        )
+    dumped = request.simulation.model_dump()
+    assert dumped["automatic_roster_policy"] == "mandatory_marginal_lineup_v1"
+    default = service.run_baseline(request)
+    explicit = service.run_baseline(request.model_copy(update={
+        "simulation": SimulationConfiguration.model_validate(dumped)
+    }))
+    assert default.teams == explicit.teams
+    assert default.provenance.simulation_config_sha256 == explicit.provenance.simulation_config_sha256
+    assert default.provenance.engine_run_identity_sha256 == explicit.provenance.engine_run_identity_sha256
+    with pytest.raises(ValueError, match="mandatory_marginal_lineup_v1"):
+        SimulationConfiguration.model_validate(dumped | {"automatic_roster_policy": "legacy_v1"})

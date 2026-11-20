@@ -70,6 +70,24 @@ class AutomaticRosterPolicy:
         )
 
 
+def automatic_policy_from_loaded_snapshot(loaded, standings_fallback_seed=None):
+    """Bind the active roster policy to captured ownership for a new run."""
+    from fantasy_football.espn_adapter import _raw_json_bytes
+
+    return AutomaticRosterPolicy(
+        loaded.snapshot.snapshot_id,
+        tuple(
+            (
+                item.response.source_id,
+                _raw_json_bytes(item.response.payload).decode("utf-8"),
+            )
+            for item in loaded.raw_sources
+            if item.response.view == "kona_player_info"
+        ),
+        standings_fallback_seed,
+    )
+
+
 def ownership_percentages(
     snapshot: LeagueSnapshot, policy: AutomaticRosterPolicy
 ) -> dict[int, float]:

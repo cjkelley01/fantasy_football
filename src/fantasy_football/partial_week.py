@@ -698,10 +698,27 @@ def require_executable_partial_week_evidence(
                 f"partial-week evidence has unresolved lock status for player {assignment.player_id}"
             )
     for player in evidence.players:
-        if player.score_state is PlayerScoreState.MISSING:
-            _fail(
-                f"partial-week evidence has missing score state for player {player.player_id}"
+        if player.score_state is PlayerScoreState.NONPARTICIPATING:
+            nfl_team = next(
+                p.nfl_team_id
+                for p in snapshot.players
+                if p.player_id == player.player_id
             )
+            if not any(
+                t.nfl_team_id == nfl_team and t.bye_week == evidence.scoring_period
+                for t in snapshot.nfl_teams
+            ):
+                _fail(
+                    f"partial player {player.player_id}: nonparticipation requires an explicit canonical NFL bye"
+                )
+        if player.score_state is PlayerScoreState.MISSING:
+            assignment = next(
+                a for a in evidence.lineups if a.player_id == player.player_id
+            )
+            if assignment.role is LineupRole.STARTER:
+                _fail(
+                    f"partial-week evidence has missing score state for starter {player.player_id}"
+                )
         if (
             player.score_state is PlayerScoreState.IN_PROGRESS
             and player.remaining_status is not RemainingContributionStatus.APPROVED
@@ -807,10 +824,12 @@ def compose_partial_week_scores(
                 )
             remaining = float(supplied_value.unstarted_realized_points)
             consumed.add(player_id)
-        elif state.score_state in {
-            PlayerScoreState.MISSING,
-            PlayerScoreState.NONPARTICIPATING,
-        }:
+        elif state.score_state is PlayerScoreState.NONPARTICIPATING:
+            # Execution admission proved an explicit source-grounded NFL bye;
+            # this is no game contribution, not an imputed missing actual.
+            if supplied_value is not None:
+                _fail(f"bye player {player_id} cannot receive a resimulation input")
+        elif state.score_state is PlayerScoreState.MISSING:
             _fail(
                 f"starter {player_id} has non-executable score state {state.score_state.value}"
             )

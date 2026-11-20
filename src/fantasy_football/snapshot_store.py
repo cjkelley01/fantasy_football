@@ -244,15 +244,32 @@ class SnapshotStore:
             raise SnapshotStoreError(f"snapshot database does not exist: {self.path}")
         if create:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
-        if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+        connection = None
+        try:
+            connection = (
+                sqlite3.connect(self.path)
+                if create
+                else sqlite3.connect(f"{self.path.resolve().as_uri()}?mode=rw", uri=True)
+            )
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA foreign_keys = ON")
+            if connection.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+                raise SnapshotStoreError("SQLite foreign-key enforcement could not be enabled")
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = FULL")
+            return connection
+        except (sqlite3.Error, OSError, SnapshotStoreError) as exc:
+            if connection is not None:
+                connection.close()
+            raise SnapshotStoreError("Could not open the configured snapshot database") from exc
+
+    def check_available(self) -> None:
+        """Verify the configured store without creating or replacing it."""
+        connection = self._connect()
+        try:
+            self._verify_database_schema(connection)
+        finally:
             connection.close()
-            raise SnapshotStoreError("SQLite foreign-key enforcement could not be enabled")
-        connection.execute("PRAGMA journal_mode = WAL")
-        connection.execute("PRAGMA synchronous = FULL")
-        return connection
 
     def initialize(self) -> None:
         existed = self.path.exists()

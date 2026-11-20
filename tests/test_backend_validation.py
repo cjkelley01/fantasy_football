@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 import sqlite3
 import time
 from datetime import timedelta
@@ -237,7 +238,23 @@ def test_trade_chain_acquisition_and_combined_search_reconcile_across_layers(
             matchup for matchup in source.fantasy_matchups if matchup.bracket_type is None
         ),
     )
-    service = ApplicationService(ApplicationDependencies(FixtureStore(snapshot)))
+    from fantasy_football.espn_adapter import capture_response
+    from fantasy_football.snapshot_store import StoredRawResponse
+    from tests.test_automatic_rosters import _owned_policy
+
+    snapshot, policy = _owned_policy(snapshot)
+    source = snapshot.sources[-1]
+    payload = policy.ownership_sources[0][1]
+    store_fixture = FixtureStore(snapshot)
+    response = capture_response(
+        json.loads(payload), source_id=source.source_id, request_type="player_page",
+        endpoint=source.endpoint, view=source.view, parameters=source.parameters,
+        retrieved_at_utc=source.retrieved_at_utc,
+    )
+    store_fixture.loaded = replace(store_fixture.loaded, raw_sources=(
+        StoredRawResponse(response, len(payload), "gzip"),
+    ))
+    service = ApplicationService(ApplicationDependencies(store_fixture))
     store = BackgroundRunStore(tmp_path / "runs.sqlite3")
     coordinator = BackgroundRunCoordinator(service, store)
     request = _action_request(snapshot, execution_mode="sequential_reference").model_copy(

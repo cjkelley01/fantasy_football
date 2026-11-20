@@ -90,9 +90,12 @@ def test_refresh_profile_never_discloses_credentials_and_http_publishes(refresh_
         assert profile_response.status_code == 200
         profile = profile_response.json()
         assert profile == {
-            "profile_id": "configured_local_league", "league_id": 77, "season": 2026,
+            "profile_id": "configured_local_league",
+            "league_id": 77,
+            "season": 2026,
             "credential_mode": "private_credentials_configured",
             "manual_rule_configuration_available": False,
+            "automatic_refresh_enabled": False,
         }
         assert "private-cookie-value" not in profile_response.text
         response = client.post("/api/v1/refreshes", json=_request())
@@ -441,3 +444,94 @@ def test_active_retrieval_does_not_block_coordinator_close_indefinitely(
     release.set()
     assert _wait(coordinator, submitted.refresh_id).status == "cancelled"
 
+
+def test_startup_refresh_requires_persistent_authorization(refresh_system):
+    _, _, coordinator = refresh_system
+    with pytest.raises(ApplicationServiceError, match="not enabled"):
+        coordinator.submit(
+            SnapshotRefreshRequest(**{**_request(), "startup_refresh": True})
+        )
+    assert coordinator.current() is None
+
+
+def test_startup_requests_reuse_recent_attempt_and_manual_retry_is_independent(
+    refresh_system,
+):
+    _, _, coordinator = refresh_system
+    original = coordinator.dependencies.settings_loader()
+    coordinator.dependencies = replace(
+        coordinator.dependencies,
+        settings_loader=lambda: replace(original, auto_refresh_on_startup=True),
+    )
+    request = SnapshotRefreshRequest(**{**_request(), "startup_refresh": True})
+    first = coordinator.submit(request)
+    assert _wait(coordinator, first.refresh_id).status == "completed"
+    assert coordinator.submit(request).refresh_id == first.refresh_id
+    manual = coordinator.submit(SnapshotRefreshRequest(**_request()))
+    assert manual.refresh_id != first.refresh_id
+    assert _wait(coordinator, manual.refresh_id).status == "completed"
+
+
+def test_failed_submission_does_not_leave_an_active_refresh(
+    refresh_system, monkeypatch
+):
+    _, _, coordinator = refresh_system
+
+    def reject(*args, **kwargs):
+        raise RuntimeError("private executor information")
+
+    monkeypatch.setattr(coordinator._executor, "submit", reject)
+    with pytest.raises(ApplicationServiceError, match="could not be queued"):
+        coordinator.submit(SnapshotRefreshRequest(**_request()))
+    assert coordinator.current() is None
+
+
+@pytest.mark.parametrize(
+    "phase", ("translation", "transport", "authentication", "canonical_validation")
+)
+def test_safe_refresh_error_preserves_diagnostic_phase(refresh_system, caplog, phase):
+    _, _, coordinator = refresh_system
+
+    def fail(*args, **kwargs):
+        raise EspnAdapterError("private cookie and payload", phase=phase)
+
+    coordinator.dependencies = replace(coordinator.dependencies, adapter=fail)
+    submitted = coordinator.submit(SnapshotRefreshRequest(**_request()))
+    record = _wait(coordinator, submitted.refresh_id)
+    category = "source_translation" if phase == "translation" else phase
+    assert record.error_code == f"refresh_{category}_failed"
+    assert "private cookie and payload" not in record.model_dump_json() + caplog.text
+
+def test_unavailable_configured_store_can_recover_at_same_path(refresh_system, tmp_path):
+    _, _, coordinator = refresh_system
+    path = tmp_path / "unavailable.sqlite3"
+    store = SnapshotStore(path)
+    service = ApplicationService(ApplicationDependencies(store))
+    coordinator.dependencies = replace(coordinator.dependencies, store=store, application=service)
+    adapter = coordinator.dependencies.adapter
+    calls = []
+    def tracked(*args, **kwargs):
+        calls.append(True)
+        return adapter(*args, **kwargs)
+    coordinator.dependencies = replace(coordinator.dependencies, adapter=tracked)
+    with TestClient(create_app(service, refresh_coordinator=coordinator)) as client:
+        assert client.get("/api/v1/health").status_code == 200
+        missing = client.get("/api/v1/snapshots")
+        assert missing.json()["error"]["code"] == "snapshot_store_unavailable"
+        failed = _wait(coordinator, coordinator.submit(_request_model()).refresh_id)
+        assert failed.error_code == "refresh_storage_failed"
+        assert not path.exists()
+        path.write_bytes(b"existing invalid database")
+        corrupt = client.get("/api/v1/snapshots")
+        assert corrupt.json()["error"]["code"] == "snapshot_store_unavailable"
+        failed = _wait(coordinator, coordinator.submit(_request_model()).refresh_id)
+        assert failed.error_code == "refresh_storage_failed"
+        assert path.read_bytes() == b"existing invalid database"
+        assert not calls
+        restored = tmp_path / "restored.sqlite3"
+        SnapshotStore(restored).initialize()
+        restored.replace(path)
+        assert client.get("/api/v1/snapshots").json() == []
+        assert _wait(coordinator, coordinator.submit(_request_model()).refresh_id).status == "completed"
+        assert calls == [True]
+        assert len(client.get("/api/v1/snapshots").json()) == 1

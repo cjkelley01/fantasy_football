@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import math
 import json
+import math
 from copy import deepcopy
 from dataclasses import replace
 
@@ -14,7 +14,10 @@ from fantasy_football.canonical.model import (
     JsonObject,
     ProjectionClass,
 )
-from fantasy_football.canonical.serialization import snapshot_from_json, snapshot_to_json
+from fantasy_football.canonical.serialization import (
+    snapshot_from_json,
+    snapshot_to_json,
+)
 from fantasy_football.canonical.validation import (
     CanonicalValidationError,
     authoritative_current_matchup_period_scoring_weeks,
@@ -29,7 +32,11 @@ from fantasy_football.espn_adapter import (
     request_with_retries,
     translate_bundle,
 )
-from fantasy_football.live_scoring import BoundaryMethod, NFLGameStatus, ScoreEvidenceStatus
+from fantasy_football.live_scoring import (
+    BoundaryMethod,
+    NFLGameStatus,
+    ScoreEvidenceStatus,
+)
 from tests.adapter_fixtures import source_bundle
 
 
@@ -68,7 +75,14 @@ def test_translate_sanitized_bundle_to_complete_valid_snapshot() -> None:
     protection = {item.player_id: item.is_undroppable for item in snapshot.players}
     assert protection[2] is True
     assert protection[5] is False
-    assert interpretations["undroppable_player_mapping"].status is InterpretationStatus.UNVERIFIED
+    assert (
+        interpretations["undroppable_player_mapping"].status
+        is InterpretationStatus.UNDERSTOOD
+    )
+    assert (
+        interpretations["undroppable_player_mapping"].normalized_value
+        == "false_is_protected"
+    )
     assert interpretations["undroppable_player_mapping"].source_id.startswith("player-current-")
     assert any(
         game.scoring_week == 1 and game.status is NFLGameStatus.COMPLETED
@@ -82,6 +96,36 @@ def test_contradictory_roster_undroppable_evidence_fails() -> None:
     player["droppable"] = not player["droppable"]
     with pytest.raises(EspnAdapterError, match="player.droppable conflicts"):
         translate_bundle(bundle)
+
+
+def test_verified_drop_polarity_preserves_protection_and_historical_gate() -> None:
+    from fantasy_football.evolving_state import (
+        TransactionStateError,
+        _validate_drop_permission,
+    )
+
+    snapshot = translate_bundle(source_bundle()).snapshot
+    with pytest.raises(
+        TransactionStateError, match="protected by the enabled ESPN undroppable list"
+    ):
+        _validate_drop_permission(snapshot, 2)
+    assert _validate_drop_permission(snapshot, 5) is not None
+    historical = replace(
+        snapshot,
+        rules=replace(
+            snapshot.rules,
+            interpretations=tuple(
+                replace(
+                    item, status=InterpretationStatus.UNVERIFIED, normalized_value=None
+                )
+                if item.rule_id == "undroppable_player_mapping"
+                else item
+                for item in snapshot.rules.interpretations
+            ),
+        ),
+    )
+    with pytest.raises(TransactionStateError, match="polarity is not verified"):
+        _validate_drop_permission(historical, 5)
 
 
 def test_identical_source_bundle_translates_deterministically() -> None:
