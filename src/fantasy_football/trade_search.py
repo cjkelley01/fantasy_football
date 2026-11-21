@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
+from functools import lru_cache
 import hashlib
 import json
 import math
@@ -14,6 +15,7 @@ from fantasy_football.evolving_state import EvolvingLeagueState, validate_evolvi
 from fantasy_football.monte_carlo import (
     MonteCarloBatchResult,
     MonteCarloConfig,
+    _extend_monte_carlo_prefix,
     combine_monte_carlo_batches,
     run_monte_carlo_batch,
 )
@@ -280,6 +282,19 @@ def _precision_configuration(
     )
 
 
+def _combine_progressive_prefix(snapshot, configuration, model, batches, previous):
+    if previous is not None:
+        return _extend_monte_carlo_prefix(
+            snapshot, configuration, model, previous, batches[-1]
+        )
+    return combine_monte_carlo_batches(snapshot, configuration, model, batches)
+
+
+def _ranking_prefix(comparison, count):
+    batch = comparison.hypothetical.batch
+    return batch if len(batch.path_indices) == count else None
+
+
 def _all_team_precision(
     comparison: ManualScenarioComparison,
     target: float,
@@ -417,27 +432,42 @@ def evaluate_progressive_state_groups(
             initial_evolving_state=state,
         )
 
-    def combined(state, batches, count):
+    def combined(state, batches, count, previous=None):
         end = simulation.first_path_index + count
-        return combine_monte_carlo_batches(
+        return _combine_progressive_prefix(
             snapshot, config(state, 0, count), model,
             tuple(batch for batch in batches if batch.path_indices and batch.path_indices[-1] < end),
+            previous,
         )
+
+    def evaluate(state_id, group, baseline, count, baseline_precision):
+        previous = comparisons.get(state_id)
+        result = compare_completed_scenario_batches(
+            snapshot, baseline_state,
+            _canonical_completed(snapshot, state_id, group.state), baseline,
+            combined(
+                group.state, scenario_batches[state_id], count,
+                previous.hypothetical.batch if previous is not None else None,
+            ), precision,
+            _baseline_precision=baseline_precision,
+            _previous_comparison=previous,
+        )
+        comparisons[state_id] = result
+        return result.baseline
 
     current_paths = 0
     if selected_ids and not (should_stop is not None and should_stop()):
         count = sampling.initial_paths
         baseline_batches.append(_run_batch(snapshot, config(baseline_state, 0, count), model, parallel_execution))
         baseline = combined(baseline_state, baseline_batches, count)
+        baseline_precision = None
         for state_id in selected_ids:
             if should_stop is not None and should_stop():
                 break
             group = get_group(state_id)
             scenario_batches[state_id].append(_run_batch(snapshot, config(group.state, 0, count), model, parallel_execution))
-            comparisons[state_id] = compare_completed_scenario_batches(
-                snapshot, baseline_state,
-                _canonical_completed(snapshot, state_id, group.state), baseline,
-                combined(group.state, scenario_batches[state_id], count), precision,
+            baseline_precision = evaluate(
+                state_id, group, baseline, count, baseline_precision
             )
             emit(SearchProgressStage.INITIAL_EVALUATION, 0, set(comparisons))
         current_paths = count
@@ -454,11 +484,18 @@ def evaluate_progressive_state_groups(
             return set()
         retained = set(ordered[: min(sampling.minimum_finalist_states, len(ordered))])
         leader = ordered[0]
+
+        @lru_cache(maxsize=4)
+        def prefix_at(state_id, count):
+            return _ranking_prefix(comparisons[state_id], count) or combined(
+                get_group(state_id).state, scenario_batches[state_id], count
+            )
+
         for state_id in ordered[1:]:
             overlap = min(comparisons[leader].matched_path_count, comparisons[state_id].matched_path_count)
             difference = paired_championship_difference(
-                combined(get_group(leader).state, scenario_batches[leader], overlap),
-                combined(get_group(state_id).state, scenario_batches[state_id], overlap),
+                prefix_at(leader, overlap),
+                prefix_at(state_id, overlap),
                 team_id=requesting_team_id,
                 confidence_level=sampling.confidence_level,
                 simultaneous_comparison_count=pair_looks,
@@ -484,16 +521,15 @@ def evaluate_progressive_state_groups(
             break
         baseline_batches.append(_run_batch(snapshot, config(baseline_state, current_paths, count), model, parallel_execution))
         next_paths = current_paths + count
-        baseline = combined(baseline_state, baseline_batches, next_paths)
+        baseline = combined(baseline_state, baseline_batches, next_paths, baseline)
+        baseline_precision = None
         for state_id in sorted(active):
             if should_stop is not None and should_stop():
                 break
             group = get_group(state_id)
             scenario_batches[state_id].append(_run_batch(snapshot, config(group.state, current_paths, count), model, parallel_execution))
-            comparisons[state_id] = compare_completed_scenario_batches(
-                snapshot, baseline_state,
-                _canonical_completed(snapshot, state_id, group.state), baseline,
-                combined(group.state, scenario_batches[state_id], next_paths), precision,
+            baseline_precision = evaluate(
+                state_id, group, baseline, next_paths, baseline_precision
             )
         current_paths = next_paths
         round_index += 1

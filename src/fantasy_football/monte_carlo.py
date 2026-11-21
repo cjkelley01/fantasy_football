@@ -654,9 +654,12 @@ def _aggregate(
     config: MonteCarloConfig,
     model: PlayerOutcomeModel,
     paths: tuple[MonteCarloPathSummary, ...],
+    *,
+    validated_prefix: MonteCarloBatchResult | None = None,
 ) -> MonteCarloBatchResult:
     team_ids = tuple(sorted(item.team_id for item in snapshot.teams))
-    for path in paths:
+    first_new = len(validated_prefix.paths) if validated_prefix is not None else 0
+    for path in paths[first_new:]:
         _validate_path_summary(snapshot, path)
     complete = tuple(
         item for item in paths if item.status is SeasonCompletionStatus.COMPLETE
@@ -665,24 +668,37 @@ def _aggregate(
         item for item in paths if item.status is SeasonCompletionStatus.INCOMPLETE
     )
     complete_output = len(complete) == len(paths)
+    previous_teams = (
+        {team.team_id: team for team in validated_prefix.teams}
+        if validated_prefix is not None
+        else {}
+    )
+    first_new_complete = validated_prefix.completed_paths if validated_prefix else 0
     aggregates = []
     for team_id in team_ids:
         outcomes = tuple(
             next(item for item in path.teams if item.team_id == team_id)
             for path in complete
         )
-        placements = tuple(item.final_placement for item in outcomes)
+        previous_team = previous_teams.get(team_id)
+        new_outcomes = outcomes[first_new_complete:]
+        placements = tuple(item.final_placement for item in new_outcomes)
         if any(item is None for item in placements):
             raise MonteCarloError(
                 f"complete paths lack final placement for team {team_id}"
             )
+        previous_placements = dict(previous_team.placement_counts) if previous_team else {}
         placement_counts = tuple(
-            (place, sum(value == place for value in placements))
+            (place, previous_placements.get(place, 0) + sum(value == place for value in placements))
             for place in range(1, len(team_ids) + 1)
         )
         denominator = len(paths) if complete_output else 0
-        champions = sum(item.final_placement == 1 for item in outcomes)
-        playoffs = sum(item.playoff_qualified is True for item in outcomes)
+        champions = (previous_team.championship_wins if previous_team else 0) + sum(
+            item.final_placement == 1 for item in new_outcomes
+        )
+        playoffs = (previous_team.playoff_qualifications if previous_team else 0) + sum(
+            item.playoff_qualified is True for item in new_outcomes
+        )
         aggregates.append(
             TeamMonteCarloAggregate(
                 team_id,
@@ -691,7 +707,8 @@ def _aggregate(
                 champions / denominator if denominator else None,
                 playoffs,
                 playoffs / denominator if denominator else None,
-                sum(item.final_placement == 2 for item in outcomes),
+                (previous_team.runner_up_finishes if previous_team else 0)
+                + sum(item.final_placement == 2 for item in new_outcomes),
                 placement_counts,
                 math.fsum(item.final_placement for item in outcomes) / len(outcomes)
                 if outcomes
@@ -723,12 +740,15 @@ def _aggregate(
             != len(complete) * qualifier_count
         ):
             raise MonteCarloError("playoff qualification totals do not reconcile")
-    capabilities: dict[str, int] = {}
-    for path in incomplete:
+    capabilities = dict(validated_prefix.incomplete_capabilities) if validated_prefix else {}
+    first_new_incomplete = validated_prefix.incomplete_paths if validated_prefix else 0
+    for path in incomplete[first_new_incomplete:]:
         for capability in path.unresolved_capabilities:
             capabilities[capability] = capabilities.get(capability, 0) + 1
-    simulation_config_sha256 = simulation_configuration_fingerprint(
-        snapshot, config, model
+    simulation_config_sha256 = (
+        validated_prefix.simulation_config_sha256
+        if validated_prefix is not None
+        else simulation_configuration_fingerprint(snapshot, config, model)
     )
     return MonteCarloBatchResult(
         snapshot.snapshot_id or "",
@@ -753,7 +773,9 @@ def _aggregate(
             "conditionally_independent_player_weeks_v1",
             "fixed_requested_path_denominator_required_for_frequencies",
         ),
-        projection_class_counts(snapshot),
+        validated_prefix.projection_class_counts
+        if validated_prefix is not None
+        else projection_class_counts(snapshot),
     )
 
 
@@ -941,3 +963,31 @@ def combine_monte_carlo_batches(
         ):
             raise MonteCarloError("combined batch identity does not match")
     return aggregate_monte_carlo_paths(snapshot, config, model, paths)
+
+
+def _extend_monte_carlo_prefix(snapshot, config, model, prefix, suffix):
+    """Append a new batch to a prefix already reconciled in this evaluation."""
+    expected_config = simulation_configuration_fingerprint(snapshot, config, model)
+    expected_run = _run_identity(expected_config, config.master_seed)
+    for batch in (prefix, suffix):
+        if batch.simulation_config_sha256 != expected_config:
+            raise MonteCarloError("combined batch simulation configuration does not match")
+        if batch.run_identity_sha256 != expected_run:
+            raise MonteCarloError("combined batch run identity does not match")
+        if (
+            batch.snapshot_id != snapshot.snapshot_id
+            or batch.model_id != model.model_id
+            or batch.model_parameters != model.parameters
+            or batch.master_seed != config.master_seed
+        ):
+            raise MonteCarloError("combined batch identity does not match")
+    suffix_indices = tuple(path.path_index for path in suffix.paths)
+    if (
+        not suffix_indices
+        or suffix_indices != suffix.path_indices
+        or prefix.path_indices + suffix_indices != config.path_indices
+    ):
+        raise MonteCarloError("combined batches do not exactly cover configured path range")
+    return _aggregate(
+        snapshot, config, model, prefix.paths + suffix.paths, validated_prefix=prefix
+    )

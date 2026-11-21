@@ -666,12 +666,26 @@ def _paired_metric(
     placement: int | None,
     confidence_level: float,
     comparison_count: int,
+    _prefix: tuple[PairedMetricDifference, int, int] | None = None,
 ) -> PairedMetricDifference:
     differences = tuple(scenario - baseline for baseline, scenario in zip(baseline_values, scenario_values, strict=True))
     count = len(differences)
-    mean = math.fsum(differences) / count
     improved = sum(item > 0 for item in differences)
     worsened = sum(item < 0 for item in differences)
+    if _prefix is None:
+        mean = math.fsum(differences) / count
+        baseline_probability = math.fsum(baseline_values) / count
+        scenario_probability = math.fsum(scenario_values) / count
+    else:
+        previous, previous_baseline_count, previous_scenario_count = _prefix
+        count += previous.improved_paths + previous.worsened_paths + previous.unchanged_paths
+        improved += previous.improved_paths
+        worsened += previous.worsened_paths
+        # Counts are integers. Convert once, as fsum did for the complete
+        # prefix, before applying the same division.
+        mean = float(improved - worsened) / count
+        baseline_probability = float(previous_baseline_count + sum(baseline_values)) / count
+        scenario_probability = float(previous_scenario_count + sum(scenario_values)) / count
     improved_interval = binomial_wilson_interval(
         improved,
         count,
@@ -697,12 +711,12 @@ def _paired_metric(
     return PairedMetricDifference(
         metric,
         placement,
-        math.fsum(baseline_values) / count,
-        math.fsum(scenario_values) / count,
+        baseline_probability,
+        scenario_probability,
         mean,
         improved,
         worsened,
-        sum(item == 0 for item in differences),
+        count - improved - worsened,
         interval,
     )
 
@@ -972,6 +986,8 @@ def compare_completed_scenario_batches(
     precision: PrecisionConfiguration,
     *,
     include_static_lineup_explanations: bool = True,
+    _baseline_precision: MonteCarloPrecisionResult | None = None,
+    _previous_comparison: ManualScenarioComparison | None = None,
 ) -> ManualScenarioComparison:
     """Build the accepted M4 paired result from matched accumulated batches."""
 
@@ -986,15 +1002,53 @@ def compare_completed_scenario_batches(
         _fail("paired scenario comparison requires complete reconciled paths")
     if baseline_batch.path_indices != scenario_batch.path_indices:
         _fail("baseline and scenario path coverage differs")
-    for left, right in zip(baseline_batch.paths, scenario_batch.paths, strict=True):
+    start = 0
+    previous_teams = {}
+    previous_baseline_teams = {}
+    previous_scenario_teams = {}
+    if _previous_comparison is not None:
+        previous = _previous_comparison
+        start = previous.matched_path_count
+        if (
+            previous.scenario != completed
+            or previous.baseline.configuration is not precision
+            or not 0 < start < len(baseline_batch.paths)
+        ):
+            _fail("prepared comparison does not match the scenario and precision prefix")
+        for old, current in (
+            (previous.baseline.batch, baseline_batch),
+            (previous.hypothetical.batch, scenario_batch),
+        ):
+            if (
+                old.run_identity_sha256 != current.run_identity_sha256
+                or len(old.paths) != start
+                or len(current.paths) <= start
+                or any(
+                    before is not after
+                    for before, after in zip(old.paths, current.paths, strict=False)
+                )
+            ):
+                _fail("prepared comparison observations are not an exact prefix")
+        previous_teams = {team.team_id: team for team in previous.teams}
+        previous_baseline_teams = {team.team_id: team for team in previous.baseline.batch.teams}
+        previous_scenario_teams = {team.team_id: team for team in previous.hypothetical.batch.teams}
+    for left, right in zip(baseline_batch.paths[start:], scenario_batch.paths[start:], strict=True):
         if left.path_index != right.path_index or left.scenario_sha256 != right.scenario_sha256:
             _fail("baseline and scenario do not use matched player-week outcomes")
-    baseline_precision = analyze_monte_carlo_precision(baseline_batch, precision)
+    if _baseline_precision is None:
+        baseline_precision = analyze_monte_carlo_precision(baseline_batch, precision)
+    else:
+        if (
+            _baseline_precision.batch is not baseline_batch
+            or _baseline_precision.configuration is not precision
+        ):
+            _fail("prepared baseline precision does not match the paired comparison")
+        baseline_precision = _baseline_precision
     scenario_precision = analyze_monte_carlo_precision(scenario_batch, precision)
     team_count = len(snapshot.teams)
     metric_count = team_count * (team_count + 2)
-    baseline_paths = {item.path_index: item for item in baseline_batch.paths}
-    scenario_paths = {item.path_index: item for item in scenario_batch.paths}
+    baseline_paths = {item.path_index: item for item in baseline_batch.paths[start:]}
+    scenario_paths = {item.path_index: item for item in scenario_batch.paths[start:]}
     comparisons = []
     for team_id in sorted(item.team_id for item in snapshot.teams):
         pairs = tuple(
@@ -1002,8 +1056,13 @@ def compare_completed_scenario_batches(
                 next(item for item in baseline_paths[path].teams if item.team_id == team_id),
                 next(item for item in scenario_paths[path].teams if item.team_id == team_id),
             )
-            for path in baseline_batch.path_indices
+            for path in baseline_batch.path_indices[start:]
         )
+        previous_team = previous_teams.get(team_id)
+        old_baseline = previous_baseline_teams.get(team_id)
+        old_scenario = previous_scenario_teams.get(team_id)
+        baseline_places = dict(old_baseline.placement_counts) if old_baseline else {}
+        scenario_places = dict(old_scenario.placement_counts) if old_scenario else {}
         championship = _paired_metric(
             tuple(int(left.final_placement == 1) for left, _ in pairs),
             tuple(int(right.final_placement == 1) for _, right in pairs),
@@ -1011,6 +1070,11 @@ def compare_completed_scenario_batches(
             placement=None,
             confidence_level=precision.confidence_level,
             comparison_count=metric_count,
+            _prefix=(
+                previous_team.championship,
+                old_baseline.championship_wins,
+                old_scenario.championship_wins,
+            ) if previous_team else None,
         )
         playoff = _paired_metric(
             tuple(int(left.playoff_qualified is True) for left, _ in pairs),
@@ -1019,6 +1083,11 @@ def compare_completed_scenario_batches(
             placement=None,
             confidence_level=precision.confidence_level,
             comparison_count=metric_count,
+            _prefix=(
+                previous_team.playoff_qualification,
+                old_baseline.playoff_qualifications,
+                old_scenario.playoff_qualifications,
+            ) if previous_team else None,
         )
         placements = tuple(
             _paired_metric(
@@ -1028,15 +1097,24 @@ def compare_completed_scenario_batches(
                 placement=place,
                 confidence_level=precision.confidence_level,
                 comparison_count=metric_count,
+                _prefix=(
+                    previous_team.final_placements[place - 1],
+                    baseline_places[place],
+                    scenario_places[place],
+                ) if previous_team else None,
             )
             for place in range(1, team_count + 1)
         )
         comparisons.append(TeamScenarioComparison(team_id, championship, playoff, placements))
-    lineup_explanations = (
-        _lineup_explanations(snapshot, baseline_state, completed.state)
-        if include_static_lineup_explanations
-        else ()
-    )
+    lineup_explanations = ()
+    if include_static_lineup_explanations:
+        # The exact prefix checks bind the baseline and completed scenario to
+        # the same runs. The projection-only explanations are independent of n.
+        lineup_explanations = (
+            _previous_comparison.lineup_explanations
+            if _previous_comparison is not None and _previous_comparison.lineup_explanations
+            else _lineup_explanations(snapshot, baseline_state, completed.state)
+        )
     identity_core = {
         "contract": "m4-paired-scenario-comparison-v1",
         "scenario_sha256": completed.scenario_sha256,

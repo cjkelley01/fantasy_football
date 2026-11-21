@@ -7,9 +7,15 @@ from pathlib import Path
 
 import pytest
 
-from fantasy_football import search_orchestration, trade_evaluation
+from fantasy_football import search_orchestration, trade_evaluation, trade_search
 from fantasy_football.canonical.validation import CanonicalValidationError
 from fantasy_football.evolving_state import TransactionStateError
+from fantasy_football.monte_carlo import (
+    MonteCarloError,
+    _extend_monte_carlo_prefix,
+    combine_monte_carlo_batches,
+    run_monte_carlo_batch,
+)
 from fantasy_football.search_orchestration import (
     OrchestrationStage,
     OrchestrationStopReason,
@@ -212,12 +218,15 @@ def test_mutable_snapshot_graph_falls_back_to_validation():
 
 
 def test_multiple_numerical_workers_preserve_path_indexed_results() -> None:
-    sequential = _run(_configuration())
-    parallel = _run(_configuration(
+    config = _configuration()
+    sampling = replace(config.sampling, target_paired_half_width=0.01)
+    sequential = _run(replace(config, sampling=sampling))
+    parallel_config = _configuration(
         SearchExecutionMode.BOUNDED_OVERLAP,
         worker_count=2,
         maximum_in_flight_states=1,
-    ))
+    )
+    parallel = _run(replace(parallel_config, sampling=sampling))
     assert sequential.progressive_evaluation is not None
     assert parallel.progressive_evaluation is not None
     left = {
@@ -235,6 +244,7 @@ def test_multiple_numerical_workers_preserve_path_indexed_results() -> None:
         ) for item in parallel.progressive_evaluation.state_evaluations
     }
     assert left == right
+    assert all(paths == 2 for paths, _, _ in left.values())
 
 
 def test_candidate_and_evaluation_limits_are_disclosed() -> None:
@@ -645,3 +655,118 @@ def test_generic_progressive_state_evaluation_matches_accepted_m54_trade_policy(
     assert generic_by_state == accepted_by_state
     assert generic.progressive_evaluation.competitive_state_ids == accepted.competitive_state_ids
     assert generic.progressive_evaluation.ranking_resolved == accepted.coverage.ranking_resolved
+
+
+@pytest.mark.parametrize(
+    "case", ("full", "unequal", "eliminated", "cancel", "no_completed", "state_cap")
+)
+def test_progressive_prefix_reuse_matches_full_rebuild(case, monkeypatch):
+    snapshot = _scenario_snapshot_with_bench()
+    state = _state(snapshot)
+    config = _configuration(evaluation_state_limit=2 if case == "state_cap" else None)
+    initial, step, maximum = (16, 8, 32) if case == "eliminated" else (1, 1, 4)
+    config = replace(
+        config,
+        sampling=replace(
+            config.sampling,
+            initial_paths=initial,
+            refinement_batch_paths=step,
+            maximum_paths_per_state=maximum,
+            target_paired_half_width=0.01,
+        ),
+    )
+    simulation = replace(simulation_config(maximum), first_path_index=11)
+    model = PrescribedModel()
+    run_batch = trade_search._run_batch
+    batches = []
+
+    def counted(*args, **kwargs):
+        result = run_batch(*args, **kwargs)
+        batches.append(result)
+        return result
+
+    monkeypatch.setattr(trade_search, "_run_batch", counted)
+    if case == "unequal":
+        first = []
+
+        def precision(comparison, _target):
+            if not first:
+                first.append(comparison.scenario.scenario_sha256)
+            return comparison.scenario.scenario_sha256 == first[0]
+
+        monkeypatch.setattr(trade_search, "_all_team_precision", precision)
+
+    stop_after = {"cancel": 3, "no_completed": 1}.get(case)
+
+    def run():
+        batches.clear()
+        result = execute_search_orchestration(
+            snapshot,
+            state,
+            config,
+            simulation,
+            model,
+            stop_requested=lambda: stop_after is not None and len(batches) >= stop_after,
+        )
+        try:
+            return (
+                result.run_sha256,
+                result.enumeration,
+                tuple(result.iter_candidates()),
+                result.progressive_evaluation,
+                result.stop_reason,
+                tuple(batches),
+            )
+        finally:
+            result.close()
+
+    prepared = run()
+    compare = trade_search.compare_completed_scenario_batches
+
+    def fresh_comparison(*args, **kwargs):
+        kwargs.pop("_baseline_precision")
+        kwargs.pop("_previous_comparison")
+        return compare(*args, **kwargs)
+
+    def rebuild(snapshot, configuration, model, batches, _previous):
+        return combine_monte_carlo_batches(snapshot, configuration, model, batches)
+
+    monkeypatch.setattr(trade_search, "compare_completed_scenario_batches", fresh_comparison)
+    monkeypatch.setattr(trade_search, "_combine_progressive_prefix", rebuild)
+    monkeypatch.setattr(trade_search, "_ranking_prefix", lambda *_: None)
+    monkeypatch.setattr(trade_search, "lru_cache", lambda **_: lambda fn: fn)
+    assert prepared == run()
+    evaluation = prepared[3]
+    exposures = tuple(row.completed_paths for row in evaluation.state_evaluations)
+    if case == "full":
+        assert set(exposures) == {maximum}
+    if case == "unequal":
+        assert set(exposures) == {initial, maximum}
+    if case == "eliminated":
+        assert any(0 < paths < maximum for paths in exposures)
+        assert len(evaluation.competitive_state_ids) < len(exposures)
+    if case in {"cancel", "state_cap"}:
+        assert 0 in exposures and any(exposures)
+    if case == "no_completed":
+        assert not any(exposures)
+        assert evaluation.baseline_paths_computed == initial
+
+
+def test_prefix_extension_rejects_incompatible_identity_and_overlap():
+    snapshot = _scenario_snapshot_with_bench()
+    model = PrescribedModel()
+    configuration = simulation_config(2)
+    initial = replace(configuration, path_count=1)
+    prefix = run_monte_carlo_batch(snapshot, initial, model)
+    suffix = run_monte_carlo_batch(
+        snapshot, replace(initial, first_path_index=1), model
+    )
+    assert _extend_monte_carlo_prefix(snapshot, configuration, model, prefix, suffix) == (
+        combine_monte_carlo_batches(snapshot, configuration, model, (prefix, suffix))
+    )
+    with pytest.raises(MonteCarloError, match="run identity"):
+        _extend_monte_carlo_prefix(
+            snapshot, configuration, model, prefix, replace(suffix, run_identity_sha256="wrong")
+        )
+    with pytest.raises(MonteCarloError, match="path range"):
+        _extend_monte_carlo_prefix(snapshot, configuration, model, prefix, prefix)

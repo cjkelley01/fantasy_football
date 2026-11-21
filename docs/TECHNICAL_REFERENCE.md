@@ -747,6 +747,19 @@ validation. Completed states and their transitions retain independent
 validation, and all candidate IDs and ordering rules use their existing inputs.
 The scope ends with enumeration.
 
+Progressive evaluation extends each reconciled state prefix with its next
+contiguous batch after checking numerical configuration, model, seed and path
+identity. Complete-path counts and paired event counts accumulate from the new
+observations, while floating-point season averages retain their existing
+summation order. A look shares its exact baseline precision calculation and
+reuses already combined candidate prefixes for ranking. An extended comparison
+reuses its projection-only lineup explanations for the same verified states.
+Shorter overlaps
+reconstruct the exact prefix when needed, with up to four memo entries for
+that ranking look. Reuse ends with the search. Confidence calculations,
+allocation, stopping and the unresolved progressive inference obligation remain
+under the existing methodology and validation contracts.
+
 `SearchResultIndex` stores trusted-process pickle candidate/state/result payloads; it is not public interchange, an independent forged-input validator or a safe untrusted import format. Use `result.iter_candidates()` in either mode: bounded result.candidates is intentionally empty. Index iteration pages by last candidate ID (`candidate_id > last`, ascending), distinct from HTTP offset pagination. Successfully returned result handles are caller-owned and require `close()` in finally; the index has context-manager methods, **the result handle does not**. Closure is idempotent and removes temporary DB/sidecars. Creation/bounded-generation failures close explicitly. Until result handoff, the coordinator owns the index and attempts close on evaluation/progress/export failure before re-raising the original exception; an OSError during close is attached as a note. **Search Scratch Cleanup** tracks independent acceptance of these failure and handoff regressions. Garbage collection is not deterministic cleanup acceptance. [C13](TECHNICAL_REFERENCE.md#ownership-and-lifetime) preserves separate scratch, bounded durable history, checkpoint, immutable snapshot and user-export ownership; exact T8/T9 runtime/storage/lifecycle details stay with their current owners.
 
 ### Retained HTTP query allowlist
