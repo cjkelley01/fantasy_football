@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, fields, is_dataclass, replace
@@ -603,6 +604,7 @@ def run_monte_carlo_path(
     *,
     retain_result: bool = False,
     lineup_workspace: LineupOptimizationWorkspace | None = None,
+    _on_season_start: Callable[[], None] | None = None,
 ) -> tuple[MonteCarloPathSummary, DeterministicSeasonResult | None]:
     if path_index not in config.path_indices:
         raise MonteCarloError(f"path_index={path_index} is outside configured range")
@@ -652,6 +654,8 @@ def run_monte_carlo_path(
                 if partial_input is None
                 else _partial_week_draws(snapshot, partial_input, scenario)
             )
+            if _on_season_start is not None:
+                _on_season_start()
             season = simulate_deterministic_season(
                 snapshot,
                 season_scenario,
