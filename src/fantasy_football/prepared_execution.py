@@ -8,6 +8,7 @@ equivalent paths replay its native indexed effect, not its validation/search.
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import replace
 from typing import NamedTuple
 
 from fantasy_football.compact_season_state import CompactSeasonState
@@ -16,6 +17,8 @@ from fantasy_football.evolving_state import (
     TransactionAction,
     TransactionPhase,
     TransactionRecord,
+    advance_cycle,
+    validate_evolving_state,
 )
 from fantasy_football.lineup_optimizer import optimize_starting_lineup
 from fantasy_football.prepared_season import prepare_season
@@ -110,6 +113,40 @@ class PreparedExecution:
                 return self.initial_arrays[policy].fork()
         return CompactSeasonState.from_reference(self.prepared, reference)
 
+    def reference_state(self, state):
+        """Materialize the compact state, retaining the source roster order."""
+        result = state.to_reference()
+        source_ids = tuple(entry.player_id for entry in state.source.roster_entries)
+        if tuple(entry.player_id for entry in result.roster_entries) != source_ids:
+            by_id = {entry.player_id: entry for entry in result.roster_entries}
+            # All roster mutations in this coordinator enter via start().
+            if by_id.keys() != set(source_ids):
+                raise ValueError("native roster differs from its reference ordering")
+            result = replace(
+                result, roster_entries=tuple(by_id[pid] for pid in source_ids)
+            )
+        return result
+
+    def apply_trade(self, state, trades):
+        """Use the reference atomic transition once per occupied weekly boundary."""
+        from fantasy_football.effective_trades import apply_effective_trade
+
+        before = self.reference_state(state)
+        after = before
+        for trade in trades:
+            after = apply_effective_trade(self.snapshot, after, trade)
+        return before, self.start(after)
+
+    def handoff_observed_week(self, reference):
+        """Admit the fully scored observed week at the next cycle boundary."""
+        validate_evolving_state(reference, self.snapshot)
+        state = self.start(reference)
+        if self.reference_state(state) != reference:
+            raise ValueError(
+                "observed-week state does not round-trip through native execution"
+            )
+        return state
+
     def regular_scores(self, week, standings, frozen):
         return _regular_transition(
             self.snapshot,
@@ -150,6 +187,18 @@ class PreparedExecution:
         )
 
     def advance(self, state, week):
+        next_cycle = state.cycle_id + 1
+        if any(
+            item.hold_until_cycle is not None and item.hold_until_cycle < next_cycle
+            for item in state.availability_by_player
+        ):
+            # Match the reference admission error for an expired holding cycle.
+            advance_cycle(
+                self.reference_state(state),
+                self.snapshot,
+                cycle_id=next_cycle,
+                scoring_week=week,
+            )
         period = self.periods[week]
         if period != state.matchup_period_id:
             state.matchup_acquisitions = [0] * len(self.prepared.team_ids)
@@ -186,6 +235,7 @@ class PreparedExecution:
             tuple(state.owner_by_player),
             tuple(state.slot_by_player),
             tuple(state.raw_owner_by_player),
+            state.source.roster_entries,
             tuple(state.availability_by_player),
             tuple(state.waiver_priority),
             tuple(state.initial_waiver_priority),
@@ -201,7 +251,7 @@ class PreparedExecution:
         cached = self.transitions.get(key)
         if cached is None:
             self.transition_misses += 1
-            before = state.to_reference()
+            before = self.reference_state(state)
             result = execute_weekly_essential_transactions(
                 self.snapshot,
                 before,

@@ -915,6 +915,7 @@ def simulate_deterministic_season(
     partial_week: DeterministicPartialWeekInput | None = None,
     effective_trades: tuple[EffectiveTrade, ...] = (),
     _native_execution: bool = False,
+    _retain_native_trace: bool = False,
 ) -> DeterministicSeasonResult:
     """Execute one settings-driven deterministic path without network or randomness."""
 
@@ -1076,26 +1077,33 @@ def simulate_deterministic_season(
         )
     native = None
     native_state = None
-    if _native_execution and partial_week is None and not effective_trades:
+    if _native_execution:
         from fantasy_football.prepared_execution import PreparedExecution
 
         if lineup_workspace.execution is None:
             lineup_workspace.execution = PreparedExecution(lineup_workspace)
-        native = lineup_workspace.execution
+        prepared_execution = lineup_workspace.execution
         if transaction_policy.automatic_rosters is not None:
             from fantasy_football.automatic_rosters import prepared_ownership
 
             prepared_ownership(
                 snapshot, transaction_policy.automatic_rosters, lineup_workspace
             )
-        if default_initial and type(ir_policy) is IRPolicy:
-            native.initial_references.setdefault(ir_policy, evolving)
-        native_state = native.start(evolving)
+        if partial_week is None:
+            native = prepared_execution
+            if default_initial and type(ir_policy) is IRPolicy and not effective_trades:
+                native.initial_references.setdefault(ir_policy, evolving)
+            native_state = native.start(evolving)
 
     for scoring_week in range(
         snapshot.first_simulation_week, snapshot.final_simulation_week + 1
     ):
         if scoring_week != snapshot.first_simulation_week:
+            if _native_execution and native is None and partial_week is not None:
+                # Only the evolving roster goes into compact storage. The
+                # shared coordinator keeps the settled standings and bracket.
+                native = prepared_execution
+                native_state = native.handoff_observed_week(evolving)
             if native is not None:
                 native.advance(native_state, scoring_week)
             else:
@@ -1117,7 +1125,7 @@ def simulate_deterministic_season(
                         initial_standings=initial_standings,
                         standings=standings,
                         weeks=weeks,
-                        evolving_state=native_state.to_reference()
+                        evolving_state=native.reference_state(native_state)
                         if native is not None
                         else evolving,
                         postseason_state=postseason,
@@ -1144,7 +1152,7 @@ def simulate_deterministic_season(
                     initial_standings=initial_standings,
                     standings=standings,
                     weeks=weeks,
-                    evolving_state=native_state.to_reference()
+                    evolving_state=native.reference_state(native_state)
                     if native is not None
                     else evolving,
                     postseason_state=None,
@@ -1184,13 +1192,30 @@ def simulate_deterministic_season(
         is_partial_week = (
             partial_week is not None and scoring_week == snapshot.first_simulation_week
         )
+        before_trade = None
         if not is_partial_week:
-            for trade in effective_trades:
-                if trade.scoring_week == scoring_week:
-                    evolving = apply_effective_trade(snapshot, evolving, trade)
+            trades_this_week = tuple(
+                trade
+                for trade in effective_trades
+                if trade.scoring_week == scoring_week
+            )
+            if trades_this_week:
+                if native is not None:
+                    before_trade, native_state = native.apply_trade(
+                        native_state, trades_this_week
+                    )
+                else:
+                    for trade in trades_this_week:
+                        evolving = apply_effective_trade(snapshot, evolving, trade)
         if is_partial_week:
             eligible_team_ids = ()
-        if native is not None and native.no_actions(native_state, eligible_team_ids):
+        if (
+            native is not None
+            and partial_week is None
+            and not effective_trades
+            and not _retain_native_trace
+            and native.no_actions(native_state, eligible_team_ids)
+        ):
             transaction_result = None
         elif native is not None:
             pre_transaction_state, transaction_result, native_state = native.weekly(
@@ -1218,7 +1243,9 @@ def simulate_deterministic_season(
                 initial_standings=initial_standings,
                 standings=standings,
                 weeks=weeks,
-                evolving_state=pre_transaction_state,
+                evolving_state=before_trade
+                if before_trade is not None
+                else pre_transaction_state,
                 postseason_state=postseason,
                 configuration_provenance=configuration_provenance,
             )
@@ -1307,7 +1334,7 @@ def simulate_deterministic_season(
             )
         regular_transition = None
         if phase is MatchupPhase.REGULAR:
-            if native is not None:
+            if native is not None and not _retain_native_trace:
                 standings = native.regular_scores(scoring_week, standings, frozen)
             else:
                 regular_transition = resolve_regular_season_week(
@@ -1316,9 +1343,19 @@ def simulate_deterministic_season(
                     standings,
                     lineups,
                     scores,
-                    roster_entries=evolving.roster_entries,
+                    roster_entries=native.roster(native_state)
+                    if native is not None
+                    else evolving.roster_entries,
                     require_projected_availability=not is_partial_week,
                 )
+                if (
+                    native is not None
+                    and native.regular_scores(scoring_week, standings, frozen)
+                    != regular_transition.standings
+                ):
+                    raise SeasonSimulationError(
+                        "native standings differ from the reference trace"
+                    )
                 standings = regular_transition.standings
         else:
             assert postseason is not None
@@ -1343,7 +1380,7 @@ def simulate_deterministic_season(
                     scores,
                     roster_entries=evolving.roster_entries,
                 )
-        if native is None:
+        if _retain_native_trace or not _native_execution:
             weeks.append(
                 SeasonWeekTransition(
                     scoring_week,
@@ -1384,7 +1421,7 @@ def simulate_deterministic_season(
         standings,
         ranking,
         tuple(weeks),
-        native_state.to_reference() if native is not None else evolving,
+        native.reference_state(native_state) if native is not None else evolving,
         postseason,
         records,
     )

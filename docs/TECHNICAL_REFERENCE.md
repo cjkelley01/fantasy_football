@@ -333,11 +333,18 @@ Every remaining week still contributes, including weeks with equal projections.
 
 Sequential precision/checkpoint runs retain one workspace across batches, as do
 initialized workers. Caches are neither global nor checkpoint contents. Explicit
-`retain_result=True` keeps the full readable season trace; summary-only execution
-does not allocate unused weekly diagnostic artifacts. Partial companions keep
-their separate validated composition path. Differential gates are in
-[test_prepared_execution.py](../tests/test_prepared_execution.py); no fingerprint,
-draw/model policy, checkpoint schema or public result contract changes.
+`retain_result=True` keeps the full reference season trace. Summary-only
+partial-week execution scores the observed week with the reference composer and
+transaction rules. At the following weekly boundary, a validated evolving
+state must round-trip exactly through the compact representation. The
+coordinator carries the same standings and postseason state across the
+handoff. Current-week trades are already reflected in the handoff roster.
+Later timed trades materialize reference state once at each effective
+boundary, apply the existing atomic operations in order, then resume compact
+execution. The transaction cache binds the full weekly state, including
+reference roster order. Partial-week runs use the full weekly transaction
+contract on cache misses. Differential tests retain complete traces without
+changing public fingerprints or checkpoint schemas.
 
 The configuration fingerprint explicitly retains exactly the original two
 transaction-policy fields for ordinary V1 calls. Only an opted-in policy adds

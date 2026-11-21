@@ -616,9 +616,7 @@ def run_monte_carlo_path(
                 lineup_workspace=lineup_workspace,
                 partial_week=partial,
                 effective_trades=config.effective_trades,
-                _native_execution=not retain_result
-                and partial is None
-                and not config.effective_trades,
+                _native_execution=not retain_result,
             )
     except ValueError as exc:
         raise MonteCarloError(f"invalid path {path_index}: {exc}") from exc

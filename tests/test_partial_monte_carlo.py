@@ -747,17 +747,50 @@ def test_current_and_delayed_exchanges_preserve_fixed_scores_and_matched_paths()
     )
 
 
-@pytest.mark.parametrize("week", (15, 16))
+@pytest.mark.parametrize(
+    ("week", "reverse_week", "bye"),
+    (
+        (15, None, False),
+        (16, None, False),
+        (15, 15, False),
+        (15, 16, False),
+        (16, 16, False),
+        (15, None, True),
+    ),
+)
 def test_prepared_partial_trade_matches_reference_through_full_season(
-    week, monkeypatch
+    week, reverse_week, bye, monkeypatch
 ):
     from fantasy_football import monte_carlo as mc
     from fantasy_football import scenario_evaluator as evaluator
-    from fantasy_football.effective_trades import EffectiveTrade
+    from fantasy_football.effective_trades import EffectiveTrade, TradeTransfer
     from fantasy_football.evolving_state import initialize_evolving_state
     from fantasy_football.player_outcomes import PreparedNormalOutcomes
 
     snapshot, config, model, transfers = _locked_trade_case()
+    if bye:
+        partial = config.partial_week
+        config = replace(
+            config,
+            partial_week=replace(
+                partial,
+                evidence=replace(
+                    partial.evidence,
+                    players=tuple(
+                        replace(
+                            row,
+                            nfl_game_status=NFLGameStatus.UNKNOWN,
+                            score_state=PlayerScoreState.NONPARTICIPATING,
+                            full_game_projection=None,
+                            remaining_status=RemainingContributionStatus.NOT_APPLICABLE,
+                        )
+                        if row.player_id == 1
+                        else row
+                        for row in partial.evidence.players
+                    ),
+                ),
+            ),
+        )
     initial = initialize_evolving_state(
         snapshot,
         scoring_week=snapshot.first_simulation_week,
@@ -772,9 +805,26 @@ def test_prepared_partial_trade_matches_reference_through_full_season(
     traces = []
     workspaces = []
     generators = []
+    use_native = False
+    trades = (EffectiveTrade(week, transfers),)
+    if reverse_week is not None:
+        reverse = tuple(
+            TradeTransfer(move.player_id, move.to_team_id, move.from_team_id)
+            for move in transfers
+        )
+        trades += (EffectiveTrade(reverse_week, reverse),)
 
     def record_season(*args, **kwargs):
-        season = original_simulate(*args, **kwargs)
+        season = original_simulate(
+            *args,
+            **(
+                kwargs
+                | {
+                    "_native_execution": use_native,
+                    "_retain_native_trace": True,
+                }
+            ),
+        )
         traces.append(season)
         return season
 
@@ -798,7 +848,7 @@ def test_prepared_partial_trade_matches_reference_through_full_season(
             config,
             model,
             precision,
-            (EffectiveTrade(week, transfers),),
+            trades,
         )
 
     monkeypatch.setattr(mc, "simulate_deterministic_season", record_season)
@@ -815,6 +865,7 @@ def test_prepared_partial_trade_matches_reference_through_full_season(
     reference_traces = tuple(traces)
     traces.clear()
 
+    use_native = True
     monkeypatch.setattr(evaluator, "run_monte_carlo_batch", record_batch)
     monkeypatch.setattr(PreparedNormalOutcomes, "generate_scenario", record_draws)
     assert run() == expected
@@ -822,3 +873,136 @@ def test_prepared_partial_trade_matches_reference_through_full_season(
     assert len(workspaces) == 2 and workspaces[0] is workspaces[1]
     assert len(generators) == 2 * config.path_count
     assert all(generator is generators[0] for generator in generators)
+
+
+@pytest.mark.parametrize("vacancy", (False, True))
+def test_native_observed_week_handoff_matches_full_baseline_trace(monkeypatch, vacancy):
+    from fantasy_football import monte_carlo as mc
+    from fantasy_football.prepared_execution import PreparedExecution
+
+    snapshot, config, model, _ = _locked_trade_case()
+    initial = snapshot.rules.acquisition
+    snapshot = replace(
+        snapshot,
+        rules=replace(
+            snapshot.rules, acquisition=replace(initial, waiver_order_resets=True)
+        ),
+    )
+    if vacancy:
+        from fantasy_football.canonical.model import ProjectionClass
+        from tests.test_automatic_rosters import _owned_policy
+
+        defense = next(
+            player for player in snapshot.players if player.player_id == -101
+        )
+        original = tuple(row for row in snapshot.player_weeks if row.player_id == -101)
+        snapshot = replace(
+            snapshot,
+            players=snapshot.players
+            + (
+                replace(
+                    defense,
+                    player_id=-102,
+                    acquisition_status="FREEAGENT",
+                    display_name="Boundary defense",
+                ),
+            ),
+            player_weeks=tuple(
+                replace(
+                    row,
+                    raw_projection=0.0,
+                    effective_projection=0.0,
+                    projection_class=ProjectionClass.EXPLICIT_ZERO,
+                )
+                if row.player_id == -101 and row.scoring_week == 16
+                else row
+                for row in snapshot.player_weeks
+            )
+            + tuple(
+                replace(
+                    row,
+                    player_id=-102,
+                    raw_projection=12.0,
+                    effective_projection=12.0,
+                    projection_class=ProjectionClass.PRESENT,
+                )
+                for row in original
+            ),
+        )
+        snapshot, policy = _owned_policy(snapshot)
+        config = replace(
+            config,
+            transaction_policy=replace(
+                config.transaction_policy, automatic_rosters=policy
+            ),
+        )
+    run_season = mc.simulate_deterministic_season
+    handoff = PreparedExecution.handoff_observed_week
+    admitted = []
+
+    def capture_handoff(workspace, state):
+        compact = handoff(workspace, state)
+        assert compact.to_reference() == state
+        admitted.append(state)
+        return compact
+
+    monkeypatch.setattr(PreparedExecution, "handoff_observed_week", capture_handoff)
+
+    for path in config.path_indices:
+        expected = run_monte_carlo_path(
+            snapshot, config, model, path, retain_result=True
+        )
+
+        def native_trace(*args, **kwargs):
+            return run_season(
+                *args,
+                **(
+                    kwargs
+                    | {
+                        "_native_execution": True,
+                        "_retain_native_trace": True,
+                    }
+                ),
+            )
+
+        with monkeypatch.context() as native:
+            native.setattr(mc, "simulate_deterministic_season", native_trace)
+            actual = run_monte_carlo_path(
+                snapshot, config, model, path, retain_result=True
+            )
+        assert actual == expected
+        assert admitted[-1] == expected[1].weeks[0].transaction_result.state
+        assert any(
+            record.action.value == "priority_move"
+            for record in actual[1].final_evolving_state.ledger
+        )
+        if vacancy:
+            assert any(
+                record.player_id == -102 and record.action.value == "add"
+                for record in actual[1].final_evolving_state.ledger
+            )
+        assert actual[1].final_postseason_state is not None
+    assert len(admitted) == config.path_count
+
+
+@pytest.mark.parametrize("kind", ("ownership", "position-limit"))
+def test_native_delayed_trade_rejects_the_same_invalid_transition(kind):
+    from fantasy_football.effective_trades import EffectiveTrade, TradeTransfer
+
+    snapshot, config, model, _ = _locked_trade_case()
+    if kind == "position-limit":
+        limits = tuple(
+            replace(limit, maximum=1) if limit.position_id == 1 else limit
+            for limit in snapshot.rules.position_limits
+        )
+        snapshot = replace(
+            snapshot, rules=replace(snapshot.rules, position_limits=limits)
+        )
+    transfer = TradeTransfer(1, 3 if kind == "ownership" else 1, 2)
+    config = replace(config, effective_trades=(EffectiveTrade(16, (transfer,)),))
+    with pytest.raises(MonteCarloError) as reference:
+        run_monte_carlo_path(snapshot, config, model, 0, retain_result=True)
+    with pytest.raises(MonteCarloError) as native:
+        run_monte_carlo_path(snapshot, config, model, 0)
+    assert str(native.value) == str(reference.value)
+    assert ("owned" if kind == "ownership" else "limit") in str(native.value)

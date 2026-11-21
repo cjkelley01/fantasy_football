@@ -503,6 +503,8 @@ def _multiweek():
 def test_multiweek_carry_is_retained_without_premature_advancement():
     snapshot, future, partial = _multiweek()
     actual = _execute(snapshot, future, partial)
+    native = _execute(snapshot, future, partial, _native_execution=True, _retain_native_trace=True)
+    assert native == actual
     first = actual.weeks[0].postseason_state
     assert not first.placements
     assert all(
