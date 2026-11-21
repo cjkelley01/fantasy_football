@@ -81,6 +81,7 @@ class LineupOptimizationWorkspace:
     """
 
     __slots__ = (
+        "_last_validated_roster",
         "candidate_cache",
         "candidate_hits",
         "execution",
@@ -129,6 +130,7 @@ class LineupOptimizationWorkspace:
         self.starting_hits = 0
         self.prepared_season = None
         self.validated_rosters = OrderedDict()
+        self._last_validated_roster = None
         self.ownership_cache = OrderedDict()
         self.execution = None
         self.outcomes = None
@@ -136,9 +138,18 @@ class LineupOptimizationWorkspace:
         self.projection_profiles = OrderedDict()
 
     def validate_roster(self, entries):
+        self._validated_roster_input(entries)
+
+    def _validated_roster_input(self, entries):
+        # Keep a strong reference. Only exact tuples of immutable records with
+        # plain integer IDs are admitted, so identity proves unchanged input.
+        last = self._last_validated_roster
+        if last is not None and last[0] is entries:
+            return last[1]
+
         # Strict type checks precede equality-based caching: True == 1 must
         # never let a malformed record alias an accepted integer ID.
-        cacheable = isinstance(entries, tuple) and all(
+        cacheable = type(entries) is tuple and all(
             type(entry) is RosterEntry
             and type(entry.player_id) is int
             and type(entry.team_id) is int
@@ -148,14 +159,38 @@ class LineupOptimizationWorkspace:
             )
             for entry in entries
         )
-        if cacheable and entries in self.validated_rosters:
-            self.validated_rosters.move_to_end(entries)
-            return
-        validate_roster_state(self.snapshot, entries)
-        if cacheable:
-            self.validated_rosters[entries] = True
+        if not cacheable:
+            validate_roster_state(self.snapshot, entries)
+            return None
+        team_rosters = self._get(self.validated_rosters, entries)
+        if team_rosters is None:
+            validate_roster_state(self.snapshot, entries)
+            team_rosters = {}
+            self.validated_rosters[entries] = team_rosters
             while len(self.validated_rosters) > 128:
                 self.validated_rosters.popitem(last=False)
+        self._last_validated_roster = entries, team_rosters
+        return team_rosters
+
+    def team_roster(self, entries, team_id):
+        team_rosters = self._validated_roster_input(entries)
+        if team_rosters is None:
+            return tuple(
+                sorted(
+                    (entry for entry in entries if entry.team_id == team_id),
+                    key=lambda item: item.player_id,
+                )
+            )
+        if not team_rosters:
+            # Sort once for the whole roster. Each team's slice has the same
+            # ordering used by the independent starting-lineup cache.
+            grouped = {}
+            for entry in sorted(entries, key=lambda item: item.player_id):
+                grouped.setdefault(entry.team_id, []).append(entry)
+            team_rosters.update(
+                (team, tuple(grouped.get(team, ()))) for team in self.team_ids
+            )
+        return team_rosters.get(team_id, ())
 
     def _get(self, cache, key):
         value = cache.get(key)
@@ -668,14 +703,8 @@ def optimize_starting_lineup(
         )
 
     modeled_roster = snapshot.roster_entries if roster_entries is None else roster_entries
-    prepared.validate_roster(modeled_roster)
     # A team's exact starting lineup is unaffected by other teams' rosters.
-    team_entries = tuple(
-        sorted(
-            (entry for entry in modeled_roster if entry.team_id == team_id),
-            key=lambda item: item.player_id,
-        )
-    )
+    team_entries = prepared.team_roster(modeled_roster, team_id)
     cache_key = (team_id, scoring_week, team_entries)
     cached = prepared._get(prepared.starting_cache, cache_key)
     if cached is not None:

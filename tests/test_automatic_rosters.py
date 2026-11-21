@@ -28,6 +28,7 @@ from fantasy_football.evolving_state import (
     advance_cycle,
     initialize_evolving_state,
 )
+from fantasy_football.lineup_optimizer import LineupOptimizationWorkspace
 from fantasy_football.monte_carlo import (
     run_monte_carlo_batch,
     run_monte_carlo_path,
@@ -110,6 +111,37 @@ def test_scarcity_flex_competition_repeated_passes_and_no_voluntary_adds():
     claims = _execute(waivers, policy)
     assert [item.phase for item in claims.acquisitions] == [TransactionPhase.WAIVER] * 2
     assert claims.final_waiver_priority[-1] == 2
+
+
+def test_prepared_roster_reuse_matches_fresh_roster_slices_across_transitions(
+    monkeypatch,
+):
+    snapshots = (
+        _owned_policy(_overlap_snapshot()),
+        _drop_fixture(),
+        _ir_fixture(injured=True),
+    )
+    prepared = [_execute(snapshot, policy) for snapshot, policy in snapshots]
+
+    def fresh_team_roster(workspace, entries, team_id):
+        from fantasy_football.lineup_optimizer import validate_roster_state
+
+        validate_roster_state(workspace.snapshot, entries)
+        return tuple(
+            sorted(
+                (entry for entry in entries if entry.team_id == team_id),
+                key=lambda entry: entry.player_id,
+            )
+        )
+
+    monkeypatch.setattr(LineupOptimizationWorkspace, "team_roster", fresh_team_roster)
+    assert prepared == [_execute(snapshot, policy) for snapshot, policy in snapshots]
+    assert len(prepared[0].acquisitions) == 2
+    assert prepared[1].acquisitions[0].dropped_player_ids
+    assert any(
+        record.action is TransactionAction.IR_ACTIVATE
+        for record in prepared[2].state.ledger
+    )
 
 
 def _drop_fixture():

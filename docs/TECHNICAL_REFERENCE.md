@@ -286,9 +286,15 @@ queues and counters while preserving source linkage and transaction diagnostics.
 Selected effects return to the shared season coordinator; canonical snapshots
 remain immutable. A bounded snapshot-bound lineup workspace is reused per batch
 or initialized worker, including exact team-local lineup keys, at most 128
-validated full-roster entries and four source-policy preparations. Validation
-precedes cache admission; changed source text and malformed/changed rosters cannot
-reuse an unrelated entry. No cross-run global snapshot cache is introduced.
+validated full-roster entries and four source-policy preparations. Starting-lineup
+lookups reuse player-ID-sorted team slices of a validated roster. The most recent
+exact immutable roster tuple is retained by reference for inexpensive repeated
+access. A different tuple runs the strict record checks before it can reuse an
+equal validated roster, and changed ownership or slots select a different roster key.
+Team lineup keys still include the scoring week and exact team slice. Validation
+precedes cache admission, including checks that prevent boolean IDs from aliasing
+integer IDs. Source-policy checks and public validation boundaries are unchanged.
+No cross-run global snapshot cache is introduced.
 The two per-search opponent valuation caches are separately bounded to 2,048
 entries each; eviction changes reuse, not the selected legal effect.
 

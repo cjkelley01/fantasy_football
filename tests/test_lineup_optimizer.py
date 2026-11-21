@@ -24,6 +24,7 @@ from fantasy_football.lineup_optimizer import (
     VacancyReason,
     optimize_candidate_lineup,
     optimize_starting_lineup,
+    prepare_lineup_optimization,
 )
 from tests.canonical_fixtures import canonical_snapshot
 
@@ -269,6 +270,95 @@ def test_alternate_complete_roster_state_is_validated_and_used() -> None:
     changed = optimize_starting_lineup(baseline_snapshot, 1, 15, roster_entries=override)
     assert baseline.total_projected_points == 5.0
     assert changed.total_projected_points == 12.0
+
+
+def test_prepared_roster_reuse_tracks_ownership_and_slot_changes() -> None:
+    snapshot = _lineup_snapshot(
+        starters=((1, 1), (2, 1)),
+        player_specs=(
+            _present(1, (1, 2), 9.0),
+            _present(2, (1,), 6.0),
+            _present(3, (2,), 12.0, reserve=True),
+        ),
+    )
+    workspace = prepare_lineup_optimization(snapshot)
+    original = snapshot.roster_entries
+    activated = tuple(
+        replace(entry, lineup_slot_id=2) if entry.player_id == 3 else entry
+        for entry in original
+    )
+    dropped = tuple(entry for entry in activated if entry.player_id != 1)
+    transferred = tuple(
+        replace(entry, team_id=2, raw_owner_team_id=None)
+        if entry.player_id == 3
+        else entry
+        for entry in dropped
+    )
+    for entries, expected in (
+        (original, 15.0),
+        (activated, 21.0),
+        (dropped, 18.0),
+        (transferred, 6.0),
+        (tuple(reversed(original)), 15.0),
+        (original, 15.0),
+    ):
+        for week in (15, 16):
+            result = optimize_starting_lineup(
+                snapshot, 1, week, roster_entries=entries, workspace=workspace
+            )
+            assert result == optimize_starting_lineup(
+                snapshot, 1, week, roster_entries=entries
+            )
+            assert result.total_projected_points == expected
+
+    equal_snapshot = replace(snapshot)
+    with pytest.raises(LineupOptimizationError, match="different canonical snapshot"):
+        optimize_starting_lineup(equal_snapshot, 1, 15, workspace=workspace)
+
+
+def test_equal_invalid_roster_cannot_reuse_cached_team_slice() -> None:
+    snapshot = _lineup_snapshot(
+        starters=((1, 1),), player_specs=(_present(1, (1,), 5.0),)
+    )
+    workspace = prepare_lineup_optimization(snapshot)
+    valid = snapshot.roster_entries
+    invalid = (replace(valid[0], player_id=True),)
+    assert valid == invalid
+    expected = optimize_starting_lineup(snapshot, 1, 15, workspace=workspace)
+    with pytest.raises(
+        LineupOptimizationError, match="player_id must be a nonzero integer"
+    ):
+        optimize_starting_lineup(
+            snapshot, 1, 15, workspace=workspace, roster_entries=invalid
+        )
+    assert optimize_starting_lineup(snapshot, 1, 15, workspace=workspace) is expected
+
+
+def test_tuple_subclass_cannot_reuse_validation_by_identity() -> None:
+    class AlternateRoster(tuple):
+        changed = False
+
+        def __iter__(self):
+            if self.changed:
+                return iter((replace(self[0], player_id=True),))
+            return super().__iter__()
+
+    snapshot = _lineup_snapshot(
+        starters=((1, 1),), player_specs=(_present(1, (1,), 5.0),)
+    )
+    workspace = prepare_lineup_optimization(snapshot)
+    entries = AlternateRoster(snapshot.roster_entries)
+    result = optimize_starting_lineup(
+        snapshot, 1, 15, workspace=workspace, roster_entries=entries
+    )
+    assert result.total_projected_points == 5.0
+    entries.changed = True
+    with pytest.raises(
+        LineupOptimizationError, match="player_id must be a nonzero integer"
+    ):
+        optimize_starting_lineup(
+            snapshot, 1, 15, workspace=workspace, roster_entries=entries
+        )
 
 
 @pytest.mark.parametrize(
