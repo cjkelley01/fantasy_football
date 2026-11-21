@@ -35,6 +35,7 @@ from fantasy_football.monte_carlo_parallel import (
 from fantasy_football.monte_carlo_precision import PrecisionConfiguration
 from fantasy_football.player_outcomes import PlayerOutcomeModel
 from fantasy_football.scenario_evaluator import compare_completed_scenario_batches
+from fantasy_football.season_simulator import require_supported_initial_roster_mode
 from fantasy_football.trade_search import (
     ProgressiveSamplingConfiguration,
     ProgressiveStateEvaluationResult,
@@ -771,6 +772,12 @@ def execute_search_orchestration(
 ) -> SearchOrchestrationResult:
     """Execute the M5.8 reference or bounded pipeline without network access."""
 
+    # The search evaluates completed actions as edited initial rosters. Timed
+    # trades enter the season engine through a separate execution path.
+    require_supported_initial_roster_mode(
+        uses_partial_week=simulation.partial_week is not None,
+        has_hypothetical_initial_changes=True,
+    )
     validate_evolving_state(baseline_state, snapshot)
     _validate(configuration, simulation)
     started = monotonic_clock()

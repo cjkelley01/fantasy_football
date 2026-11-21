@@ -775,7 +775,10 @@ class BackgroundRunCoordinator:
                 error_message = "The analytical worker failed. Inspect local application logs."
                 if (
                     isinstance(exc, ApplicationServiceError)
-                    and exc.code == "partial_week_trade_timing_unresolved"
+                    and exc.code in {
+                        "partial_week_trade_timing_unresolved",
+                        "partial_week_action_search_unsupported",
+                    }
                 ):
                     error_code = exc.code
                     error_message = str(exc)

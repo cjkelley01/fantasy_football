@@ -84,6 +84,7 @@ from fantasy_football.search_orchestration import (
     SearchResourceConfiguration,
     execute_search_orchestration,
 )
+from fantasy_football.season_simulator import PartialWeekInitialRosterError
 from fantasy_football.snapshot_store import (
     LoadedSnapshot,
     SnapshotStore,
@@ -890,12 +891,22 @@ class ApplicationService:
             preflight=SearchPreflightConfiguration(enabled=False),
         )
         simulation = self._simulation(request.simulation, loaded=loaded)
-        result = execute_search_orchestration(
-            loaded.snapshot, state, search_config, simulation,
-            self._model(request.outcome_model),
-            progress_observer=progress_observer,
-            stop_requested=stop_requested,
-        )
+        try:
+            result = execute_search_orchestration(
+                loaded.snapshot, state, search_config, simulation,
+                self._model(request.outcome_model),
+                progress_observer=progress_observer,
+                stop_requested=stop_requested,
+            )
+        except PartialWeekInitialRosterError as exc:
+            raise ApplicationServiceError(
+                "partial_week_action_search_unsupported",
+                "unsupported_configuration",
+                "Opportunity Explorer evaluates completed actions as starting roster edits, "
+                "which this partial-week simulation cannot use. Use Trade Lab for a specific "
+                "trade with verified timing, or use a snapshot with a supported full-week "
+                "simulation start for Opportunity Explorer.",
+            ) from exc
         try:
             coverage = result.enumeration.coverage
             if candidate_observer is not None:

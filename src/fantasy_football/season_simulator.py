@@ -83,6 +83,19 @@ class SeasonSimulationError(ValueError):
     """Raised when a deterministic season input is invalid or contradictory."""
 
 
+class PartialWeekInitialRosterError(SeasonSimulationError):
+    """The partial-week engine cannot start from an already-edited roster."""
+
+
+def require_supported_initial_roster_mode(
+    *, uses_partial_week: bool, has_hypothetical_initial_changes: bool
+) -> None:
+    if uses_partial_week and has_hypothetical_initial_changes:
+        raise PartialWeekInitialRosterError(
+            "partial-week execution does not support hypothetical initial transactions or rosters"
+        )
+
+
 class SeasonCompletionStatus(StrEnum):
     COMPLETE = "complete"
     INCOMPLETE = "incomplete"
@@ -1034,10 +1047,12 @@ def simulate_deterministic_season(
             )
         evolving = initial_evolving_state
     if partial_week is not None:
-        if evolving.roster_entries != snapshot.roster_entries or evolving.ledger:
-            raise SeasonSimulationError(
-                "partial-week execution does not support hypothetical initial transactions or rosters"
-            )
+        require_supported_initial_roster_mode(
+            uses_partial_week=True,
+            has_hypothetical_initial_changes=(
+                evolving.roster_entries != snapshot.roster_entries or bool(evolving.ledger)
+            ),
+        )
         if current_trades:
             for trade in current_trades:
                 evolving = apply_effective_trade(

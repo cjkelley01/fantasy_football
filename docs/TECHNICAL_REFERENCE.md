@@ -722,6 +722,16 @@ Same final player ownership is insufficient; do not round values to manufacture 
 
 ### Preflight, bounded execution and trusted indexing
 
+Opportunity Explorer evaluates completed actions as hypothetical initial roster
+states. A request that resolves to partial-week execution cannot use those
+states. The coordinator checks the season engine's initial-roster capability
+before preflight, candidate generation, or baseline paths. The application
+returns `partial_week_action_search_unsupported` as an unsupported configuration,
+distinct from a completed search with no candidates. Trade Lab can evaluate a
+specific effective-dated trade through the separate source-validated trade
+workflow. Opportunity Explorer searches with a supported full-week start keep
+their configured timing.
+
 `SearchOrchestrationConfiguration` combines candidate_search, evaluation_mode, sampling, resources, preflight and export. `SearchResourceConfiguration` has the public resource fields above plus engine-only index_directory. `maximum_completed_paths` must be unset under orchestration; use its candidate_limit instead. `evaluation_state_limit` overrides the sampling state budget. `simulation_path_budget` caps paths **per state**, not total search work. `maximum_in_flight_states` maps to max_in_flight_tasks; it does not run multiple candidate-state evaluations concurrently. Fixed versus progressive evaluation and worker/batch controls reuse existing coordinators rather than creating another probability engine.
 
 Optional `SearchPreflightConfiguration(enabled=False,candidate_sample_size=10,monte_carlo_sample_paths=2)` measures a bounded prefix/one batch where possible. It is engine-only, not a public action-request field; results are not universal runtime estimates or child-memory measurements. One nominal deadline begins before preflight, but preflight finishes its bounded sample before later boundary checks. Expensive completion/V(R)/exact batches can overrun; report wall_clock_overrun_seconds, actual coverage and unmet targets. Stop requests currently use the wall-clock-limit label. There is no preemptive timeout or search-level durable resume. Editable quick/balanced/high_precision/exhaustive/full_bounded presets guarantee neither completeness nor precision.

@@ -156,6 +156,11 @@ Review [interpretation](#interpret-and-compare-results) before acting outside Wa
 
 ### Search a finite set of alternatives
 
+Use a snapshot with a supported full-week simulation start. Opportunity Explorer
+cannot apply completed search actions as initial roster edits in a partial-week
+simulation. For a specific trade during the current week, use **Trade Lab** and
+review the verified effective week.
+
 1. In **Simulation Center**, choose **Action search** and the requesting team. Select supported action families, counterparties and outgoing/incoming/acquisition pools. Begin with a small explicit universe and bounds; acquisition pools are unowned players, not outgoing roster players.
 2. Review the **Candidate universe preview** and effective request. **Include only selected** with no selections is invalid, not “all players.” Preview pool counts are not proof all feasible paths will be generated or evaluated. Advanced path/state/candidate/time/worker limits can cap work; response-page size does not cap the computation.
 3. Choose **Submit action search**, then monitor it. Once a completed retained result is available, open it in **Opportunity Explorer**. Explorer reads retained outcomes without rerunning the search; it does not submit/cancel searches itself.

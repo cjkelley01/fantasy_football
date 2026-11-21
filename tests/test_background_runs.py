@@ -11,6 +11,7 @@ from threading import Event
 import pytest
 from fastapi.testclient import TestClient
 
+from fantasy_football import monte_carlo, search_orchestration
 from fantasy_football.app.background import (
     BackgroundRunCoordinator,
     BackgroundRunPolicy,
@@ -28,6 +29,7 @@ from fantasy_football.app.service import (
     ApplicationServiceError,
 )
 from fantasy_football.postseason import PostseasonCapabilityError
+from fantasy_football.snapshot_store import SnapshotStore
 from tests.test_app_service import (
     FixtureStore,
     _action_request,
@@ -111,6 +113,58 @@ def test_background_baseline_lifecycle_and_direct_parity(background) -> None:
     assert result.result["teams"] == direct.model_dump(mode="json")["teams"]
     assert result.result["provenance"]["engine_run_identity_sha256"] == direct.provenance.engine_run_identity_sha256
     assert store.progress(submission.run_id).status == "completed"
+
+
+@pytest.mark.parametrize("evaluation_mode", ["fixed", "progressive"])
+def test_partial_week_search_rejects_before_enumeration_and_paths(
+    tmp_path, monkeypatch, evaluation_mode
+) -> None:
+    from tests.test_current_week import _bundle, _publish
+
+    snapshot, _ = _publish(tmp_path, _bundle())
+    assert snapshot.live_scoring.partial_week_simulation_required
+    service = ApplicationService(
+        ApplicationDependencies(SnapshotStore(tmp_path / "snapshots.sqlite3"))
+    )
+    request = _action_request(snapshot).model_copy(
+        update={"evaluation_mode": evaluation_mode}
+    )
+    paths = []
+
+    def unexpected_path(_snapshot, _config, _model, path_index, **_kwargs):
+        paths.append(path_index)
+        pytest.fail("unsupported search started a Monte Carlo path")
+
+    def unexpected_enumeration(*_args, **_kwargs):
+        pytest.fail("unsupported search started candidate enumeration")
+
+    monkeypatch.setattr(monte_carlo, "run_monte_carlo_path", unexpected_path)
+    monkeypatch.setattr(
+        search_orchestration, "_bounded_enumeration", unexpected_enumeration
+    )
+    store = BackgroundRunStore(tmp_path / "runs.sqlite3")
+    coordinator = BackgroundRunCoordinator(service, store)
+    try:
+        client = TestClient(create_app(service, background_coordinator=coordinator))
+        response = client.post(
+            "/api/v1/analyses/action-search", json=request.model_dump(mode="json")
+        )
+        assert response.status_code == 422
+        error = response.json()["error"]
+        assert error["code"] == "partial_week_action_search_unsupported"
+        assert error["category"] == "unsupported_configuration"
+        assert "Trade Lab" in error["message"]
+
+        submission = coordinator.submit("action_search", request)
+        terminal = _wait(store, submission.run_id)
+        assert terminal.status == "failed"
+        assert terminal.error_code == error["code"]
+        assert terminal.error_message == error["message"]
+        assert not terminal.result_available
+        assert store.progress(submission.run_id).simulation_paths_completed == 0
+        assert paths == []
+    finally:
+        coordinator.close()
 
 
 def test_background_action_retains_queryable_candidates_and_shared_states(background) -> None:

@@ -465,6 +465,20 @@ def test_search_index_closes_when_response_mapping_fails(
     assert not tuple(tmp_path.glob("fantasy-football-m5-8-*.sqlite3*"))
 
 
+def test_search_with_no_eligible_candidates_completes_candidate_coverage(service, snapshot):
+    base = _action_request(snapshot, execution_mode="sequential_reference")
+    request = base.model_copy(update={
+        "candidate_search": base.candidate_search.model_copy(update={
+            "tradeable_player_ids": (1,),
+        }),
+    })
+    result = service.run_action_search(request)
+    assert result.stop_reason == "no_candidates"
+    assert result.coverage.candidate_coverage_complete
+    assert not result.coverage.ranking_resolved
+    assert result.candidates == ()
+
+
 def test_search_reports_incomplete_candidate_and_evaluation_coverage(service, snapshot) -> None:
     base = _action_request(snapshot, execution_mode="sequential_reference")
     request = base.model_copy(update={
