@@ -236,8 +236,30 @@ def _state_effect_key(state: EvolvingLeagueState) -> EvolvingLeagueState:
 
 
 def _required_ir_blockers(
-    snapshot: LeagueSnapshot, state: EvolvingLeagueState, team_id: int
+    snapshot: LeagueSnapshot,
+    state: EvolvingLeagueState,
+    team_id: int,
+    *,
+    workspace: LineupOptimizationWorkspace | None = None,
 ) -> tuple[int, ...]:
+    """Find recovered reserve occupants in player-ID order."""
+    if workspace is not None and state.ir_policy is IRPolicy.PROJECTION_BASED:
+        if workspace.snapshot is not snapshot:
+            raise WeeklyTransactionError(
+                "IR blocker workspace belongs to a different snapshot"
+            )
+        validate_evolving_state(state, snapshot)
+        # Use the post-placement roster and the canonical week's values.
+        # Missing and explicit-zero records both fail the positive test.
+        records = workspace.week_records[state.scoring_week]
+        team_roster = workspace.team_roster(state.roster_entries, team_id)
+        return tuple(
+            entry.player_id
+            for entry in team_roster
+            if entry.lineup_slot_id in workspace.reserve_slot_ids
+            and records[entry.player_id].effective_projection > 0
+        )
+
     reserve_ids = {
         item.slot_id
         for item in snapshot.rules.lineup_slots

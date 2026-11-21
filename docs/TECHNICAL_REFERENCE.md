@@ -318,6 +318,13 @@ applicable finite acquisition limit use the full branch checks, preserving
 authorization and eligibility error precedence. Surviving trials use the
 existing compact transition, position-limit checks and lineup valuation.
 
+Projection-based IR blocker detection reads the existing snapshot-bound week
+records and validated team slice of the post-placement roster. It selects
+reserve occupants with positive effective projections in player-ID order.
+Missing and explicit-zero records retain their canonical classifications and
+neither triggers activation. Each lookup observes the current roster and week.
+Strict IR and the reference blocker lookup retain their existing checks.
+
 `PreparedNormalOutcomes` reuses immutable historical JSON key fragments, preserving
 the full player-week universe, both SHA-256 counters and identical Box–Muller
 operations. The model and its identity are unchanged. The generator supports

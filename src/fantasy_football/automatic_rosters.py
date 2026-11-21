@@ -293,7 +293,9 @@ def reconcile_ir(snapshot, state, eligible_teams, workspace, prepared, ownership
                 compact = branch
                 state = branch.to_reference()
                 break
-        for recovered in _required_ir_blockers(snapshot, state, team_id):
+        for recovered in _required_ir_blockers(
+            snapshot, state, team_id, workspace=workspace
+        ):
             current_entry = next(
                 item for item in state.roster_entries if item.player_id == recovered
             )

@@ -6,7 +6,7 @@ from dataclasses import replace
 
 import pytest
 
-from fantasy_football import automatic_rosters
+from fantasy_football import automatic_rosters, weekly_transactions
 from fantasy_football.automatic_rosters import (
     AutomaticRosterPolicy,
     ownership_percentages,
@@ -30,9 +30,13 @@ from fantasy_football.evolving_state import (
     TransactionPhase,
     TransactionStateError,
     advance_cycle,
+    drop_player,
     initialize_evolving_state,
 )
-from fantasy_football.lineup_optimizer import LineupOptimizationWorkspace
+from fantasy_football.lineup_optimizer import (
+    LineupOptimizationWorkspace,
+    prepare_lineup_optimization,
+)
 from fantasy_football.monte_carlo import (
     run_monte_carlo_batch,
     run_monte_carlo_path,
@@ -612,6 +616,141 @@ def test_joint_ir_swap_precedes_claims_and_unavoidable_drop_can_be_recovered_pla
     result = _execute(snapshot, policy)
     assert 21 not in {entry.player_id for entry in result.state.roster_entries}
     assert result.state.ledger[-1].action is TransactionAction.DROP
+
+
+@pytest.mark.parametrize(
+    "classification", [ProjectionClass.MISSING, ProjectionClass.EXPLICIT_ZERO]
+)
+def test_indexed_ir_blockers_match_reference_across_weeks_and_roster_changes(
+    classification, monkeypatch
+):
+    snapshot, _ = _ir_fixture(injured=False)
+    snapshot = replace(
+        snapshot,
+        rules=replace(
+            snapshot.rules,
+            lineup_slots=tuple(
+                replace(slot, capacity=2) if slot.kind is SlotKind.RESERVE else slot
+                for slot in snapshot.rules.lineup_slots
+            ),
+        ),
+        roster_entries=tuple(
+            replace(entry, lineup_slot_id=21) if entry.player_id == 22 else entry
+            for entry in snapshot.roster_entries
+        ),
+        player_weeks=tuple(
+            replace(
+                row,
+                projection_class=classification,
+                raw_projection=(
+                    0.0 if classification is ProjectionClass.EXPLICIT_ZERO else None
+                ),
+                effective_source=(
+                    ProjectionSource.ESPN
+                    if classification is ProjectionClass.EXPLICIT_ZERO
+                    else ProjectionSource.MISSING_PROJECTION_POLICY
+                ),
+            )
+            if row.player_id == 22 and row.scoring_week == 15
+            else row
+            for row in snapshot.player_weeks
+        ),
+    )
+    state = initialize_evolving_state(
+        snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED
+    )
+    workspace = prepare_lineup_optimization(snapshot)
+    later = advance_cycle(state, snapshot, cycle_id=2, scoring_week=16)
+    later = replace(later, roster_entries=tuple(reversed(later.roster_entries)))
+    dropped = drop_player(later, snapshot, team_id=2, player_id=21)
+    blockers = weekly_transactions._required_ir_blockers
+    for current, team, expected in (
+        (state, 1, ()),
+        (state, 2, (21,)),
+        (later, 2, (21, 22)),
+        (dropped, 2, (22,)),
+    ):
+        assert blockers(snapshot, current, team, workspace=workspace) == expected
+        assert blockers(snapshot, current, team) == expected
+    with pytest.raises(
+        weekly_transactions.WeeklyTransactionError, match="different snapshot"
+    ):
+        blockers(replace(snapshot), state, 2, workspace=workspace)
+
+    snapshot, policy = _owned_policy(snapshot)
+    optimized = _execute(snapshot, policy, later)
+    _use_reference_ir_blockers(monkeypatch)
+    assert optimized == _execute(snapshot, policy, later)
+    assert not weekly_transactions._required_ir_blockers(snapshot, optimized.state, 2)
+
+
+def _use_reference_ir_blockers(monkeypatch):
+    reference = weekly_transactions._required_ir_blockers
+    monkeypatch.setattr(
+        weekly_transactions,
+        "_required_ir_blockers",
+        lambda snapshot, state, team_id, *, workspace=None: reference(
+            snapshot, state, team_id
+        ),
+    )
+
+
+def test_automatic_ir_reconciliation_matches_reference_with_placements_and_swaps(
+    monkeypatch,
+):
+    from fantasy_football.evolving_state import IREligibility
+    from tests.test_weekly_transactions import _strict_ir_state
+
+    swap, swap_policy = _ir_fixture(injured=True)
+    placement = drop_player(
+        initialize_evolving_state(
+            swap, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED
+        ),
+        swap,
+        team_id=2,
+        player_id=21,
+    )
+    strict, strict_state = _strict_ir_state(IREligibility.INELIGIBLE)
+    strict, strict_policy = _owned_policy(strict)
+    cases = (
+        (swap, swap_policy, None),
+        (swap, swap_policy, placement),
+        (strict, strict_policy, strict_state),
+    )
+    results = [_execute(*case) for case in cases]
+    _use_reference_ir_blockers(monkeypatch)
+    assert results == [_execute(*case) for case in cases]
+    assert (
+        results[1].state.ledger[len(placement.ledger)].action
+        is TransactionAction.IR_PLACE
+    )
+    assert any(
+        row.action is TransactionAction.IR_ACTIVATE and row.evidence_source_id
+        for row in results[2].state.ledger
+    )
+
+
+@pytest.mark.parametrize("evidence", [None, "unknown"])
+def test_strict_ir_missing_or_unresolved_evidence_matches_reference(
+    evidence, monkeypatch
+):
+    from fantasy_football.evolving_state import IREligibility
+    from tests.test_weekly_transactions import _strict_ir_state
+
+    snapshot, state = _strict_ir_state(IREligibility(evidence) if evidence else None)
+    snapshot, policy = _owned_policy(snapshot)
+    with pytest.raises(
+        TransactionStateError, match="strict IR acquisition legality"
+    ) as indexed:
+        _execute(snapshot, policy, state)
+    _use_reference_ir_blockers(monkeypatch)
+    with pytest.raises(
+        TransactionStateError, match="strict IR acquisition legality"
+    ) as reference:
+        _execute(snapshot, policy, state)
+    assert indexed.value.code is TransactionErrorCode.IR_EVIDENCE_UNRESOLVED
+    assert indexed.value.code is reference.value.code
+    assert str(indexed.value) == str(reference.value)
 
 
 def test_integrated_batch_workers_checkpoints_and_changed_policy_rejection(tmp_path):
