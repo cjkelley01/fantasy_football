@@ -738,6 +738,15 @@ Optional `SearchPreflightConfiguration(enabled=False,candidate_sample_size=10,mo
 
 `sequential_reference` materializes candidates; `bounded_overlap` uses producer→bounded queue→temporary SQLite with backpressure/index batches. Only generation/indexing overlaps; statistical evaluation waits for eligible-state discovery to preserve order-neutral initial exposure. No nested candidate-worker pool is created. Bounded queue/page sizes do not prove constant total memory: `state_ids()` materializes IDs and compact progressive comparisons remain resident.
 
+Candidate enumeration scopes immutable snapshot validation and the canonical
+content digest to the exact snapshot object. The sequential enumerator owns its
+scope and the bounded producer owns a separate thread-local scope after
+coordinator admission. The digest is computed lazily from the existing
+canonical serializer. Mutable or noncanonical representations use ordinary
+validation. Completed states and their transitions retain independent
+validation, and all candidate IDs and ordering rules use their existing inputs.
+The scope ends with enumeration.
+
 `SearchResultIndex` stores trusted-process pickle candidate/state/result payloads; it is not public interchange, an independent forged-input validator or a safe untrusted import format. Use `result.iter_candidates()` in either mode: bounded result.candidates is intentionally empty. Index iteration pages by last candidate ID (`candidate_id > last`, ascending), distinct from HTTP offset pagination. Successfully returned result handles are caller-owned and require `close()` in finally; the index has context-manager methods, **the result handle does not**. Closure is idempotent and removes temporary DB/sidecars. Creation/bounded-generation failures close explicitly. Until result handoff, the coordinator owns the index and attempts close on evaluation/progress/export failure before re-raising the original exception; an OSError during close is attached as a note. **Search Scratch Cleanup** tracks independent acceptance of these failure and handoff regressions. Garbage collection is not deterministic cleanup acceptance. [C13](TECHNICAL_REFERENCE.md#ownership-and-lifetime) preserves separate scratch, bounded durable history, checkpoint, immutable snapshot and user-export ownership; exact T8/T9 runtime/storage/lifecycle details stay with their current owners.
 
 ### Retained HTTP query allowlist

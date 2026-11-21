@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
 import hashlib
 import json
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass, fields, is_dataclass, replace
+from datetime import datetime, timezone
+from enum import StrEnum
+from functools import wraps
 
+from fantasy_football import live_scoring
+from fantasy_football.canonical import model as canonical_model
 from fantasy_football.canonical.model import LeagueSnapshot
+from fantasy_football.canonical.validation import validated_snapshot
 from fantasy_football.evolving_state import (
     EvolvingLeagueState,
     state_to_json,
@@ -31,9 +39,66 @@ from fantasy_football.scenario_evaluator import (
 )
 from fantasy_football.trade_screening import TradeScreeningOutcome, TradeScreeningResult
 
-
 COMPLETED_STATE_CONTRACT = "m5.3-completed-simulation-state-v1"
 EVALUATION_IDENTITY_CONTRACT = "m5.3-shared-paired-evaluation-v1"
+_SEARCH_SNAPSHOT: ContextVar[tuple[LeagueSnapshot, str | None] | None] = ContextVar(
+    "completed_state_search_snapshot", default=None
+)
+
+
+def _immutable_snapshot_value(value: object) -> bool:
+    """Identify the canonical immutable graph, including nested evidence records."""
+    kind = type(value)
+    if value is None or kind is str or kind is int or kind is float or kind is bool:
+        return True
+    if kind is tuple:
+        return all(_immutable_snapshot_value(item) for item in value)
+    if kind is datetime:
+        return value.tzinfo is None or type(value.tzinfo) is timezone
+    for module in (canonical_model, live_scoring):
+        if getattr(module, kind.__name__, None) is kind:
+            if isinstance(value, StrEnum):
+                return True
+            if is_dataclass(value) and kind.__dataclass_params__.frozen:
+                return all(
+                    _immutable_snapshot_value(getattr(value, field.name))
+                    for field in fields(value)
+                )
+    return False
+
+
+@contextmanager
+def prepared_search_snapshot(snapshot: LeagueSnapshot):
+    """Scope immutable validation and lazy canonical hashing to one enumeration."""
+    if not _immutable_snapshot_value(snapshot):
+        yield
+        return
+    with validated_snapshot(snapshot):
+        token = _SEARCH_SNAPSHOT.set((snapshot, None))
+        try:
+            yield
+        finally:
+            _SEARCH_SNAPSHOT.reset(token)
+
+
+def reuse_search_snapshot(function):
+    @wraps(function)
+    def wrapped(snapshot, *args, **kwargs):
+        with prepared_search_snapshot(snapshot):
+            return function(snapshot, *args, **kwargs)
+
+    return wrapped
+
+
+def _completed_state_snapshot_fingerprint(snapshot: LeagueSnapshot) -> str:
+    prepared = _SEARCH_SNAPSHOT.get()
+    if prepared is None or prepared[0] is not snapshot:
+        return canonical_snapshot_fingerprint(snapshot)
+    digest = prepared[1]
+    if digest is None:
+        digest = canonical_snapshot_fingerprint(snapshot)
+        _SEARCH_SNAPSHOT.set((snapshot, digest))
+    return digest
 
 
 class TradeEvaluationError(ValueError):
@@ -141,7 +206,7 @@ def completed_state_fingerprint(
         "contract": COMPLETED_STATE_CONTRACT,
         "snapshot_id": snapshot.snapshot_id,
         "source_schema_version": snapshot.schema_version,
-        "canonical_snapshot_sha256": canonical_snapshot_fingerprint(snapshot),
+        "canonical_snapshot_sha256": _completed_state_snapshot_fingerprint(snapshot),
         "evolving_state": json.loads(state_to_json(state, snapshot)),
     }
     return _hash(payload)

@@ -60,7 +60,7 @@ from fantasy_football.trade_chains import (
     iter_incomplete_trade_chains,
     iter_multi_trade_chains,
 )
-from fantasy_football.trade_evaluation import completed_state_fingerprint
+from fantasy_football.trade_evaluation import completed_state_fingerprint, reuse_search_snapshot
 from fantasy_football.trade_screening import TradeScreeningConfiguration
 from fantasy_football.weekly_transactions import WaiverBoundaryPolicy
 
@@ -897,6 +897,7 @@ def iter_unified_action_candidates(snapshot, state, configuration):
             yield item
 
 
+@reuse_search_snapshot
 def enumerate_unified_action_candidates(
     snapshot, state, configuration, *, should_stop=None,
 ):

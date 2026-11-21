@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import json
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from fantasy_football import search_orchestration, trade_evaluation
+from fantasy_football.canonical.validation import CanonicalValidationError
+from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.search_orchestration import (
     OrchestrationStage,
     OrchestrationStopReason,
@@ -30,6 +34,7 @@ from fantasy_football.unified_actions import (
     ActionFamily,
     ActionOrdering,
     UnifiedActionSearchConfiguration,
+    enumerate_unified_action_candidates,
 )
 from tests.test_scenario_evaluator import (
     PrescribedModel,
@@ -100,6 +105,110 @@ def test_reference_and_bounded_modes_have_exact_candidate_and_state_parity() -> 
     assert reference.candidate_coverage_complete
     assert bounded.candidate_coverage_complete
     bounded.close()
+
+
+@pytest.mark.parametrize("mode", list(SearchExecutionMode))
+def test_search_preparation_preserves_full_progressive_results(mode, monkeypatch):
+    configuration = _configuration(mode)
+    optimized = _run(configuration)
+    try:
+        monkeypatch.setattr(
+            trade_evaluation,
+            "prepared_search_snapshot",
+            lambda _snapshot: nullcontext(),
+        )
+        monkeypatch.setattr(
+            search_orchestration,
+            "prepared_search_snapshot",
+            lambda _snapshot: nullcontext(),
+        )
+        reference = _run(configuration)
+        try:
+            assert optimized.run_sha256 == reference.run_sha256
+            assert optimized.enumeration == reference.enumeration
+            assert _candidates(optimized) == _candidates(reference)
+            assert optimized.progressive_evaluation == reference.progressive_evaluation
+            assert optimized.stop_reason == reference.stop_reason
+        finally:
+            reference.close()
+    finally:
+        optimized.close()
+
+
+def test_enumeration_prepares_one_snapshot_hash_and_does_not_reuse_across_searches(
+    monkeypatch,
+):
+    snapshot = _scenario_snapshot_with_bench()
+    fingerprint = trade_evaluation.canonical_snapshot_fingerprint
+    calls = []
+
+    def counted(value):
+        calls.append(value)
+        return fingerprint(value)
+
+    monkeypatch.setattr(trade_evaluation, "canonical_snapshot_fingerprint", counted)
+    state = _state(snapshot)
+    first = enumerate_unified_action_candidates(snapshot, state, _candidate_search())
+    other = replace(snapshot)
+    second = enumerate_unified_action_candidates(other, state, _candidate_search())
+    assert first == second
+    assert len(first.completed_states) > 1
+    assert len(calls) == 2 and calls[0] is snapshot and calls[1] is other
+
+
+def test_preparation_keeps_snapshot_and_candidate_validation_separate():
+    snapshot = _scenario_snapshot_with_bench()
+    state = _state(snapshot)
+    fingerprint = trade_evaluation.completed_state_fingerprint
+    with trade_evaluation.prepared_search_snapshot(snapshot):
+        baseline = fingerprint(snapshot, state)
+        duplicate = replace(
+            state, roster_entries=state.roster_entries + state.roster_entries[:1]
+        )
+        with pytest.raises(TransactionStateError, match="duplicate modeled ownership"):
+            fingerprint(snapshot, duplicate)
+        bad_source = replace(
+            snapshot,
+            player_weeks=(replace(snapshot.player_weeks[0], source_id="unknown"),)
+            + snapshot.player_weeks[1:],
+        )
+        with pytest.raises(CanonicalValidationError, match="unknown source"):
+            fingerprint(bad_source, state)
+        bad_rules = replace(snapshot, rules=replace(snapshot.rules, team_count=999))
+        with pytest.raises(CanonicalValidationError, match="team_count"):
+            fingerprint(bad_rules, state)
+        first = snapshot.roster_entries[0]
+        forged = replace(
+            snapshot,
+            roster_entries=(replace(first, team_id=True),)
+            + snapshot.roster_entries[1:],
+        )
+        assert forged == snapshot
+        with pytest.raises(CanonicalValidationError, match="team_id"):
+            fingerprint(forged, state)
+        changed = replace(snapshot, league_name="Changed league")
+        assert fingerprint(changed, state) != baseline
+
+
+def test_mutable_snapshot_graph_falls_back_to_validation():
+    class MutableRoster(tuple):
+        duplicate = False
+
+        def __iter__(self):
+            if self.duplicate:
+                return iter((*super().__iter__(), self[0]))
+            return super().__iter__()
+
+    snapshot = _scenario_snapshot_with_bench()
+    roster = MutableRoster(snapshot.roster_entries)
+    mutable = replace(snapshot, roster_entries=roster)
+    state = _state(snapshot)
+    fingerprint = trade_evaluation.completed_state_fingerprint
+    with trade_evaluation.prepared_search_snapshot(mutable):
+        assert fingerprint(mutable, state) == fingerprint(snapshot, state)
+        roster.duplicate = True
+        with pytest.raises(CanonicalValidationError, match="duplicate"):
+            fingerprint(mutable, state)
 
 
 def test_multiple_numerical_workers_preserve_path_indexed_results() -> None:

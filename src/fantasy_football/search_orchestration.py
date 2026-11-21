@@ -36,6 +36,7 @@ from fantasy_football.monte_carlo_precision import PrecisionConfiguration
 from fantasy_football.player_outcomes import PlayerOutcomeModel
 from fantasy_football.scenario_evaluator import compare_completed_scenario_batches
 from fantasy_football.season_simulator import require_supported_initial_roster_mode
+from fantasy_football.trade_evaluation import prepared_search_snapshot
 from fantasy_football.trade_search import (
     ProgressiveSamplingConfiguration,
     ProgressiveStateEvaluationResult,
@@ -503,10 +504,11 @@ def _bounded_enumeration(
 
     def produce():
         try:
-            for item in _attempts(snapshot, state, configuration, config_sha, baseline_sha, rejections):
-                if stop.is_set():
-                    break
-                work.put(item)
+            with prepared_search_snapshot(snapshot):
+                for item in _attempts(snapshot, state, configuration, config_sha, baseline_sha, rejections):
+                    if stop.is_set():
+                        break
+                    work.put(item)
         except BaseException as exc:
             work.put(exc)
         finally:
