@@ -6,6 +6,7 @@ from dataclasses import replace
 
 import pytest
 
+from fantasy_football import automatic_rosters
 from fantasy_football.automatic_rosters import (
     AutomaticRosterPolicy,
     ownership_percentages,
@@ -15,6 +16,7 @@ from fantasy_football.canonical.model import (
     LineupSlotNamespace,
     Player,
     PlayerWeek,
+    PositionLimit,
     ProjectionClass,
     ProjectionSource,
     RosterEntry,
@@ -24,7 +26,9 @@ from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     IRPolicy,
     TransactionAction,
+    TransactionErrorCode,
     TransactionPhase,
+    TransactionStateError,
     advance_cycle,
     initialize_evolving_state,
 )
@@ -239,6 +243,118 @@ def test_drop_uses_full_remaining_lineup_value_and_source_bound_ownership():
         _execute(snapshot, AutomaticRosterPolicy(snapshot.snapshot_id))
 
 
+@pytest.mark.parametrize("position_limit", [None, 1])
+def test_capacity_screen_keeps_drop_that_opens_destination(monkeypatch, position_limit):
+    snapshot, policy = _drop_fixture()
+    if position_limit is not None:
+        snapshot = replace(
+            snapshot,
+            rules=replace(
+                snapshot.rules, position_limits=(PositionLimit(1, position_limit),)
+            ),
+        )
+    compact_type = automatic_rosters.CompactSeasonState
+    fork = compact_type.fork
+    forks = 0
+
+    def count_fork(self):
+        nonlocal forks
+        forks += 1
+        return fork(self)
+
+    monkeypatch.setattr(compact_type, "fork", count_fork)
+    screened = _execute(snapshot, policy)
+    screened_forks = forks
+    forks = 0
+    monkeypatch.setattr(
+        automatic_rosters, "_full_acquisition_slots", lambda *_: frozenset()
+    )
+    reference = _execute(snapshot, policy)
+    assert screened == reference
+    assert screened_forks < forks
+    assert screened.acquisitions[0].dropped_player_ids == (
+        (22,) if position_limit is None else (21,)
+    )
+
+
+def test_capacity_screen_preserves_waiver_flex_passes_and_priority(monkeypatch):
+    snapshot = _overlap_snapshot()
+    snapshot, policy = _owned_policy(
+        replace(
+            snapshot,
+            players=tuple(
+                replace(player, acquisition_status="WAIVERS")
+                if player.player_id in {100, 200, 300}
+                else player
+                for player in snapshot.players
+            ),
+        )
+    )
+    screened = _execute(snapshot, policy)
+    monkeypatch.setattr(
+        automatic_rosters, "_full_acquisition_slots", lambda *_: frozenset()
+    )
+    assert screened == _execute(snapshot, policy)
+    assert [item.pass_number for item in screened.acquisitions] == [1, 2]
+    assert screened.final_waiver_priority[-1] == 2
+
+
+def test_full_destinations_do_not_mask_missing_drop_permission():
+    snapshot, policy = _drop_fixture()
+    snapshot = replace(
+        snapshot,
+        players=tuple(
+            replace(player, is_undroppable=None, undroppable_source_id=None)
+            if player.player_id == 22
+            else player
+            for player in snapshot.players
+        ),
+    )
+    with pytest.raises(
+        TransactionStateError, match="player 22 undroppable status is unknown"
+    ) as error:
+        _execute(snapshot, policy)
+    assert error.value.code is TransactionErrorCode.AUTHORIZATION_UNRESOLVED
+
+
+def test_full_slots_cannot_mask_unresolved_strict_ir():
+    from fantasy_football.lineup_optimizer import prepare_lineup_optimization
+    from fantasy_football.prepared_season import prepare_season
+
+    snapshot, policy = _ir_fixture(injured=False)
+    snapshot = replace(
+        snapshot,
+        player_weeks=tuple(
+            replace(
+                row,
+                raw_projection=None,
+                projection_class=ProjectionClass.MISSING,
+                effective_projection=0.0,
+                effective_source=ProjectionSource.MISSING_PROJECTION_POLICY,
+            )
+            if row.player_id == 25 and row.scoring_week == 15
+            else row
+            for row in snapshot.player_weeks
+        ),
+    )
+    state = initialize_evolving_state(
+        snapshot, scoring_week=15, ir_policy=IRPolicy.STRICT
+    )
+    with pytest.raises(
+        TransactionStateError, match="strict IR acquisition legality"
+    ) as error:
+        automatic_rosters.acquisition_plans(
+            snapshot,
+            state,
+            2,
+            TransactionPhase.FREE_AGENT,
+            prepare_lineup_optimization(snapshot),
+            prepare_season(snapshot),
+            ownership_percentages(snapshot, policy),
+        )
+    assert error.value.code is TransactionErrorCode.IR_EVIDENCE_UNRESOLVED
+
+
 def test_ownership_zero_is_observed_and_malformed_or_duplicate_sources_reject():
     snapshot, policy = _owned_policy(_overlap_snapshot(), {100: 0.0, 200: 12.0})
     assert ownership_percentages(snapshot, policy) == {100: 0.0, 200: 12.0}
@@ -282,12 +398,7 @@ def test_ownership_zero_is_observed_and_malformed_or_duplicate_sources_reject():
 
 
 def test_unknown_finite_acquisition_usage_cannot_be_treated_as_no_legal_candidate():
-    from fantasy_football.evolving_state import (
-        TransactionErrorCode,
-        TransactionStateError,
-    )
-
-    snapshot, policy = _owned_policy(_overlap_snapshot())
+    snapshot, policy = _drop_fixture()
     snapshot = replace(
         snapshot,
         rules=replace(
@@ -458,9 +569,16 @@ def _ir_fixture(*, injured):
     )
 
 
-def test_joint_ir_swap_precedes_claims_and_unavoidable_drop_can_be_recovered_player():
+def test_joint_ir_swap_precedes_claims_and_unavoidable_drop_can_be_recovered_player(
+    monkeypatch,
+):
     snapshot, policy = _ir_fixture(injured=True)
     result = _execute(snapshot, policy)
+    with monkeypatch.context() as reference:
+        reference.setattr(
+            automatic_rosters, "_full_acquisition_slots", lambda *_: frozenset()
+        )
+        assert result == _execute(snapshot, policy)
     entries = {
         entry.player_id: entry.lineup_slot_id for entry in result.state.roster_entries
     }

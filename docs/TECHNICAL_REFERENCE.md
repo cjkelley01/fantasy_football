@@ -309,6 +309,14 @@ states cannot reuse an effect. A full-lineup shortcut requires validated policy
 and companion evidence and cannot skip reserve reconciliation or held-player
 clearance. Changed states prepare through the readable transaction path; trial
 acquisitions remain indexed until the selected legal effect is materialized.
+After candidate eligibility is established for the window, the mandatory
+acquisition policy can skip a hypothetical branch when its destination remains
+full after accounting for any authorized paired drop. This check uses the
+current team roster, retains the destination attempt in decision diagnostics,
+and leaves candidate order unchanged. Teams with a reserve occupant or an
+applicable finite acquisition limit use the full branch checks, preserving
+authorization and eligibility error precedence. Surviving trials use the
+existing compact transition, position-limit checks and lineup valuation.
 
 `PreparedNormalOutcomes` reuses immutable historical JSON key fragments, preserving
 the full player-week universe, both SHA-256 counters and identical Box–Muller

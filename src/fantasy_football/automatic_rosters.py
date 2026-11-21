@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections import Counter
 from dataclasses import dataclass, replace
 
 from fantasy_football.canonical.model import LeagueSnapshot, SlotKind
@@ -447,6 +448,19 @@ def drop_candidates(snapshot, state, team_id, ownership):
     )
 
 
+def _full_acquisition_slots(snapshot, team_roster, ordinary_slots, reserve_slot_ids):
+    """Return full destinations only when capacity cannot mask an earlier check."""
+    limits = snapshot.rules.acquisition
+    if limits.season_limit is not None or limits.matchup_limit is not None:
+        return frozenset()
+    if any(entry.lineup_slot_id in reserve_slot_ids for entry in team_roster):
+        return frozenset()
+    occupancy = Counter(entry.lineup_slot_id for entry in team_roster)
+    return frozenset(
+        slot for slot, capacity in ordinary_slots if occupancy[slot] >= capacity
+    )
+
+
 def acquisition_plans(snapshot, state, team_id, phase, workspace, prepared, ownership):
     """Scarcity first, weekly projection second; marginal value selects drops."""
     from fantasy_football.weekly_transactions import _Plan, _PlanDiagnostics
@@ -529,19 +543,35 @@ def acquisition_plans(snapshot, state, team_id, phase, workspace, prepared, owne
         )
     )
     ordinary = tuple(
-        rule.slot_id
+        (rule.slot_id, rule.capacity)
         for rule in snapshot.rules.lineup_slots
         if rule.kind is not SlotKind.RESERVE and rule.capacity > 0
     )
+    full_slots = frozenset()
+    drop_slots = {}
+    if available:
+        team_roster = workspace.team_roster(state.roster_entries, team_id)
+        full_slots = _full_acquisition_slots(
+            snapshot, team_roster, ordinary, workspace.reserve_slot_ids
+        )
+        if full_slots:
+            drop_slots = {
+                entry.player_id: entry.lineup_slot_id for entry in team_roster
+            }
     attempts = evaluations = 0
     for pid in available:
 
         def acquire(drop_id, pid=pid):
             nonlocal attempts
-            for slot in ordinary:
+            for slot, _ in ordinary:
                 if slot not in players[pid].eligible_lineup_slot_ids:
                     continue
                 attempts += 1
+                # The ranked pool already satisfies phase and reentry checks.
+                # Drop alternatives come from drop_candidates, which proves
+                # ownership and drop permission before any paired add.
+                if slot in full_slots and slot != drop_slots.get(drop_id):
+                    continue
                 branch = compact.fork()
                 try:
                     if drop_id is not None:
