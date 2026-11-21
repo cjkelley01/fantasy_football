@@ -27,6 +27,7 @@ class PathBudgetStatus:
     baseline_id: str
     states: tuple[PathUsage, ...]
     capacity: int
+    per_state_capacity: int
 
     @property
     def baseline_paths(self) -> int:
@@ -76,7 +77,10 @@ class PathBudget:
     @property
     def status(self) -> PathBudgetStatus:
         return PathBudgetStatus(
-            self._baseline_id, tuple(self._usage.values()), self._capacity
+            self._baseline_id,
+            tuple(self._usage.values()),
+            self._capacity,
+            self._state_cap,
         )
 
     def reserve(self, state_id: str, count: int) -> PathReservation:

@@ -44,6 +44,7 @@ class ExperimentalRankingResult:
     inference: RankingLook
     budget: PathBudgetStatus
     unresolved_state_ids: tuple[str, ...]
+    authorized_wins: tuple[tuple[str, int], ...]
 
 
 class ExperimentalMonteCarloRanking:
@@ -303,4 +304,14 @@ class ExperimentalMonteCarloRanking:
             else tuple(state for state in self.family.state_ids if state not in beaten)
             or self.family.state_ids
         )
-        return ExperimentalRankingResult(inference, self.budget, unresolved)
+        wins = tuple(
+            (
+                row.state_id,
+                sum(
+                    path.won
+                    for path in self._paths[row.state_id][: row.probability_paths]
+                ),
+            )
+            for row in inference.states
+        )
+        return ExperimentalRankingResult(inference, self.budget, unresolved, wins)
