@@ -68,6 +68,7 @@ from fantasy_football.monte_carlo_precision import (
     run_monte_carlo_to_precision,
 )
 from fantasy_football.player_outcomes import ProvisionalNormalModel
+from fantasy_football.reusable_baseline import ReusableBaseline
 from fantasy_football.scenario_evaluator import (
     ExplicitRosterChange,
     ManualScenario,
@@ -181,6 +182,7 @@ class ApplicationService:
     """Synchronous application facade; all analytical decisions remain in the engine."""
 
     def __init__(self, dependencies: ApplicationDependencies):
+        self._trade_baselines = ReusableBaseline()
         self.dependencies = dependencies
         self.build = discover_build_provenance(dependencies.build_revision)
 
@@ -748,6 +750,7 @@ class ApplicationService:
                     self._model(request.outcome_model),
                     precision,
                     trades,
+                    baseline=self._trade_baselines,
                 )
             except ValueError as exc:
                 if not isinstance(exc.__cause__, EffectiveTradeError):

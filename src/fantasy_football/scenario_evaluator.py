@@ -43,6 +43,7 @@ from fantasy_football.monte_carlo_precision import (
     binomial_wilson_interval,
 )
 from fantasy_football.player_outcomes import PlayerOutcomeModel, ProvisionalNormalModel
+from fantasy_football.reusable_baseline import ReusableBaseline
 from fantasy_football.roster_value import value_roster
 from fantasy_football.snapshot_store import SnapshotStore
 from fantasy_football.weekly_transactions import WaiverBoundaryPolicy, WeeklyTransactionPolicy
@@ -889,7 +890,15 @@ def evaluate_completed_manual_scenario(
 
 
 def evaluate_effective_trade_plan(
-    snapshot, baseline_state, scenario_id, simulation, model, precision, trades
+    snapshot,
+    baseline_state,
+    scenario_id,
+    simulation,
+    model,
+    precision,
+    trades,
+    *,
+    baseline: ReusableBaseline | None = None,
 ):
     """Compare matched paths with atomic trades at their effective weeks."""
     if simulation.path_count != precision.maximum_paths:
@@ -941,7 +950,9 @@ def evaluate_effective_trade_plan(
         snapshot,
         baseline_state,
         description,
-        run_monte_carlo_batch(
+        baseline.batch(snapshot, baseline_config, model, workspace=workspace)
+        if baseline is not None
+        else run_monte_carlo_batch(
             snapshot, baseline_config, model, _lineup_workspace=workspace
         ),
         run_monte_carlo_batch(

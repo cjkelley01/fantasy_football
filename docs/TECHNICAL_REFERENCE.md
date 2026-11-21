@@ -882,3 +882,22 @@ A timed scenario preserves the ordered transaction groups and each selected week
 Current-week exchanges use verified individual game-time locks, confirmed unstarted status or an explicit NFL bye, and corroborated false roster and trade flags. A completed player with a scoring lock can qualify at the next weekly boundary. Explicit or unresolved trade restrictions do not expire by inference. A finite trade limit without verified remaining usage, an unresolved schedule cutoff, or a boundary after the trade deadline cannot authorize the trade. For a future boundary with a deadline, the first scheduled kickoff must be known and no later than that deadline. Immediate hypothetical approval, including commissioner intervention, is assumed.
 
 The coordinator first applies the whole current exchange to a separate modeled roster. It preserves locked and reserve assignments and places the remaining players into legal slots by maximizing remaining starter projections with the shared exact lineup objective, subject to legal bench placement. Verified byes contribute zero and cannot add projected value. The fixed-score composer still reconciles completed totals to the original evidence. A future trade runs after the cycle advances and before ordinary weekly transactions. Timed exchanges that cannot fit configured roster and position limits without ancillary drops or refills fail closed. The existing undated structural completion workflow remains available for ordinary snapshots. Timed results omit static final-roster lineup explanations because subsequent roster decisions depend on the path.
+
+### Reusable baseline coverage
+
+Timed Trade Lab comparisons share a process-local baseline store owned by the
+application service. The existing run identity binds snapshot content and
+provenance, current-week evidence, model, seed, initial state and execution
+policies. Effective trades are present only in the hypothetical configuration.
+An exact range hit returns an immutable batch. An overlapping request simulates
+only missing contiguous ranges and reaggregates the exact ordered path set.
+Failed or incomplete batches do not replace previously retained coverage.
+
+The store retains up to four configurations and 1,024 paths per configuration.
+Larger requests, incomplete-capability modes, and custom or overridden models
+use ordinary execution. A lock serializes baseline fills in one service while
+hypothetical batches execute independently. Results expire with process lifetime
+or least-recently-used eviction. Retained application results store summaries
+for presentation and are not authoritative inputs to this facility. Fixed
+Opportunity Explorer jobs already share one baseline within a job. They do not
+yet import this store across jobs or use it for progressive sampling.
