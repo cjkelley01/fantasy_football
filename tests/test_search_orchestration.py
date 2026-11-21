@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from fantasy_football import search_orchestration, trade_evaluation, trade_search
+from fantasy_football import (
+    scenario_evaluator,
+    search_orchestration,
+    trade_evaluation,
+    trade_search,
+    unified_actions,
+)
 from fantasy_football.canonical.validation import CanonicalValidationError
 from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.monte_carlo import (
@@ -111,6 +117,52 @@ def test_reference_and_bounded_modes_have_exact_candidate_and_state_parity() -> 
     assert reference.candidate_coverage_complete
     assert bounded.candidate_coverage_complete
     bounded.close()
+
+
+@pytest.mark.parametrize("execution", list(SearchExecutionMode))
+@pytest.mark.parametrize("evaluation", list(SearchEvaluationMode))
+def test_search_reuses_one_explanation_workspace_with_exact_results(
+    execution, evaluation, monkeypatch
+):
+    configuration = replace(_configuration(execution), evaluation_mode=evaluation)
+    configuration = replace(
+        configuration,
+        sampling=replace(configuration.sampling, target_paired_half_width=0.01),
+    )
+    prepare = scenario_evaluator.prepare_lineup_optimization
+    workspaces = []
+
+    def counted(snapshot):
+        workspace = prepare(snapshot)
+        workspaces.append(workspace)
+        return workspace
+
+    monkeypatch.setattr(scenario_evaluator, "prepare_lineup_optimization", counted)
+
+    def result():
+        search = _run(configuration)
+        try:
+            return (
+                search.run_sha256,
+                search.enumeration,
+                _candidates(search),
+                search.fixed_evaluation,
+                search.progressive_evaluation,
+                search.stop_reason,
+            )
+        finally:
+            search.close()
+
+    optimized = result()
+    assert len(workspaces) == 1
+    for module in (search_orchestration, trade_search, unified_actions):
+        monkeypatch.setattr(
+            module,
+            "prepare_search_lineup_explainer",
+            lambda _snapshot: scenario_evaluator._lineup_explanations,
+        )
+    assert result() == optimized
+    assert len(workspaces) == 1
 
 
 @pytest.mark.parametrize("mode", list(SearchExecutionMode))
@@ -726,6 +778,7 @@ def test_progressive_prefix_reuse_matches_full_rebuild(case, monkeypatch):
     def fresh_comparison(*args, **kwargs):
         kwargs.pop("_baseline_precision")
         kwargs.pop("_previous_comparison")
+        kwargs.pop("_explain_lineups")
         return compare(*args, **kwargs)
 
     def rebuild(snapshot, configuration, model, batches, _previous):

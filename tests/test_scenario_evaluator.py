@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
+from decimal import getcontext, localcontext
 import hashlib
 import json
 from pathlib import Path
@@ -10,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 
+from fantasy_football import scenario_evaluator
 from fantasy_football.canonical.model import (
     LineupSlotRule,
     Player,
@@ -19,7 +21,14 @@ from fantasy_football.canonical.model import (
     RosterEntry,
     SlotKind,
 )
-from fantasy_football.evolving_state import IRPolicy, initialize_evolving_state
+from fantasy_football.canonical.validation import CanonicalValidationError
+from fantasy_football.evolving_state import (
+    IRPolicy,
+    add_player,
+    drop_player,
+    initialize_evolving_state,
+)
+from fantasy_football.lineup_optimizer import LineupOptimizationError, prepare_lineup_optimization
 from fantasy_football.espn_adapter import AdapterResult, CapturedResponse, translate_bundle
 from fantasy_football.monte_carlo import MonteCarloConfig
 from fantasy_football.monte_carlo_parallel import ParallelExecutionConfiguration
@@ -43,6 +52,99 @@ from fantasy_football.weekly_transactions import (
 from tests.test_monte_carlo import PrescribedModel
 from tests.test_season_simulator import _snapshot
 from tests.adapter_fixtures import source_bundle
+
+
+def test_prepared_lineup_explanations_preserve_flex_ties_weeks_and_candidate_effects(
+    monkeypatch,
+):
+    from tests.test_roster_value import _overlap_snapshot
+
+    snapshot = _overlap_snapshot(((100, (0,), 12.0), (200, (23,), 11.0)))
+    snapshot = replace(
+        snapshot,
+        player_weeks=tuple(
+            replace(
+                row,
+                raw_projection=None if row.player_id == 100 else 0.0,
+                effective_projection=0.0,
+                projection_class=(
+                    ProjectionClass.MISSING
+                    if row.player_id == 100
+                    else ProjectionClass.EXPLICIT_ZERO
+                ),
+                effective_source=(
+                    ProjectionSource.MISSING_PROJECTION_POLICY
+                    if row.player_id == 100
+                    else ProjectionSource.ESPN
+                ),
+            )
+            if row.scoring_week == 16 and row.player_id in (100, 200)
+            else row
+            for row in snapshot.player_weeks
+        ),
+    )
+    baseline = initialize_evolving_state(
+        snapshot, scoring_week=15, ir_policy=IRPolicy.PROJECTION_BASED
+    )
+    qb = add_player(baseline, snapshot, team_id=1, player_id=100, lineup_slot_id=20)
+    flex = add_player(
+        drop_player(baseline, snapshot, team_id=1, player_id=12),
+        snapshot,
+        team_id=1,
+        player_id=200,
+        lineup_slot_id=23,
+    )
+    turns = (qb, flex, qb)
+    assignments = []
+    precisions = []
+    optimize = scenario_evaluator.optimize_starting_lineup
+
+    def tracked(*args, **kwargs):
+        result = optimize(*args, **kwargs)
+        assignments.append(result)
+        precisions.append(getcontext().prec)
+        return result
+
+    monkeypatch.setattr(scenario_evaluator, "optimize_starting_lineup", tracked)
+    with localcontext() as context:
+        context.prec = 7
+        reference = tuple(
+            scenario_evaluator._lineup_explanations(snapshot, baseline, candidate)
+            for candidate in turns
+        )
+        original_assignments = tuple(assignments)
+        assignments.clear()
+        explain = scenario_evaluator.prepare_search_lineup_explainer(snapshot)
+        assert tuple(
+            explain(snapshot, baseline, candidate) for candidate in turns
+        ) == reference
+    assert tuple(assignments) == original_assignments
+    assert set(precisions) == {7}
+    assert reference[0][0].weeks[0].hypothetical_starter_player_ids == (11, 12)
+    assert reference[1][0].weeks[0].hypothetical_starter_player_ids == (11, 200)
+    assert reference[1][0].weeks[1].hypothetical_starter_player_ids == (11,)
+
+    with localcontext() as context:
+        context.prec = 1
+        context.clear_flags()
+        rounded = scenario_evaluator._lineup_explanations(snapshot, baseline, qb)
+        reference_flags = dict(context.flags)
+        context.clear_flags()
+        assert explain(snapshot, baseline, qb) == rounded
+        assert dict(context.flags) == reference_flags
+
+    different = replace(snapshot, league_name="Changed snapshot")
+    with pytest.raises(ScenarioEvaluationError, match="different snapshot"):
+        explain(different, baseline, qb)
+    with pytest.raises(LineupOptimizationError, match="different canonical snapshot"):
+        scenario_evaluator._lineup_explanations(
+            different, baseline, qb, workspace=prepare_lineup_optimization(snapshot)
+        )
+    invalid = replace(snapshot, rules=replace(snapshot.rules, team_count=999))
+    with pytest.raises(CanonicalValidationError, match="team_count"):
+        scenario_evaluator.prepare_search_lineup_explainer(invalid)(
+            invalid, baseline, qb
+        )
 
 
 def _scenario_snapshot():

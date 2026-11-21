@@ -575,13 +575,18 @@ def test_evaluation_adapter_invokes_accepted_estimator_once_per_state(monkeypatc
     )
     calls = []
     comparisons = []
+    explainers = []
 
     def fake_batch(snapshot_arg, config, model):
         calls.append(config.initial_evolving_state)
         return config.initial_evolving_state
 
-    def fake_compare(snapshot_arg, baseline_arg, completed, baseline_batch, scenario_batch, precision):
+    def fake_compare(
+        snapshot_arg, baseline_arg, completed, baseline_batch, scenario_batch, precision,
+        *, _explain_lineups,
+    ):
         comparisons.append((baseline_batch, scenario_batch))
+        explainers.append(_explain_lineups)
         return completed.scenario_id
 
     monkeypatch.setattr(
@@ -600,5 +605,7 @@ def test_evaluation_adapter_invokes_accepted_estimator_once_per_state(monkeypatc
     )
     assert len(calls) == len(enumeration.completed_states) + 1
     assert all(item[0] is calls[0] for item in comparisons)
+    assert callable(explainers[0])
+    assert all(explain is explainers[0] for explain in explainers)
     assert len(result.evaluations) == len(enumeration.completed_states)
     assert len(result.candidate_links) == len(enumeration.candidates)

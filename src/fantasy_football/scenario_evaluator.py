@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Sequence
 
 from fantasy_football.canonical.model import LeagueSnapshot, RosterEntry, SlotKind
-from fantasy_football.canonical.validation import validate_snapshot
+from fantasy_football.canonical.validation import (
+    prepare_immutable_snapshot_validation,
+    validate_snapshot,
+)
 from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     EvolvingLeagueState,
@@ -23,6 +26,7 @@ from fantasy_football.evolving_state import (
     initialize_evolving_state,
 )
 from fantasy_football.lineup_optimizer import (
+    LineupOptimizationWorkspace,
     optimize_starting_lineup,
     prepare_lineup_optimization,
 )
@@ -764,6 +768,8 @@ def _lineup_explanations(
     snapshot: LeagueSnapshot,
     baseline_state: EvolvingLeagueState,
     hypothetical_state: EvolvingLeagueState,
+    *,
+    workspace: LineupOptimizationWorkspace | None = None,
 ) -> tuple[TeamLineupExplanation, ...]:
     reserve_slot_ids = {
         rule.slot_id for rule in snapshot.rules.lineup_slots if rule.kind is SlotKind.RESERVE
@@ -777,6 +783,21 @@ def _lineup_explanations(
         ordinary = {item.player_id for item in entries if item.lineup_slot_id not in reserve_slot_ids}
         return tuple(sorted(ordinary - starters)), reserve
 
+    def starting_lineup(state, team_id, scoring_week):
+        if workspace is not None:
+            # The reference used a fresh solver for each lineup. Reuse its
+            # indexes and roster slices while preserving Decimal context effects.
+            workspace.starting_cache.clear()
+            workspace.candidate_cache.clear()
+            workspace.projection_profiles.clear()
+        return optimize_starting_lineup(
+            snapshot,
+            team_id,
+            scoring_week,
+            roster_entries=state.roster_entries,
+            workspace=workspace,
+        )
+
     results = []
     for team_id in sorted(item.team_id for item in snapshot.teams):
         weeks = []
@@ -784,18 +805,8 @@ def _lineup_explanations(
         for scoring_week in range(
             snapshot.first_simulation_week, snapshot.final_simulation_week + 1
         ):
-            baseline = optimize_starting_lineup(
-                snapshot,
-                team_id,
-                scoring_week,
-                roster_entries=baseline_state.roster_entries,
-            )
-            hypothetical = optimize_starting_lineup(
-                snapshot,
-                team_id,
-                scoring_week,
-                roster_entries=hypothetical_state.roster_entries,
-            )
+            baseline = starting_lineup(baseline_state, team_id, scoring_week)
+            hypothetical = starting_lineup(hypothetical_state, team_id, scoring_week)
             baseline_starters = {item.player_id for item in baseline.assignments}
             hypothetical_starters = {item.player_id for item in hypothetical.assignments}
             baseline_bench, baseline_reserve = player_sets(
@@ -833,6 +844,35 @@ def _lineup_explanations(
                 changed.append(scoring_week)
         results.append(TeamLineupExplanation(team_id, tuple(changed), tuple(weeks)))
     return tuple(results)
+
+
+def prepare_search_lineup_explainer(snapshot: LeagueSnapshot):
+    """Own a lazy workspace and a validation context used only for explanations."""
+    prepared = None
+
+    def prepare():
+        validated_scope = prepare_immutable_snapshot_validation(snapshot)
+        if validated_scope is None:
+            return None, None
+        with validated_scope():
+            workspace = prepare_lineup_optimization(snapshot)
+        return validated_scope, workspace
+
+    def explain(current, baseline, hypothetical):
+        nonlocal prepared
+        if current is not snapshot:
+            _fail("lineup explanation preparation belongs to a different snapshot")
+        if prepared is None:
+            prepared = prepare()
+        validated_scope, workspace = prepared
+        if validated_scope is None:
+            return _lineup_explanations(current, baseline, hypothetical)
+        with validated_scope():
+            return _lineup_explanations(
+                current, baseline, hypothetical, workspace=workspace
+            )
+
+    return explain
 
 
 def evaluate_manual_scenario(
@@ -988,6 +1028,7 @@ def compare_completed_scenario_batches(
     include_static_lineup_explanations: bool = True,
     _baseline_precision: MonteCarloPrecisionResult | None = None,
     _previous_comparison: ManualScenarioComparison | None = None,
+    _explain_lineups=None,
 ) -> ManualScenarioComparison:
     """Build the accepted M4 paired result from matched accumulated batches."""
 
@@ -1113,7 +1154,9 @@ def compare_completed_scenario_batches(
         lineup_explanations = (
             _previous_comparison.lineup_explanations
             if _previous_comparison is not None and _previous_comparison.lineup_explanations
-            else _lineup_explanations(snapshot, baseline_state, completed.state)
+            else (_explain_lineups or _lineup_explanations)(
+                snapshot, baseline_state, completed.state
+            )
         )
     identity_core = {
         "contract": "m4-paired-scenario-comparison-v1",

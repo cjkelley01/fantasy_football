@@ -5,10 +5,15 @@ from __future__ import annotations
 from collections import Counter
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime
+from dataclasses import fields, is_dataclass
+from datetime import datetime, timezone
+from enum import StrEnum
+from functools import partial
 import math
 from typing import Hashable, Iterable, Mapping, TypeVar
 
+from fantasy_football import live_scoring
+from fantasy_football.canonical import model as canonical_model
 from fantasy_football.canonical.model import (
     InterpretationStatus,
     JsonArray,
@@ -119,6 +124,27 @@ def _json_value(value: object, *, entity: str, identifier: object, field: str) -
     _json_scalar(value, entity=entity, identifier=identifier, field=field)
 
 
+def supports_immutable_snapshot_reuse(value: object) -> bool:
+    """Identify the canonical immutable graph, including nested evidence records."""
+    kind = type(value)
+    if value is None or kind is str or kind is int or kind is float or kind is bool:
+        return True
+    if kind is tuple:
+        return all(supports_immutable_snapshot_reuse(item) for item in value)
+    if kind is datetime:
+        return value.tzinfo is None or type(value.tzinfo) is timezone
+    for module in (canonical_model, live_scoring):
+        if getattr(module, kind.__name__, None) is kind:
+            if isinstance(value, StrEnum):
+                return True
+            if is_dataclass(value) and kind.__dataclass_params__.frozen:
+                return all(
+                    supports_immutable_snapshot_reuse(getattr(value, field.name))
+                    for field in fields(value)
+                )
+    return False
+
+
 _VALIDATED_SNAPSHOT: ContextVar[LeagueSnapshot | None] = ContextVar(
     "validated_canonical_snapshot", default=None
 )
@@ -140,11 +166,25 @@ def validated_snapshot(snapshot: LeagueSnapshot):
         yield
         return
     _validate_snapshot(snapshot)
+    with _bind_validated_snapshot(snapshot):
+        yield
+
+
+@contextmanager
+def _bind_validated_snapshot(snapshot: LeagueSnapshot):
     token = _VALIDATED_SNAPSHOT.set(snapshot)
     try:
         yield
     finally:
         _VALIDATED_SNAPSHOT.reset(token)
+
+
+def prepare_immutable_snapshot_validation(snapshot: LeagueSnapshot):
+    """Return a context factory for re-entering validation of the exact snapshot."""
+    if not supports_immutable_snapshot_reuse(snapshot):
+        return None
+    validate_snapshot(snapshot)
+    return partial(_bind_validated_snapshot, snapshot)
 
 
 def authoritative_current_matchup_period_scoring_weeks(

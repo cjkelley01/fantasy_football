@@ -6,15 +6,14 @@ import hashlib
 import json
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass, fields, is_dataclass, replace
-from datetime import datetime, timezone
-from enum import StrEnum
+from dataclasses import dataclass, replace
 from functools import wraps
 
-from fantasy_football import live_scoring
-from fantasy_football.canonical import model as canonical_model
 from fantasy_football.canonical.model import LeagueSnapshot
-from fantasy_football.canonical.validation import validated_snapshot
+from fantasy_football.canonical.validation import (
+    supports_immutable_snapshot_reuse,
+    validated_snapshot,
+)
 from fantasy_football.evolving_state import (
     EvolvingLeagueState,
     state_to_json,
@@ -46,31 +45,10 @@ _SEARCH_SNAPSHOT: ContextVar[tuple[LeagueSnapshot, str | None] | None] = Context
 )
 
 
-def _immutable_snapshot_value(value: object) -> bool:
-    """Identify the canonical immutable graph, including nested evidence records."""
-    kind = type(value)
-    if value is None or kind is str or kind is int or kind is float or kind is bool:
-        return True
-    if kind is tuple:
-        return all(_immutable_snapshot_value(item) for item in value)
-    if kind is datetime:
-        return value.tzinfo is None or type(value.tzinfo) is timezone
-    for module in (canonical_model, live_scoring):
-        if getattr(module, kind.__name__, None) is kind:
-            if isinstance(value, StrEnum):
-                return True
-            if is_dataclass(value) and kind.__dataclass_params__.frozen:
-                return all(
-                    _immutable_snapshot_value(getattr(value, field.name))
-                    for field in fields(value)
-                )
-    return False
-
-
 @contextmanager
 def prepared_search_snapshot(snapshot: LeagueSnapshot):
     """Scope immutable validation and lazy canonical hashing to one enumeration."""
-    if not _immutable_snapshot_value(snapshot):
+    if not supports_immutable_snapshot_reuse(snapshot):
         yield
         return
     with validated_snapshot(snapshot):

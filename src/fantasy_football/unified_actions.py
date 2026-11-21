@@ -41,6 +41,7 @@ from fantasy_football.scenario_evaluator import (
     _ordinary_count,
     _state_with_roster,
     compare_completed_scenario_batches,
+    prepare_search_lineup_explainer,
 )
 from fantasy_football.trade_candidates import (
     SingleTradeCandidate,
@@ -992,6 +993,7 @@ def evaluate_unified_action_states(
         ).batch
     )
     evaluations = []
+    explain_lineups = prepare_search_lineup_explainer(snapshot)
     for group in enumeration.completed_states:
         if should_stop is not None and should_stop():
             break
@@ -1019,7 +1021,8 @@ def evaluate_unified_action_states(
             ).batch
         )
         comparison = compare_completed_scenario_batches(
-            snapshot, baseline_state, completed, baseline_batch, scenario_batch, precision
+            snapshot, baseline_state, completed, baseline_batch, scenario_batch, precision,
+            _explain_lineups=explain_lineups,
         )
         evaluations.append(
             UnifiedStateEvaluation(

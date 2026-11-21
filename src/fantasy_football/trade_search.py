@@ -30,6 +30,7 @@ from fantasy_football.scenario_evaluator import (
     ManualScenarioComparison,
     compare_completed_scenario_batches,
     paired_championship_difference,
+    prepare_search_lineup_explainer,
 )
 from fantasy_football.trade_candidates import (
     SingleTradeSearchConfiguration,
@@ -399,6 +400,7 @@ def evaluate_progressive_state_groups(
     }
     comparisons: dict[str, ManualScenarioComparison] = {}
     snapshots: list[TradeSearchProgressSnapshot] = []
+    explain_lineups = prepare_search_lineup_explainer(snapshot)
 
     def emit(stage, round_index, competitive, stop=None):
         estimates = tuple(
@@ -451,6 +453,7 @@ def evaluate_progressive_state_groups(
             ), precision,
             _baseline_precision=baseline_precision,
             _previous_comparison=previous,
+            _explain_lineups=explain_lineups,
         )
         comparisons[state_id] = result
         return result.baseline

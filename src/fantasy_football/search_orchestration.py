@@ -34,7 +34,10 @@ from fantasy_football.monte_carlo_parallel import (
 )
 from fantasy_football.monte_carlo_precision import PrecisionConfiguration
 from fantasy_football.player_outcomes import PlayerOutcomeModel
-from fantasy_football.scenario_evaluator import compare_completed_scenario_batches
+from fantasy_football.scenario_evaluator import (
+    compare_completed_scenario_batches,
+    prepare_search_lineup_explainer,
+)
 from fantasy_football.season_simulator import require_supported_initial_roster_mode
 from fantasy_football.trade_evaluation import prepared_search_snapshot
 from fantasy_football.trade_search import (
@@ -741,6 +744,7 @@ def _evaluate_indexed_fixed(
         parallel,
     )
     evaluations = []
+    explain_lineups = prepare_search_lineup_explainer(snapshot)
     for state_id in state_ids:
         if should_stop():
             break
@@ -753,7 +757,8 @@ def _evaluate_indexed_fixed(
             parallel,
         )
         comparison = compare_completed_scenario_batches(
-            snapshot, baseline_state, source, baseline, scenario, precision
+            snapshot, baseline_state, source, baseline, scenario, precision,
+            _explain_lineups=explain_lineups,
         )
         evaluations.append(
             UnifiedStateEvaluation(state_id, group.candidate_ids, comparison)

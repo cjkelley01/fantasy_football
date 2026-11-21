@@ -760,6 +760,14 @@ that ranking look. Reuse ends with the search. Confidence calculations,
 allocation, stopping and the unresolved progressive inference obligation remain
 under the existing methodology and validation contracts.
 
+Fixed and progressive search evaluation lazily prepare one snapshot-bound
+workspace for projection-only lineup explanations. Only explanation calls
+re-enter the prepared validation scope. Each baseline and candidate roster
+uses the normal workspace roster checks and team slices. Lineup solves retain
+their fresh-call Decimal behavior, including traps and flags, while sharing
+projection indexes and validated roster preparation. The workspace belongs
+to the evaluation and expires with it.
+
 `SearchResultIndex` stores trusted-process pickle candidate/state/result payloads; it is not public interchange, an independent forged-input validator or a safe untrusted import format. Use `result.iter_candidates()` in either mode: bounded result.candidates is intentionally empty. Index iteration pages by last candidate ID (`candidate_id > last`, ascending), distinct from HTTP offset pagination. Successfully returned result handles are caller-owned and require `close()` in finally; the index has context-manager methods, **the result handle does not**. Closure is idempotent and removes temporary DB/sidecars. Creation/bounded-generation failures close explicitly. Until result handoff, the coordinator owns the index and attempts close on evaluation/progress/export failure before re-raising the original exception; an OSError during close is attached as a note. **Search Scratch Cleanup** tracks independent acceptance of these failure and handoff regressions. Garbage collection is not deterministic cleanup acceptance. [C13](TECHNICAL_REFERENCE.md#ownership-and-lifetime) preserves separate scratch, bounded durable history, checkpoint, immutable snapshot and user-export ownership; exact T8/T9 runtime/storage/lifecycle details stay with their current owners.
 
 ### Retained HTTP query allowlist
