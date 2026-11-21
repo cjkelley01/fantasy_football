@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import json
 from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import dataclass, replace
 from functools import wraps
 
@@ -23,6 +22,7 @@ from fantasy_football.monte_carlo import (
     MonteCarloConfig,
     canonical_snapshot_fingerprint,
     monte_carlo_run_identity,
+    search_snapshot_fingerprint_scope,
     simulation_configuration_fingerprint,
 )
 from fantasy_football.monte_carlo_parallel import ParallelExecutionConfiguration
@@ -40,9 +40,6 @@ from fantasy_football.trade_screening import TradeScreeningOutcome, TradeScreeni
 
 COMPLETED_STATE_CONTRACT = "m5.3-completed-simulation-state-v1"
 EVALUATION_IDENTITY_CONTRACT = "m5.3-shared-paired-evaluation-v1"
-_SEARCH_SNAPSHOT: ContextVar[tuple[LeagueSnapshot, str | None] | None] = ContextVar(
-    "completed_state_search_snapshot", default=None
-)
 
 
 @contextmanager
@@ -51,12 +48,8 @@ def prepared_search_snapshot(snapshot: LeagueSnapshot):
     if not supports_immutable_snapshot_reuse(snapshot):
         yield
         return
-    with validated_snapshot(snapshot):
-        token = _SEARCH_SNAPSHOT.set((snapshot, None))
-        try:
-            yield
-        finally:
-            _SEARCH_SNAPSHOT.reset(token)
+    with search_snapshot_fingerprint_scope(snapshot), validated_snapshot(snapshot):
+        yield
 
 
 def reuse_search_snapshot(function):
@@ -66,17 +59,6 @@ def reuse_search_snapshot(function):
             return function(snapshot, *args, **kwargs)
 
     return wrapped
-
-
-def _completed_state_snapshot_fingerprint(snapshot: LeagueSnapshot) -> str:
-    prepared = _SEARCH_SNAPSHOT.get()
-    if prepared is None or prepared[0] is not snapshot:
-        return canonical_snapshot_fingerprint(snapshot)
-    digest = prepared[1]
-    if digest is None:
-        digest = canonical_snapshot_fingerprint(snapshot)
-        _SEARCH_SNAPSHOT.set((snapshot, digest))
-    return digest
 
 
 class TradeEvaluationError(ValueError):
@@ -184,7 +166,7 @@ def completed_state_fingerprint(
         "contract": COMPLETED_STATE_CONTRACT,
         "snapshot_id": snapshot.snapshot_id,
         "source_schema_version": snapshot.schema_version,
-        "canonical_snapshot_sha256": _completed_state_snapshot_fingerprint(snapshot),
+        "canonical_snapshot_sha256": canonical_snapshot_fingerprint(snapshot),
         "evolving_state": json.loads(state_to_json(state, snapshot)),
     }
     return _hash(payload)

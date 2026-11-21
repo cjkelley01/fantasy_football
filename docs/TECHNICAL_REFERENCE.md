@@ -745,7 +745,14 @@ coordinator admission. The digest is computed lazily from the existing
 canonical serializer. Mutable or noncanonical representations use ordinary
 validation. Completed states and their transitions retain independent
 validation, and all candidate IDs and ordering rules use their existing inputs.
-The scope ends with enumeration.
+Search orchestration also reuses the canonical snapshot digest across candidate
+evaluation and refinement. Each execution context retains at most one digest,
+computed by the ordinary validated serializer and SHA-256 on first use. A
+separate enumeration or numerical worker does its own preparation. Digest
+reuse requires the exact, deeply immutable snapshot instance and ends with
+the search scope. Mutable representations and other instances follow the
+ordinary hash path. Configuration, state, seed and path identity inputs still
+follow their existing computation and validation.
 
 Progressive evaluation extends each reconciled state prefix with its next
 contiguous batch after checking numerical configuration, model, seed and path

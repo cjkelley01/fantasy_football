@@ -26,6 +26,7 @@ from fantasy_football.evolving_state import EvolvingLeagueState, validate_evolvi
 from fantasy_football.monte_carlo import (
     MonteCarloConfig,
     monte_carlo_run_identity,
+    reuse_search_snapshot_fingerprint,
     run_monte_carlo_batch,
 )
 from fantasy_football.monte_carlo_parallel import (
@@ -766,6 +767,7 @@ def _evaluate_indexed_fixed(
     return SearchIndexedFixedEvaluation(tuple(evaluations))
 
 
+@reuse_search_snapshot_fingerprint
 def execute_search_orchestration(
     snapshot: LeagueSnapshot,
     baseline_state: EvolvingLeagueState,

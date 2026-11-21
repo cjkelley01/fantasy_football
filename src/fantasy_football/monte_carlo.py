@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, fields, is_dataclass, replace
 from enum import Enum
+from functools import wraps
 
 from fantasy_football.canonical.model import (
     LeagueSnapshot,
@@ -14,7 +17,10 @@ from fantasy_football.canonical.model import (
     SlotKind,
 )
 from fantasy_football.canonical.serialization import snapshot_to_json
-from fantasy_football.canonical.validation import validated_snapshot
+from fantasy_football.canonical.validation import (
+    supports_immutable_snapshot_reuse,
+    validated_snapshot,
+)
 from fantasy_football.effective_trades import (
     EffectiveTrade,
     assignments_after_current_trades,
@@ -281,9 +287,50 @@ def _canonical_snapshot_fingerprint_content(snapshot: LeagueSnapshot):
     return content
 
 
+_SEARCH_SNAPSHOT_DIGEST: ContextVar[tuple[LeagueSnapshot, str | None] | None] = (
+    ContextVar("search_snapshot_digest", default=None)
+)
+
+
+@contextmanager
+def search_snapshot_fingerprint_scope(snapshot: LeagueSnapshot):
+    """Lazily retain one immutable snapshot's canonical digest during search."""
+    prepared = _SEARCH_SNAPSHOT_DIGEST.get()
+    if prepared is not None and prepared[0] is snapshot:
+        yield
+        return
+    if not supports_immutable_snapshot_reuse(snapshot):
+        yield
+        return
+    token = _SEARCH_SNAPSHOT_DIGEST.set((snapshot, None))
+    try:
+        yield
+    finally:
+        _SEARCH_SNAPSHOT_DIGEST.reset(token)
+
+
+def reuse_search_snapshot_fingerprint(function):
+    @wraps(function)
+    def wrapped(snapshot, *args, **kwargs):
+        with search_snapshot_fingerprint_scope(snapshot):
+            return function(snapshot, *args, **kwargs)
+
+    return wrapped
+
+
 def canonical_snapshot_fingerprint(snapshot: LeagueSnapshot) -> str:
     """Return the order-normalized authoritative canonical-content identity."""
+    prepared = _SEARCH_SNAPSHOT_DIGEST.get()
+    if prepared is None or prepared[0] is not snapshot:
+        return _compute_canonical_snapshot_fingerprint(snapshot)
+    digest = prepared[1]
+    if digest is None:
+        digest = _compute_canonical_snapshot_fingerprint(snapshot)
+        _SEARCH_SNAPSHOT_DIGEST.set((snapshot, digest))
+    return digest
 
+
+def _compute_canonical_snapshot_fingerprint(snapshot: LeagueSnapshot) -> str:
     return hashlib.sha256(
         json.dumps(
             _canonical_snapshot_fingerprint_content(snapshot),

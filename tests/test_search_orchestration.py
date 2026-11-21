@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from fantasy_football import (
+    monte_carlo,
     scenario_evaluator,
     search_orchestration,
     trade_evaluation,
@@ -170,16 +171,10 @@ def test_search_preparation_preserves_full_progressive_results(mode, monkeypatch
     configuration = _configuration(mode)
     optimized = _run(configuration)
     try:
-        monkeypatch.setattr(
-            trade_evaluation,
-            "prepared_search_snapshot",
-            lambda _snapshot: nullcontext(),
-        )
-        monkeypatch.setattr(
-            search_orchestration,
-            "prepared_search_snapshot",
-            lambda _snapshot: nullcontext(),
-        )
+        for module in (trade_evaluation, search_orchestration):
+            monkeypatch.setattr(
+                module, "prepared_search_snapshot", lambda _snapshot: nullcontext()
+            )
         reference = _run(configuration)
         try:
             assert optimized.run_sha256 == reference.run_sha256
@@ -193,18 +188,64 @@ def test_search_preparation_preserves_full_progressive_results(mode, monkeypatch
         optimized.close()
 
 
+@pytest.mark.parametrize("mode", list(SearchExecutionMode))
+@pytest.mark.parametrize("evaluation", list(SearchEvaluationMode))
+@pytest.mark.parametrize("state_limit", [1, None])
+def test_search_snapshot_digest_reuse_preserves_full_results(
+    mode, evaluation, state_limit, monkeypatch,
+):
+    configuration = replace(
+        _configuration(mode, evaluation_state_limit=state_limit),
+        evaluation_mode=evaluation,
+    )
+    configuration = replace(
+        configuration,
+        sampling=replace(configuration.sampling, target_paired_half_width=0.01),
+    )
+    compute = monte_carlo._compute_canonical_snapshot_fingerprint
+    calls = []
+
+    def counted(snapshot):
+        calls.append(snapshot)
+        return compute(snapshot)
+
+    monkeypatch.setattr(monte_carlo, "_compute_canonical_snapshot_fingerprint", counted)
+    optimized = _run(configuration)
+    try:
+        optimized_count = len(calls)
+        assert 1 <= optimized_count <= 2  # A bounded producer may own its own scope.
+        monkeypatch.setattr(
+            monte_carlo,
+            "search_snapshot_fingerprint_scope",
+            lambda _snapshot: nullcontext(),
+        )
+        reference = _run(configuration)
+        try:
+            assert len(calls) - optimized_count > optimized_count
+            assert optimized.run_sha256 == reference.run_sha256
+            assert optimized.enumeration == reference.enumeration
+            assert _candidates(optimized) == _candidates(reference)
+            assert optimized.fixed_evaluation == reference.fixed_evaluation
+            assert optimized.progressive_evaluation == reference.progressive_evaluation
+            assert optimized.stop_reason == reference.stop_reason
+        finally:
+            reference.close()
+    finally:
+        optimized.close()
+
+
 def test_enumeration_prepares_one_snapshot_hash_and_does_not_reuse_across_searches(
     monkeypatch,
 ):
     snapshot = _scenario_snapshot_with_bench()
-    fingerprint = trade_evaluation.canonical_snapshot_fingerprint
+    fingerprint = monte_carlo._compute_canonical_snapshot_fingerprint
     calls = []
 
     def counted(value):
         calls.append(value)
         return fingerprint(value)
 
-    monkeypatch.setattr(trade_evaluation, "canonical_snapshot_fingerprint", counted)
+    monkeypatch.setattr(monte_carlo, "_compute_canonical_snapshot_fingerprint", counted)
     state = _state(snapshot)
     first = enumerate_unified_action_candidates(snapshot, state, _candidate_search())
     other = replace(snapshot)
@@ -246,6 +287,42 @@ def test_preparation_keeps_snapshot_and_candidate_validation_separate():
             fingerprint(forged, state)
         changed = replace(snapshot, league_name="Changed league")
         assert fingerprint(changed, state) != baseline
+
+
+def test_search_digest_scope_only_reuses_exact_snapshot_not_run_inputs(monkeypatch):
+    snapshot = _scenario_snapshot_with_bench()
+    config = simulation_config(2)
+    model = PrescribedModel()
+    compute = monte_carlo._compute_canonical_snapshot_fingerprint
+    calls = []
+
+    def counted(value):
+        calls.append(value)
+        return compute(value)
+
+    monkeypatch.setattr(monte_carlo, "_compute_canonical_snapshot_fingerprint", counted)
+    configuration = monte_carlo.simulation_configuration_fingerprint
+    run = monte_carlo.monte_carlo_run_identity
+    separately_constructed = replace(snapshot)
+    with monte_carlo.search_snapshot_fingerprint_scope(snapshot):
+        common = configuration(snapshot, config, model)
+        assert configuration(separately_constructed, config, model) == common
+        assert len(calls) == 2 and calls[1] is separately_constructed
+        with monte_carlo.search_snapshot_fingerprint_scope(snapshot):
+            assert configuration(snapshot, config, model) == common
+        changed_policy = replace(config, require_complete=False)
+        assert configuration(snapshot, changed_policy, model) != common
+        assert run(snapshot, replace(config, master_seed=4321), model) != run(
+            snapshot, config, model
+        )
+        first = run_monte_carlo_batch(snapshot, config, model)
+        suffix = run_monte_carlo_batch(
+            snapshot, replace(config, path_count=1, first_path_index=1), model
+        )
+        assert suffix.paths == first.paths[1:]
+        assert len(calls) == 2
+    assert configuration(snapshot, config, model) == common
+    assert len(calls) == 3
 
 
 def test_mutable_snapshot_graph_falls_back_to_validation():
@@ -788,6 +865,9 @@ def test_progressive_prefix_reuse_matches_full_rebuild(case, monkeypatch):
     monkeypatch.setattr(trade_search, "_combine_progressive_prefix", rebuild)
     monkeypatch.setattr(trade_search, "_ranking_prefix", lambda *_: None)
     monkeypatch.setattr(trade_search, "lru_cache", lambda **_: lambda fn: fn)
+    monkeypatch.setattr(
+        monte_carlo, "search_snapshot_fingerprint_scope", lambda _: nullcontext()
+    )
     assert prepared == run()
     evaluation = prepared[3]
     exposures = tuple(row.completed_paths for row in evaluation.state_evaluations)
