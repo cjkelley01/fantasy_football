@@ -68,7 +68,7 @@ def test_backlog_rejects_lost_duplicate_or_prematurely_completed_work(
 ) -> None:
     rows = [row[:] for row in _work_rows()]
     if fault == "lost-item":
-        rows.pop()
+        rows.pop(0)
     elif fault == "duplicate-anchor":
         rows[1][0] = rows[0][0]
     else:
