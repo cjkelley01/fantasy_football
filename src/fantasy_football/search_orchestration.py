@@ -943,14 +943,15 @@ def execute_search_orchestration(
                 ProgressiveStateGroupInput(item.completed_state_sha256, item.state, item.candidate_ids)
                 for item in enumeration.completed_states
             )
-            progressive = evaluate_progressive_state_groups(
-                snapshot, baseline_state,
-                state_source,
-                configuration.candidate_search.requesting_team_id,
-                sampling, simulation, model, parallel_execution=parallel,
-                progress_observer=observe_progressive,
-                should_stop=should_stop,
-            )
+            with prepared_search_snapshot(snapshot):
+                progressive = evaluate_progressive_state_groups(
+                    snapshot, baseline_state,
+                    state_source,
+                    configuration.candidate_search.requesting_team_id,
+                    sampling, simulation, model, parallel_execution=parallel,
+                    progress_observer=observe_progressive,
+                    should_stop=should_stop,
+                )
             evaluated = progressive.initially_evaluated_states
             paths = progressive.scenario_paths_computed
             precision_complete = progressive.statistical_precision_complete

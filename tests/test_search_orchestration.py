@@ -15,6 +15,7 @@ from fantasy_football import (
     trade_search,
     unified_actions,
 )
+from fantasy_football.canonical import validation as canonical_validation
 from fantasy_football.canonical.validation import CanonicalValidationError
 from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.monte_carlo import (
@@ -164,6 +165,69 @@ def test_search_reuses_one_explanation_workspace_with_exact_results(
         )
     assert result() == optimized
     assert len(workspaces) == 1
+
+
+@pytest.mark.parametrize("mode", list(SearchExecutionMode))
+def test_progressive_rounds_reuse_only_the_validated_snapshot(mode, monkeypatch):
+    original_evaluate = search_orchestration.evaluate_progressive_state_groups
+    original_validate = canonical_validation._validate_snapshot
+    validation_calls = []
+    evaluation_counts = []
+    evaluated_snapshots = []
+
+    def validate(snapshot):
+        validation_calls.append(snapshot)
+        return original_validate(snapshot)
+
+    def evaluate(snapshot, *args, **kwargs):
+        evaluated_snapshots.append(snapshot)
+        separate = replace(snapshot)
+        canonical_validation.validate_snapshot(separate)
+        assert validation_calls[-1] is separate
+        forged = replace(
+            snapshot,
+            roster_entries=(replace(snapshot.roster_entries[0], team_id=True),)
+            + snapshot.roster_entries[1:],
+        )
+        assert forged == snapshot
+        with pytest.raises(CanonicalValidationError, match="team_id"):
+            canonical_validation.validate_snapshot(forged)
+        start = len(validation_calls)
+        result = original_evaluate(snapshot, *args, **kwargs)
+        evaluation_counts.append(
+            sum(value is snapshot for value in validation_calls[start:])
+        )
+        assert len({item.refinement_round for item in result.progress_snapshots}) > 1
+        return result
+
+    monkeypatch.setattr(canonical_validation, "_validate_snapshot", validate)
+    monkeypatch.setattr(search_orchestration, "evaluate_progressive_state_groups", evaluate)
+    configuration = _configuration(mode)
+    configuration = replace(
+        configuration,
+        sampling=replace(configuration.sampling, target_paired_half_width=0.01),
+    )
+    optimized = _run(configuration)
+    try:
+        prior_calls = len(validation_calls)
+        canonical_validation.validate_snapshot(evaluated_snapshots[0])
+        assert len(validation_calls) == prior_calls + 1
+        monkeypatch.setattr(
+            search_orchestration, "prepared_search_snapshot", lambda _: nullcontext()
+        )
+        reference = _run(configuration)
+        try:
+            assert evaluation_counts[0] == 0 < evaluation_counts[1]
+            assert optimized.run_sha256 == reference.run_sha256
+            assert _candidates(optimized) == _candidates(reference)
+            assert optimized.progressive_evaluation == reference.progressive_evaluation
+            assert optimized.candidate_coverage_complete == reference.candidate_coverage_complete
+            assert optimized.evaluation_coverage_complete == reference.evaluation_coverage_complete
+            assert optimized.stop_reason == reference.stop_reason
+        finally:
+            reference.close()
+    finally:
+        optimized.close()
 
 
 @pytest.mark.parametrize("mode", list(SearchExecutionMode))

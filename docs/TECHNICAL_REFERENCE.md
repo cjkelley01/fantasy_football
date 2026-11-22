@@ -770,6 +770,14 @@ the search scope. Mutable representations and other instances follow the
 ordinary hash path. Configuration, state, seed and path identity inputs still
 follow their existing computation and validation.
 
+Within production search orchestration, progressive evaluation validates the
+exact deeply immutable snapshot once for the evaluation scope and reuses that
+validation through refinement. Other snapshot instances and mutable
+representations follow ordinary validation. Each evolving candidate state,
+source permission and Monte Carlo path result still follows its own checks.
+Standalone evaluators and separately started workers use their own validation
+boundaries.
+
 Progressive evaluation extends each reconciled state prefix with its next
 contiguous batch after checking numerical configuration, model, seed and path
 identity. Complete-path counts and paired event counts accumulate from the new
