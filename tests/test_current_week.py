@@ -511,3 +511,101 @@ def test_traded_roster_maximizes_flex_value_under_full_roster_constraints():
     overfull = EffectiveTrade(11, (TradeTransfer(4, 2, 1),))
     with pytest.raises(EffectiveTradeError, match="cannot fit the complete trade"):
         traded_roster(snapshot, entries, overfull, evidence=evidence)
+
+
+@pytest.mark.parametrize(
+    "game_status, points, basis",
+    [
+        ("STATUS_IN_PROGRESS", 12.25, "projected_final"),
+        ("STATUS_FINAL", 13.25, "final_actual"),
+    ],
+)
+def test_projected_baseline_preserves_observed_actual_separately(
+    tmp_path, game_status, points, basis
+):
+    from fantasy_football.app.contracts import (
+        ProjectedBaselineRequest,
+        SnapshotSelector,
+    )
+    from fantasy_football.app.service import ApplicationDependencies, ApplicationService
+
+    bundle = _bundle()
+    for response in (bundle.league_initial, bundle.league_reconciliation):
+        response.payload["settings"]["scheduleSettings"][
+            "consolationLadderDisabled"
+        ] = True
+    for team in bundle.pro_schedule.payload["settings"]["proTeams"]:
+        for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
+            if game["homeProTeamId"] == 3:
+                game["status"] = game_status
+    snapshot, _ = _publish(tmp_path, bundle)
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    loaded = store.load(snapshot.snapshot_id)
+    result = ApplicationService(ApplicationDependencies(store)).run_projected_baseline(
+        ProjectedBaselineRequest(
+            snapshot=SnapshotSelector(snapshot_id=snapshot.snapshot_id),
+            canonical_sha256=loaded.metadata.canonical_sha256,
+        )
+    )
+    score = next(item for item in result.observed_scores if item.player_id == 2)
+    assert (score.observed_points, score.points, score.basis) == (
+        13.25,
+        points,
+        basis,
+    )
+    assert bool(score.projection_source_id) == (basis == "projected_final")
+    team = next(item for item in result.weeks[0].lineups if item.team_id == 2)
+    assert team.realized_points == points
+    assert [assignment.player_id for assignment in team.lineup.assignments] == [2]
+
+
+@pytest.mark.parametrize(
+    "game_status, rationale",
+    [
+        (None, "Game status is missing"),
+        ("STATUS_FINAL", "no verified fantasy-matchup and standings settlement"),
+    ],
+)
+def test_projected_baseline_rejects_unresolved_current_week(
+    tmp_path, monkeypatch, game_status, rationale
+):
+    from fantasy_football.app import projected_baseline
+    from fantasy_football.app.contracts import (
+        ProjectedBaselineRequest,
+        SnapshotSelector,
+    )
+    from fantasy_football.app.service import (
+        ApplicationDependencies,
+        ApplicationService,
+        ApplicationServiceError,
+    )
+
+    bundle = _bundle()
+    for team in bundle.pro_schedule.payload["settings"]["proTeams"]:
+        for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
+            if game_status is None:
+                game.pop("status", None)
+                game["statsOfficial"] = False
+            else:
+                game["status"] = game_status
+    snapshot, _ = _publish(tmp_path, bundle)
+    assert snapshot.live_scoring is not None
+    assert not snapshot.live_scoring.partial_week_simulation_required
+
+    def unexpected(*args, **kwargs):
+        pytest.fail(
+            "Unresolved evidence reached projected score preparation or execution"
+        )
+
+    monkeypatch.setattr(projected_baseline, "projected_scores", unexpected)
+    monkeypatch.setattr(projected_baseline, "build_current_week_input", unexpected)
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    loaded = store.load(snapshot.snapshot_id)
+    with pytest.raises(ApplicationServiceError, match=rationale) as error:
+        ApplicationService(ApplicationDependencies(store)).run_projected_baseline(
+            ProjectedBaselineRequest(
+                snapshot=SnapshotSelector(snapshot_id=snapshot.snapshot_id),
+                canonical_sha256=loaded.metadata.canonical_sha256,
+            )
+        )
+    assert error.value.code == "current_week_evidence_unresolved"

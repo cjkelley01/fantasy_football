@@ -7,6 +7,11 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from fantasy_football.evolving_state import TransactionRecord
+from fantasy_football.postseason import PostseasonMatchup
+from fantasy_football.season_simulator import FinalTeamSeasonRecord, FrozenTeamWeek
+from fantasy_football.weekly_engine import MatchupResult
+
 API_SCHEMA_VERSION = "1.0"
 
 
@@ -243,6 +248,51 @@ class AnalysisProvenance(ContractModel):
     requested_path_count: int
     effective_request_sha256: str
     application_run: RunIdentity
+
+
+class ProjectedBaselineRequest(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    snapshot: SnapshotSelector
+    canonical_sha256: str
+    ir_policy: Literal["projection_based", "strict"] = "projection_based"
+    waiver_boundary: Literal["unresolved", "modeled_weekly_v1"] = "modeled_weekly_v1"
+    reject_incomplete_valuations: bool = True
+    standings_fallback_seed: int | None = Field(default=None, strict=True)
+
+
+class ProjectedSeasonWeek(ContractModel):
+    scoring_week: int
+    phase: str
+    lineups: tuple[FrozenTeamWeek, ...]
+    matchups: tuple[MatchupResult, ...]
+
+
+class ProjectedObservedScore(ContractModel):
+    player_id: int
+    scoring_week: int
+    points: float
+    basis: str
+    observed_points: float | None
+    source_id: str
+    projection_source_id: str | None
+
+
+class ProjectedBaselineResult(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    snapshot_id: str
+    canonical_sha256: str
+    status: str
+    teams: tuple[FinalTeamSeasonRecord, ...]
+    weeks: tuple[ProjectedSeasonWeek, ...]
+    postseason: tuple[PostseasonMatchup, ...]
+    champion_team_id: int | None
+    transactions: tuple[TransactionRecord, ...]
+    observed_source_ids: tuple[str, ...]
+    observed_scores: tuple[ProjectedObservedScore, ...]
+    projection_source_ids: tuple[str, ...]
+    missing_projection_count: int
+    assumptions: tuple[str, ...]
+    unresolved_capabilities: tuple[str, ...]
 
 
 class BaselineAnalysisRequest(ContractModel):

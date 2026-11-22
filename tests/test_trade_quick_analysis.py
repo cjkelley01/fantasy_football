@@ -109,15 +109,13 @@ def test_quick_only_scores_projections_then_same_http_draft_runs_monte_carlo(
         assert result.json()["matched_path_count"] == 1
 
 
-def test_unplayed_live_week_keeps_untimed_preview_and_simulation_in_the_same_state(
-    monkeypatch,
-):
+def unplayed_live_snapshot():
     snapshot = translate_bundle(source_bundle()).snapshot
     live = snapshot.live_scoring
     assert live is not None
     assert live.supported_simulation_week == snapshot.first_simulation_week == 2
     # Give each team one fillable starter slot for an otherwise unchanged live fixture.
-    snapshot = replace(
+    return replace(
         snapshot,
         snapshot_id="unplayed-live",
         rules=replace(
@@ -145,6 +143,12 @@ def test_unplayed_live_week_keeps_untimed_preview_and_simulation_in_the_same_sta
             for entry in snapshot.roster_entries
         ),
     )
+
+
+def test_unplayed_live_week_keeps_untimed_preview_and_simulation_in_the_same_state(
+    monkeypatch,
+):
+    snapshot = unplayed_live_snapshot()
     service, draft = make_request(
         snapshot,
         changes=(

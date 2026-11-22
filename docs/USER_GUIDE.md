@@ -156,6 +156,14 @@ existing simulation workflow. Committed edits or a snapshot change clear the
 Quick Analysis result. Effective-dated trades and partial weeks are outside
 Quick Analysis.
 
+### Project one season
+
+In **League**, select **Run projected baseline** to evaluate one season for the
+selected snapshot. Expand the weekly results, postseason bracket, or transaction
+details. A projected champion is the winner of this single scenario. Choose
+**Open Monte Carlo** to estimate probabilities with the same selected snapshot.
+The projected result is temporary. Monte Carlo runs remain available in history.
+
 ### First workflow: baseline, then a specific exchange
 
 This walkthrough uses your selected validated snapshot and real roster records. It asserts no observed league result or recommended trade.

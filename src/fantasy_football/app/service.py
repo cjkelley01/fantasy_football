@@ -31,6 +31,8 @@ from fantasy_football.app.contracts import (
     PlacementProbability,
     PlayerSummary,
     ProbabilityValue,
+    ProjectedBaselineRequest,
+    ProjectedBaselineResult,
     RosterAssignment,
     RuleCapability,
     RunIdentity,
@@ -614,6 +616,33 @@ class ApplicationService:
                 ),
             ) for team in result.teams
         )
+
+    def run_projected_baseline(
+        self, request: ProjectedBaselineRequest
+    ) -> ProjectedBaselineResult:
+        from fantasy_football.app.projected_baseline import project_baseline
+
+        loaded = self._load(request.snapshot)
+        if request.canonical_sha256 != loaded.metadata.canonical_sha256:
+            raise ApplicationServiceError(
+                "snapshot_identity_mismatch", "invalid_request",
+                "The snapshot content differs from the analysis selection.",
+            )
+        from fantasy_football.automatic_rosters import AutomaticRosterError
+        from fantasy_football.current_week import CurrentWeekEvidenceError
+        from fantasy_football.partial_week import PartialWeekError
+        from fantasy_football.season_simulator import SeasonSimulationError
+
+        try:
+            return project_baseline(loaded, request)
+        except CurrentWeekEvidenceError as exc:
+            raise ApplicationServiceError(
+                "current_week_evidence_unresolved", "unsupported_configuration", str(exc)
+            ) from exc
+        except (SeasonSimulationError, PartialWeekError, AutomaticRosterError) as exc:
+            raise ApplicationServiceError(
+                "engine_request_rejected", "unsupported_configuration", str(exc)
+            ) from exc
 
     def run_baseline(self, request: BaselineAnalysisRequest) -> BaselineAnalysisResult:
         loaded = self._load(request.snapshot)

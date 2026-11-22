@@ -306,3 +306,38 @@ export interface ApiErrorEnvelope {
     readonly context: Readonly<Record<string, string | number | boolean | null>>;
   };
 }
+
+export interface ProjectedBaselineResult {
+  snapshot_id: string;
+  canonical_sha256: string;
+  status: string;
+  champion_team_id: number | null;
+  teams: readonly {
+    team_id: number;
+    final_regular_rank: number | null;
+    postseason_seed: number | null;
+    final_placement: number | null;
+    final_regular_standing: {wins: number; losses: number; ties: number; points_for: number};
+  }[];
+  weeks: readonly {
+    scoring_week: number;
+    lineups: readonly {team_id: number; realized_points: number; lineup: {assignments: readonly {player_id: number}[]}}[];
+    matchups: readonly {matchup_id: number; home_team_id: number; away_team_id: number; home_score: number; away_score: number}[];
+  }[];
+  postseason: readonly {
+    matchup_id: string; round_number: number; bracket_type: string;
+    home_team_id: number; away_team_id: number | null;
+    home_total: number | null; away_total: number | null; winner_team_id: number | null;
+  }[];
+  transactions: readonly {sequence: number; scoring_week: number; action: string; player_id: number | null}[];
+  observed_scores: readonly {
+    player_id: number;
+    scoring_week: number;
+    points: number;
+    basis: string;
+    observed_points: number | null;
+  }[];
+  assumptions: readonly string[];
+  unresolved_capabilities: readonly string[];
+  missing_projection_count: number;
+}

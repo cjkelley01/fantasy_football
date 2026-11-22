@@ -24,3 +24,24 @@ test("snapshot change prevents a late result from appearing under another snapsh
 test("rapid run selection ignores late resolution from cancelled requests",async()=>{const user=userEvent.setup(),oldest=run("oldest","2026-10-20T12:00:00Z"),middle=run("middle","2026-10-21T12:00:00Z"),newest=run("newest","2026-10-22T12:00:00Z");let resolveMiddle:(response:Response)=>void=()=>{};const middleResponse=new Promise<Response>(resolve=>{resolveMiddle=resolve});vi.spyOn(globalThis,"fetch").mockImplementation(input=>{const url=String(input);if(url.includes("middle"))return middleResponse;const record=url.includes("oldest")?oldest:newest;return Promise.resolve(new Response(JSON.stringify(result(record)),{headers:{"Content-Type":"application/json"}}))});render(<LeagueOverview snapshot={snapshot} runs={[oldest,middle,newest]}/>);const selector=await screen.findByRole("combobox",{name:"Completed run"});await user.selectOptions(selector,"middle");await user.selectOptions(selector,"oldest");await waitFor(()=>expect(selector).toHaveValue("oldest"));resolveMiddle(new Response(JSON.stringify(result(middle)),{headers:{"Content-Type":"application/json"}}));await waitFor(()=>expect(selector).toHaveValue("oldest"));expect(screen.queryByRole("heading",{name:"Result unavailable"})).not.toBeInTheDocument()});
 
 test("precision and interval states have no detectable accessibility violations",async()=>{const record=run("accessible-limited","2026-10-25T12:00:00Z"),base=result(record),limited={...base,result:{...base.result,league_wide_precision_reached:false,teams:base.result.teams.map((team,index)=>index===0?{...team,playoff_qualification:{...team.playoff_qualification,interval:null,precision_reached:false}}:team)}};vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response(JSON.stringify(limited),{headers:{"Content-Type":"application/json"}}));const {container}=render(<LeagueOverview snapshot={snapshot} runs={[record]}/>);await screen.findByText("Precision or coverage qualification");expect((await axe.run(container)).violations).toEqual([])});
+
+test("runs a projected baseline independently and offers Monte Carlo on the active snapshot", async () => {
+  const user = userEvent.setup();
+  const openSimulation = vi.fn();
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+    snapshot_id: snapshot.snapshot_id, canonical_sha256: snapshot.canonical_sha256,
+    champion_team_id: snapshot.teams[0].team_id, teams: [], weeks: [], postseason: [],
+    transactions: [], observed_scores: [], assumptions: [], unresolved_capabilities: [], missing_projection_count: 0,
+  }), {headers: {"Content-Type": "application/json"}}));
+  render(<LeagueOverview snapshot={snapshot} runs={[]} openSimulation={openSimulation}/>);
+  await user.click(screen.getByRole("button", {name: "Run projected baseline"}));
+  expect(await screen.findByText(`Champion in this projected season: ${snapshot.teams[0].display_name}`)).toBeInTheDocument();
+  expect(String(fetch.mock.calls[0][0])).toBe("/api/v1/analyses/projected-baseline");
+  expect(JSON.parse(String(fetch.mock.calls[0][1]?.body))).toEqual({
+    snapshot: {snapshot_id: snapshot.snapshot_id, league_id: snapshot.league_id, season: snapshot.season},
+    canonical_sha256: snapshot.canonical_sha256,
+  });
+  await user.click(screen.getByRole("button", {name: "Open Monte Carlo"}));
+  expect(openSimulation).toHaveBeenCalledOnce();
+  expect(fetch).toHaveBeenCalledOnce();
+});

@@ -9,7 +9,7 @@ import type {
   LeagueRefreshProfile, SnapshotRefreshRequest, SnapshotRefreshSubmission,
   SnapshotRefreshRecord, SnapshotRefreshResult,
   BackgroundProgress, BaselineAnalysisRequest, ActionSearchRequest,
-  TradeQuickAnalysisRequest, TradeQuickAnalysisResult,
+  TradeQuickAnalysisRequest, TradeQuickAnalysisResult, ProjectedBaselineResult,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -50,6 +50,11 @@ async function postJson<T>(path:string,body:unknown,signal?:AbortSignal):Promise
 async function deleteRequest(path:string,signal?:AbortSignal):Promise<void>{const response=await fetch(path,{method:"DELETE",signal});if(!response.ok){let payload:ApiErrorEnvelope|undefined;try{payload=await response.json() as ApiErrorEnvelope}catch{/* typed fallback */}throw new ApiError(payload?.error.message??`Request failed (${response.status}).`,response.status,payload?.error.code)}}
 
 export const api = {
+  projectedBaseline: (snapshot: SnapshotSummary, signal?: AbortSignal) =>
+    postJson<ProjectedBaselineResult>("/api/v1/analyses/projected-baseline", {
+      snapshot: {snapshot_id: snapshot.snapshot_id, league_id: snapshot.league_id, season: snapshot.season},
+      canonical_sha256: snapshot.canonical_sha256,
+    }, signal),
   health: (signal?: AbortSignal) => getJson<HealthResponse>("/api/v1/health", signal),
   snapshots: (signal?: AbortSignal) => getJson<readonly SnapshotSummary[]>("/api/v1/snapshots", signal),
   snapshot: (snapshotId: string, signal?: AbortSignal) =>

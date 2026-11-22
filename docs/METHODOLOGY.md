@@ -341,6 +341,19 @@ The proposed lineup is a separate complete player/team/slot assignment over the 
 
 Kickoff timestamps, NFL scheduled/completed status and assumed league-wide locking conventions cannot substitute for independently verified lock/change permission. Executable composition validates a **supplied hypothetical lineup**, not a current-week recommendation or optimizer. Current-week locks protect observed assignments; later weeks return to ordinary lineup selection instead of inheriting those locks forever.
 
+### Projection-fed season baseline
+
+The projected baseline supplies the canonical effective player-week projections to
+the same season coordinator used for each Monte Carlo path. It applies the configured
+weekly roster policy and produces one projected trajectory through standings and
+postseason. Verified final actuals replace projections in the observed week. An
+admissible in-progress ESPN full-game projection supplies the forecast final score
+directly, even below actual-so-far. The observed points still reconcile the original
+lineup and source totals. Missing required starter evidence blocks execution.
+Verified nonparticipation contributes no game points. The existing missing elective
+future projection policy remains distinguishable from an explicit source zero.
+An in-progress forecast does not authorize a stochastic remainder.
+
 ### Fixed actuals and supplied remaining realizations
 
 Each player record separates NFL game status, score state, fixed actuals, full-game projection, remaining-contribution approval and source. There are exactly five score states. **Unresolved authority is an evidence condition, not a sixth score-state enum.** Confirmed actual zero and missing evidence remain different.

@@ -70,11 +70,16 @@ def _reconciled_current_total(source_total, roster_total, actuals):
 
 
 def build_current_week_input(
-    snapshot: LeagueSnapshot, responses: Sequence[CapturedResponse]
+    snapshot: LeagueSnapshot,
+    responses: Sequence[CapturedResponse],
+    *,
+    projected_final: bool = False,
 ) -> MonteCarloPartialWeekInput:
     """Reject unsupported raw structures without leaking private source values."""
     try:
-        return _build_current_week_input(snapshot, responses)
+        return _build_current_week_input(
+            snapshot, responses, projected_final=projected_final
+        )
     except (
         KeyError,
         TypeError,
@@ -168,7 +173,10 @@ def _reconcile_standings_prefix(teams, schedule, prior_ids, regular_count):
 
 
 def _build_current_week_input(
-    snapshot: LeagueSnapshot, responses: Sequence[CapturedResponse]
+    snapshot: LeagueSnapshot,
+    responses: Sequence[CapturedResponse],
+    *,
+    projected_final: bool = False,
 ) -> MonteCarloPartialWeekInput:
     """Validate current source claims before granting partial execution.
 
@@ -331,9 +339,22 @@ def _build_current_week_input(
         elif game is None and player.nfl_team_id in bye_teams:
             state = PlayerScoreState.NONPARTICIPATING
         elif status is NFLGameStatus.IN_PROGRESS:
-            raise CurrentWeekEvidenceError(
-                "An NFL game is in progress; no approved remaining-performance model is available."
+            if not projected_final:
+                raise CurrentWeekEvidenceError(
+                    "An NFL game is in progress; no approved remaining-performance model is available."
+                )
+            _require(
+                lock
+                and observation is not None
+                and observation.actual_status is ScoreEvidenceStatus.CONFIRMED,
+                "An in-progress player's observed points or lineup lock is unverified.",
             )
+            actual = observation.actual_points
+            row = projections.get(pid)
+            if row is not None and row.raw_projection is not None:
+                projection = row.effective_projection
+            state = PlayerScoreState.IN_PROGRESS
+            remaining = RemainingContributionStatus.UNRESOLVED
         else:
             _require(
                 roles[entry.lineup_slot_id] is not LineupRole.STARTER,
@@ -414,10 +435,10 @@ def _build_current_week_input(
                     "Current scoring roster and player-pool lineup locks disagree.",
                 )
                 state = state_by_id[pid]
-                if (
-                    roles[slot] is LineupRole.STARTER
-                    and state.score_state is PlayerScoreState.COMPLETED_FIXED
-                ):
+                if roles[slot] is LineupRole.STARTER and state.score_state in {
+                    PlayerScoreState.COMPLETED_FIXED,
+                    PlayerScoreState.IN_PROGRESS,
+                }:
                     actuals.append(state.fixed_actual_points)
             points = data.get("pointsByScoringPeriod", {})
             current_points = points.get(str(week))
@@ -484,7 +505,9 @@ def _build_current_week_input(
             initial.source_id,
         ),
     )
-    require_executable_partial_week_evidence(snapshot, evidence)
+    require_executable_partial_week_evidence(
+        snapshot, evidence, projected_final=projected_final
+    )
     return MonteCarloPartialWeekInput(
         evidence,
         tuple(
