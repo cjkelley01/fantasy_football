@@ -1,7 +1,8 @@
 import {useEffect,useMemo,useRef,useState} from "react";
 import {ArrowDown,ArrowLeftRight,ChevronDown,ChevronUp,FlaskConical,Lock,RefreshCw,RotateCcw,Search,ShieldAlert,Trash2} from "lucide-react";
+import {TradeQuickResult} from "./TradeQuickResult";
 import {api,ApiError} from "./lib/api";
-import type {BackgroundManualScenarioResultSummary,ManualScenarioRequest,PlayerSummary,ProtectedPlayerInput,RosterChangeInput,SnapshotSummary,TeamLineupResult,TeamScenarioResult} from "./types/api";
+import type {BackgroundManualScenarioResultSummary,ManualScenarioRequest,PlayerSummary,ProtectedPlayerInput,RosterChangeInput,SnapshotSummary,TeamLineupResult,TeamScenarioResult,TradeQuickAnalysisRequest,TradeQuickAnalysisResult} from "./types/api";
 
 export interface DraftTransfer {readonly player_id:number;readonly from_team_id:number;readonly to_team_id:number}
 export interface DraftStep {readonly step_id:string;readonly timing?:"earliest"|"selected";readonly selectedWeek?:number;readonly transfers:readonly DraftTransfer[]}
@@ -16,11 +17,29 @@ export function replayDraft(snapshot:SnapshotSummary,steps:readonly DraftStep[])
 }
 export function draftStepsToRosterChanges(snapshot:SnapshotSummary,steps:readonly DraftStep[]){return replayDraft(snapshot,steps).changes}
 
+function supportsUntimedTrade(snapshot: SnapshotSummary): boolean {
+  const live = snapshot.live_scoring;
+  return !live || (!live.partial_week_simulation_required &&
+    live.supported_simulation_week === snapshot.first_simulation_week);
+}
+
+function buildScenarioIntent(snapshot:SnapshotSummary,steps:readonly DraftStep[],protectedPlayers:readonly ProtectedPlayerInput[],scenarioId:string):ManualScenarioRequest["scenario"]{
+  const replay=replayDraft(snapshot,steps),changes=replay.changes,knownPlayers=new Set(snapshot.players.map(item=>item.player_id)),knownTeams=new Set(snapshot.teams.map(item=>item.team_id)),pinIds=new Set<number>();const synchronizedPins=protectedPlayers.map(pin=>{if(!Number.isInteger(pin.player_id)||!knownPlayers.has(pin.player_id))throw new Error(`Protected selection references unknown player ${pin.player_id}.`);if(!Number.isInteger(pin.team_id)||!knownTeams.has(pin.team_id))throw new Error(`Protected selection references unknown team ${pin.team_id}.`);if(pinIds.has(pin.player_id))throw new Error(`Player ${pin.player_id} has duplicate protected selections.`);pinIds.add(pin.player_id);const owner=replay.ownership.get(pin.player_id);if(owner===undefined)throw new Error(`Protected player ${pin.player_id} is not rostered in the final draft.`);if(!knownTeams.has(owner))throw new Error(`Protected player ${pin.player_id} has invalid final owner ${owner}.`);return {player_id:pin.player_id,team_id:owner}});
+  const timed = steps.some(step => step.timing !== undefined);
+  if (timed && !snapshot.live_scoring?.current_week_execution_available)
+    throw new Error("Effective trade timing is unavailable for this snapshot.");
+  if (timed && steps.some(step => step.timing === "selected" && step.selectedWeek === undefined))
+    throw new Error("Choose a scoring week for every deliberately delayed step.");
+  if (!timed && !supportsUntimedTrade(snapshot))
+    throw new Error("This snapshot has no supported full-week boundary for an untimed trade.");
+  return {scenario_id:scenarioId,changes,...(timed?{effective_trades:steps.map(step=>({transfers:step.transfers,selected_week:step.timing==="selected"?step.selectedWeek??null:null}))}:{}),protected_players:synchronizedPins.sort((a,b)=>a.team_id-b.team_id||a.player_id-b.player_id)};
+}
+
 export function buildManualScenarioRequest(snapshot:SnapshotSummary,steps:readonly DraftStep[],protectedPlayers:readonly ProtectedPlayerInput[],settings:Settings,scenarioId:string):ManualScenarioRequest{
   if(scenarioId===`trade-lab-${snapshot.snapshot_id}`)scenarioId=`${scenarioId}-${crypto.randomUUID()}`;
   if(!scenarioId.trim())throw new Error("Scenario identity must not be empty.");if(!steps.length)throw new Error("Add at least one transaction step before evaluation.");const numeric=[settings.masterSeed,settings.paths,settings.confidence,settings.targetHalfWidth,settings.baseStddev,settings.projectionScale];if(numeric.some(value=>!Number.isFinite(value)))throw new Error("Every numerical simulation setting must be finite.");if(!Number.isInteger(settings.masterSeed))throw new Error("Master seed must be an integer.");if(!Number.isInteger(settings.paths)||settings.paths<1||settings.paths>10000)throw new Error("Path count must be an integer between 1 and 10,000.");if(settings.confidence<=0||settings.confidence>=1)throw new Error("Confidence level must be between 0 and 1.");if(settings.targetHalfWidth<=0||settings.targetHalfWidth>=1)throw new Error("Target half-width must be between 0 and 1.");if(!["projection_based","strict"].includes(settings.irPolicy)||!["unresolved","modeled_weekly_v1"].includes(settings.waiverBoundary))throw new Error("Simulation policy enum is unsupported.");if(settings.baseStddev<0||settings.projectionScale<0||(!settings.baseStddev&&!settings.projectionScale))throw new Error("The provisional Normal model requires positive dispersion.");
-  const replay=replayDraft(snapshot,steps),changes=replay.changes,knownPlayers=new Set(snapshot.players.map(item=>item.player_id)),knownTeams=new Set(snapshot.teams.map(item=>item.team_id)),pinIds=new Set<number>();const synchronizedPins=protectedPlayers.map(pin=>{if(!Number.isInteger(pin.player_id)||!knownPlayers.has(pin.player_id))throw new Error(`Protected selection references unknown player ${pin.player_id}.`);if(!Number.isInteger(pin.team_id)||!knownTeams.has(pin.team_id))throw new Error(`Protected selection references unknown team ${pin.team_id}.`);if(pinIds.has(pin.player_id))throw new Error(`Player ${pin.player_id} has duplicate protected selections.`);pinIds.add(pin.player_id);const owner=replay.ownership.get(pin.player_id);if(owner===undefined)throw new Error(`Protected player ${pin.player_id} is not rostered in the final draft.`);if(!knownTeams.has(owner))throw new Error(`Protected player ${pin.player_id} has invalid final owner ${owner}.`);return {player_id:pin.player_id,team_id:owner}});
-  return {api_schema_version:"1.0",snapshot:{snapshot_id:snapshot.snapshot_id,league_id:snapshot.league_id,season:snapshot.season},simulation:{master_seed:settings.masterSeed,path_count:settings.paths,first_path_index:0,ir_policy:settings.irPolicy,waiver_boundary:settings.waiverBoundary,reject_incomplete_valuations:true,require_complete:true,use_observed_current_week_lineup:true},precision:{family_confidence_level:settings.confidence,target_half_width_probability:settings.targetHalfWidth,minimum_paths:settings.paths,maximum_paths:settings.paths,evaluation_interval_paths:settings.paths},outcome_model:{model_type:"provisional_normal",base_stddev_points:settings.baseStddev,projection_scale:settings.projectionScale},scenario:{scenario_id:scenarioId,changes,...(snapshot.live_scoring?.current_week_execution_available?{effective_trades:steps.map(step=>({transfers:step.transfers,selected_week:step.timing==="selected"?step.selectedWeek??null:null}))}:{}),protected_players:synchronizedPins.sort((a,b)=>a.team_id-b.team_id||a.player_id-b.player_id)}};
+  const intent=buildScenarioIntent(snapshot,steps,protectedPlayers,scenarioId);
+  return {api_schema_version:"1.0",snapshot:{snapshot_id:snapshot.snapshot_id,league_id:snapshot.league_id,season:snapshot.season},simulation:{master_seed:settings.masterSeed,path_count:settings.paths,first_path_index:0,ir_policy:settings.irPolicy,waiver_boundary:settings.waiverBoundary,reject_incomplete_valuations:true,require_complete:true,use_observed_current_week_lineup:Boolean(intent.effective_trades)||!snapshot.live_scoring},precision:{family_confidence_level:settings.confidence,target_half_width_probability:settings.targetHalfWidth,minimum_paths:settings.paths,maximum_paths:settings.paths,evaluation_interval_paths:settings.paths},outcome_model:{model_type:"provisional_normal",base_stddev_points:settings.baseStddev,projection_scale:settings.projectionScale},scenario:intent};
 }
 
 export function TradeLab({snapshot,preferredRunId}:{readonly snapshot:SnapshotSummary;readonly preferredRunId?:string|null}){
@@ -29,19 +48,28 @@ export function TradeLab({snapshot,preferredRunId}:{readonly snapshot:SnapshotSu
 
 function TradeWorkspace({snapshot,preferredRunId}:{snapshot:SnapshotSummary;preferredRunId?:string|null}){
   const teams=[...snapshot.teams].sort((a,b)=>(a.standing??999)-(b.standing??999)||a.team_id-b.team_id),[teamA,setTeamA]=useState(teams[0]?.team_id??0),[teamB,setTeamB]=useState(teams[1]?.team_id??0),[selectedA,setSelectedA]=useState<readonly number[]>([]),[selectedB,setSelectedB]=useState<readonly number[]>([]),[steps,setSteps]=useState<readonly DraftStep[]>([]),[editingId,setEditingId]=useState<string|null>(null),[protectedPlayers,setProtected]=useState<readonly ProtectedPlayerInput[]>([]),[search,setSearch]=useState(""),[position,setPosition]=useState(""),[settings,setSettings]=useState<Settings>(defaults),[configOpen,setConfigOpen]=useState(false),[result,setResult]=useState<BackgroundManualScenarioResultSummary|null>(null),[status,setStatus]=useState("Draft not evaluated"),[error,setError]=useState<string|null>(null),[busy,setBusy]=useState(false),[stale,setStale]=useState(false),[observationNotice,setObservationNotice]=useState<string|null>(null);const revision=useRef(0),retainedRequest=useRef(0),controller=useRef<AbortController|null>(null),stepSequence=useRef(1);
-  useEffect(()=>()=>controller.current?.abort(),[]);
+  const [quick,setQuick]=useState<{data:TradeQuickAnalysisResult;intent:TradeQuickAnalysisRequest}|null>(null);
+  const [quickBusy,setQuickBusy]=useState(false),[quickError,setQuickError]=useState<string|null>(null);
+  const quickController=useRef<AbortController|null>(null);
+  useEffect(()=>()=>{controller.current?.abort();quickController.current?.abort()},[]);
   useEffect(()=>{const request=++retainedRequest.current;if(!preferredRunId)return;const abort=new AbortController();controller.current?.abort();controller.current=abort;setBusy(true);setError(null);setStatus("Loading retained manual-scenario result");api.manualScenarioResult(preferredRunId,abort.signal).then(value=>{if(request!==retainedRequest.current)return;const issue=validateResult(value,snapshot,preferredRunId);if(issue)throw new Error(issue);setResult(value);setStale(false);setStatus("Retained evaluation loaded")}).catch(reason=>{if(request===retainedRequest.current&&!aborted(reason)){setError(message(reason));setStatus("Retained evaluation unavailable")}}).finally(()=>{if(request===retainedRequest.current)setBusy(false)});return()=>abort.abort()},[preferredRunId,snapshot]);
   const editIndex=editingId===null?-1:steps.findIndex(step=>step.step_id===editingId),displaySteps=editIndex<0?steps:steps.slice(0,editIndex),ownership=useMemo(()=>replayDraft(snapshot,displaySteps).ownership,[snapshot,displaySteps]),players=new Map(snapshot.players.map(item=>[item.player_id,item])),names=new Map(snapshot.teams.map(item=>[item.team_id,item.display_name]));
-  const commit=(fn:()=>void)=>{revision.current++;if(busy){controller.current?.abort();setObservationNotice("Local observation stopped because the committed scenario changed. The accepted backend job may continue independently.")}setStale(Boolean(result));setError(null);setBusy(false);fn()};
+  const commit=(fn:()=>void)=>{revision.current++;quickController.current?.abort();setQuick(null);setQuickBusy(false);setQuickError(null);if(busy){controller.current?.abort();setObservationNotice("Local observation stopped because the committed scenario changed. The accepted backend job may continue independently.")}setStale(Boolean(result));setError(null);setBusy(false);fn()};
   const applySteps=(next:readonly DraftStep[])=>{try{replayDraft(snapshot,next)}catch(reason){setError(message(reason));return false}commit(()=>setSteps(next));return true};
   const selectTeams=(side:"a"|"b",value:number)=>{setError(null);if(side==="a"){setTeamA(value);if(value===teamB)setTeamB(teams.find(team=>team.team_id!==value)?.team_id??0);setSelectedA([])}else{setTeamB(value);if(value===teamA)setTeamA(teams.find(team=>team.team_id!==value)?.team_id??0);setSelectedB([])}};
-  const saveStep=()=>{if(!selectedA.length&&!selectedB.length){setError("Select at least one player for the exchange.");return}const transfers=[...selectedA.map(player_id=>({player_id,from_team_id:teamA,to_team_id:teamB})),...selectedB.map(player_id=>({player_id,from_team_id:teamB,to_team_id:teamA}))],stepId=editingId??`step-${stepSequence.current}`,step={...steps.find(item=>item.step_id===stepId),step_id:stepId,transfers},next=editingId===null?[...steps,step]:steps.map(item=>item.step_id===editingId?step:item);if(applySteps(next)){if(editingId===null)stepSequence.current++;setEditingId(null);setSelectedA([]);setSelectedB([])}};
+  const saveStep=()=>{if(!selectedA.length&&!selectedB.length){setError("Select at least one player for the exchange.");return}const transfers=[...selectedA.map(player_id=>({player_id,from_team_id:teamA,to_team_id:teamB})),...selectedB.map(player_id=>({player_id,from_team_id:teamB,to_team_id:teamA}))],stepId=editingId??`step-${stepSequence.current}`,step:DraftStep={timing:timed?"earliest":undefined,...steps.find(item=>item.step_id===stepId),step_id:stepId,transfers},next=editingId===null?[...steps,step]:steps.map(item=>item.step_id===editingId?step:item);if(applySteps(next)){if(editingId===null)stepSequence.current++;setEditingId(null);setSelectedA([]);setSelectedB([])}};
   const startEdit=(step:DraftStep)=>{const first=step.transfers[0];setEditingId(step.step_id);setTeamA(first.from_team_id);setTeamB(first.to_team_id);setSelectedA(step.transfers.filter(item=>item.from_team_id===first.from_team_id).map(item=>item.player_id));setSelectedB(step.transfers.filter(item=>item.from_team_id===first.to_team_id).map(item=>item.player_id));setError(null)};
   const cancelEdit=()=>{setEditingId(null);setSelectedA([]);setSelectedB([]);setError(null)};
-  const evaluate=async()=>{const currentRevision=revision.current,abort=new AbortController();controller.current?.abort();controller.current=abort;setBusy(true);setError(null);setStatus("Submitting explicit final-state scenario");try{const request=buildManualScenarioRequest(snapshot,steps,protectedPlayers,settings,`trade-lab-${snapshot.snapshot_id}`),submitted=await api.submitManualScenario(request,abort.signal);if(submitted.run_type!=="manual_scenario")throw new Error("Background submission returned the wrong run type.");let run=await api.run(submitted.run_id,abort.signal);while(["queued","running","cancel_requested"].includes(run.status)){if(currentRevision!==revision.current)return;setStatus(run.status==="queued"?"Queued for local analysis":"Evaluating matched paths");await delay(250,abort.signal);run=await api.run(submitted.run_id,abort.signal)}if(run.status!=="completed"||!run.result_available)throw new Error(run.error_message??`Scenario ended as ${run.status}.`);const value=await api.manualScenarioResult(run.run_id,abort.signal),issue=validateResult(value,snapshot,run.run_id,request.scenario.scenario_id);if(issue)throw new Error(issue);if(currentRevision!==revision.current)return;setResult(value);setStale(false);setStatus("Evaluation complete")}catch(reason){if(!aborted(reason)&&currentRevision===revision.current){setError(message(reason));setStatus("Evaluation failed")}}finally{if(currentRevision===revision.current)setBusy(false)}};
+  const evaluate=async()=>{const currentRevision=revision.current,abort=new AbortController();controller.current?.abort();controller.current=abort;setBusy(true);setError(null);setStatus("Submitting explicit final-state scenario");try{const manual=buildManualScenarioRequest(snapshot,steps,protectedPlayers,settings,`trade-lab-${snapshot.snapshot_id}`);
+    const request=quick?{...manual,snapshot:quick.intent.snapshot,
+      scenario:{...quick.intent.scenario,scenario_id:manual.scenario.scenario_id},
+      simulation:{...manual.simulation,ir_policy:quick.intent.ir_policy}}:manual;
+    const submitted=await api.submitManualScenario(request,abort.signal);if(submitted.run_type!=="manual_scenario")throw new Error("Background submission returned the wrong run type.");let run=await api.run(submitted.run_id,abort.signal);while(["queued","running","cancel_requested"].includes(run.status)){if(currentRevision!==revision.current)return;setStatus(run.status==="queued"?"Queued for local analysis":"Evaluating matched paths");await delay(250,abort.signal);run=await api.run(submitted.run_id,abort.signal)}if(run.status!=="completed"||!run.result_available)throw new Error(run.error_message??`Scenario ended as ${run.status}.`);const value=await api.manualScenarioResult(run.run_id,abort.signal),issue=validateResult(value,snapshot,run.run_id,request.scenario.scenario_id);if(issue)throw new Error(issue);if(currentRevision!==revision.current)return;setResult(value);setStale(false);setStatus("Evaluation complete")}catch(reason){if(!aborted(reason)&&currentRevision===revision.current){setError(message(reason));setStatus("Evaluation failed")}}finally{if(currentRevision===revision.current)setBusy(false)}};
   const tradeWeeks = snapshot.live_scoring?.supported_trade_weeks ?? [];
   const playerWeeks = new Map(snapshot.live_scoring?.player_earliest_trade_weeks ?? []);
-  const timed = snapshot.live_scoring?.current_week_execution_available === true;
+  const canTime = snapshot.live_scoring?.current_week_execution_available === true;
+  const timed = steps.some(step => step.timing !== undefined);
+  const untimedSupported = supportsUntimedTrade(snapshot);
   let precedingWeek = snapshot.first_simulation_week;
   const timings = steps.map(step => {
     const involved = step.transfers.map(move => playerWeeks.get(move.player_id));
@@ -58,10 +86,46 @@ function TradeWorkspace({snapshot,preferredRunId}:{snapshot:SnapshotSummary;pref
       step.step_id === id ? {...step, timing, selectedWeek} : step
     )));
   };
+  const quickSupported = !timed && untimedSupported;
+  const canEvaluate = timed ? canTime && timings.every(timing => timing.valid) : untimedSupported;
+  const exchange=steps.length===1&&new Set(steps[0].transfers.map(move=>move.from_team_id)).size===2;
+  const analyzeQuick=async()=>{
+    const currentRevision=revision.current, abort=new AbortController();
+    quickController.current?.abort();
+    quickController.current=abort;
+    setQuick(null);setQuickError(null);setQuickBusy(true);
+    try{
+      const intent:TradeQuickAnalysisRequest={
+        api_schema_version:"1.0",snapshot:{snapshot_id:snapshot.snapshot_id,league_id:snapshot.league_id,season:snapshot.season},
+        canonical_sha256:snapshot.canonical_sha256,ir_policy:settings.irPolicy,
+        scenario:buildScenarioIntent(snapshot,steps,protectedPlayers,`trade-quick-${crypto.randomUUID()}`),
+      };
+      const data=await api.tradeQuickAnalysis(intent,abort.signal);
+      if (abort.signal.aborted||currentRevision!==revision.current) return;
+      if(data.snapshot_id!==intent.snapshot.snapshot_id||data.canonical_sha256!==intent.canonical_sha256)
+        throw new Error("Quick Analysis returned a different snapshot.");
+      setQuick({data,intent});
+    }catch(reason){
+      if(!abort.signal.aborted&&currentRevision===revision.current)setQuickError(message(reason));
+    }finally{
+      if(!abort.signal.aborted&&currentRevision===revision.current)setQuickBusy(false);
+    }
+  };
   const clear=()=>commit(()=>{setSteps([]);setEditingId(null);setSelectedA([]);setSelectedB([]);setProtected([]);setResult(null);setStale(false);setObservationNotice(null);setStatus("Draft not evaluated")});
   return <div className="trade-lab"><header className="trade-mast"><div><span className="overline">Trade Lab · final-state scenario analysis</span><h1>Build the exchange. See the whole league move.</h1><p>Draft chronological transactions, then intentionally evaluate their aggregated final ownership through the accepted scenario engine.</p></div><div className="trade-boundary"><ShieldAlert/><span><strong>What-if only</strong>No ESPN execution or trade acceptance is implied.</span></div></header>
     <section className="trade-builder" aria-label="Two-team trade builder"><RosterPanel side="a" teamId={teamA} otherTeamId={teamB} teams={teams} snapshot={snapshot} ownership={ownership} selected={selectedA} setSelected={setSelectedA} protectedPlayers={protectedPlayers} setProtected={value=>commit(()=>setProtected(value))} search={search} setSearch={setSearch} position={position} setPosition={setPosition} onTeam={value=>selectTeams("a",value)}/><div className="exchange-core"><ArrowLeftRight/><strong>{editingId?`Editing step ${editIndex+1}`:"Proposed exchange"}</strong><span>{selectedA.length} → {names.get(teamB)}</span><span>{selectedB.length} → {names.get(teamA)}</span><button className="primary-button" onClick={saveStep} disabled={!selectedA.length&&!selectedB.length}>{editingId?"Save transaction step":"Add transaction step"}</button>{editingId&&<button onClick={cancelEdit}>Cancel edit</button>}</div><RosterPanel side="b" teamId={teamB} otherTeamId={teamA} teams={teams} snapshot={snapshot} ownership={ownership} selected={selectedB} setSelected={setSelectedB} protectedPlayers={protectedPlayers} setProtected={value=>commit(()=>setProtected(value))} search={search} setSearch={setSearch} position={position} setPosition={setPosition} onTeam={value=>selectTeams("b",value)}/></section>
     <section className="trade-timeline"><header><div><span className="overline">Chronological draft</span><h2>{steps.length?`${steps.length} transaction step${steps.length===1?"":"s"}`:"No transaction steps yet"}</h2></div><p>Sequence is retained for inspection. The backend evaluates aggregated final ownership, not intermediate executability.</p></header>{steps.length?<ol>{steps.map((step,index)=><li key={step.step_id} className={editingId===step.step_id?"editing":""}><i>{index+1}</i><div><strong>{step.transfers.map(item=>`${playerName(players,item.player_id)}: ${names.get(item.from_team_id)} → ${names.get(item.to_team_id)}`).join(" · ")}</strong><small>Intermediate ownership only · transaction authorization not established</small></div><span className="step-controls"><button aria-label={`Move step ${index+1} earlier`} disabled={!index||editingId!==null} onClick={()=>applySteps(move(steps,index,index-1))}><ChevronUp/></button><button aria-label={`Move step ${index+1} later`} disabled={index===steps.length-1||editingId!==null} onClick={()=>applySteps(move(steps,index,index+1))}><ChevronDown/></button><button aria-label={`Edit step ${index+1}`} disabled={editingId!==null&&editingId!==step.step_id} onClick={()=>startEdit(step)}>Edit</button><button aria-label={`Remove step ${index+1}`} disabled={editingId!==null} onClick={()=>applySteps(steps.filter(item=>item.step_id!==step.step_id))}><Trash2/></button></span>{index<steps.length-1&&<ArrowDown/>}</li>)}</ol>:<p className="trade-empty">Select players from either roster and add the exchange as a step.</p>}</section>
+    {canTime && steps.length > 0 && !timed && <button disabled={editingId !== null}
+      onClick={() => commit(() => setSteps(steps.map(step => ({...step, timing:"earliest"}))))}>
+      Use effective timing
+    </button>}
+    {timed && untimedSupported && <button disabled={editingId !== null}
+      onClick={() => commit(() => setSteps(steps.map(step => ({...step, timing:undefined, selectedWeek:undefined}))))}>
+      Use untimed full-week trade
+    </button>}
+    {!timed && !untimedSupported && steps.length > 0 && <p>{canTime
+      ? "Choose effective timing to simulate a trade on this snapshot."
+      : "This snapshot has no supported trade execution boundary."}</p>}
     {timed && steps.map((step, index) => {
       const {earliest, effective, valid} = timings[index];
       const selected = step.timing === "selected";
@@ -86,7 +150,17 @@ function TradeWorkspace({snapshot,preferredRunId}:{snapshot:SnapshotSummary;pref
       </fieldset>;
     })}
     {timed && steps.length > 0 && <p>Analysis assumes immediate hypothetical approval, including commissioner intervention.</p>}
-    <section className="evaluation-console"><header><div><span className="overline">Evaluation console</span><h2>Explicit matched-path analysis</h2></div><button onClick={()=>setConfigOpen(value=>!value)}>{configOpen?"Hide":"Inspect"} settings</button></header>{configOpen&&<SettingsForm value={settings} onChange={value=>commit(()=>setSettings(value))}/>} {observationNotice&&<p className="observation-notice">{observationNotice}</p>}<div className="evaluation-actions"><span aria-live="polite" className={error?"evaluation-error":""}>{busy&&<RefreshCw/>}{error??(stale?"Committed scenario or evaluation settings changed · previous result is stale":result&&(selectedA.length||selectedB.length)?"Temporary player selection is not part of the completed analysis.":status)}</span><button onClick={clear}><RotateCcw/>Reset</button><button className="primary-button" disabled={busy||!steps.length||editingId!==null||(timed&&timings.some(timing=>!timing.valid))} onClick={()=>void evaluate()}><FlaskConical/>{busy?"Evaluating...":timed?"Evaluate scenario":"Evaluate final state"}</button></div></section>
+    <section className="evaluation-console" aria-labelledby="trade-quick-title">
+      <h2 id="trade-quick-title">Quick Analysis</h2>
+      <p>{quickSupported?"Compare projected optimal lineups for both teams without simulation.":"Available for untimed exchanges on supported full-week snapshots."}</p>
+      {quickSupported&&!exchange&&<p>Commit one trade with players going in both directions.</p>}
+      <button className="primary-button" disabled={!quickSupported||!exchange||editingId!==null||busy||quickBusy} onClick={()=>void analyzeQuick()}>
+        {quickBusy?"Comparing projected lineups…":"Run Quick Analysis"}
+      </button>
+      {quickError&&<p role="alert">{quickError}</p>}
+      {quick&&<TradeQuickResult snapshot={snapshot} result={quick.data}/>}
+    </section>
+    <section className="evaluation-console"><header><div><span className="overline">Evaluation console</span><h2>Explicit matched-path analysis</h2></div><button onClick={()=>setConfigOpen(value=>!value)}>{configOpen?"Hide":"Inspect"} settings</button></header>{configOpen&&<SettingsForm value={settings} onChange={value=>commit(()=>setSettings(value))}/>} {observationNotice&&<p className="observation-notice">{observationNotice}</p>}<div className="evaluation-actions"><span aria-live="polite" className={error?"evaluation-error":""}>{busy&&<RefreshCw/>}{error??(stale?"Committed scenario or evaluation settings changed · previous result is stale":result&&(selectedA.length||selectedB.length)?"Temporary player selection is not part of the completed analysis.":status)}</span><button onClick={clear}><RotateCcw/>Reset</button><button className="primary-button" disabled={busy||!steps.length||editingId!==null||!canEvaluate} onClick={()=>void evaluate()}><FlaskConical/>{busy?"Evaluating...":timed?"Evaluate scenario":"Evaluate final state"}</button></div></section>
     {result&&!stale&&<ScenarioAnalysis snapshot={snapshot} summary={result}/>}</div>;
 }
 

@@ -22,6 +22,7 @@ from fantasy_football.app.contracts import (
     ConfidenceInterval,
     LeagueStructure,
     LiveScoringSummary,
+    ManualScenarioInput,
     ManualScenarioRequest,
     ManualScenarioResult,
     MatchupPeriodSummary,
@@ -42,8 +43,11 @@ from fantasy_football.app.contracts import (
     TeamProbabilityResult,
     TeamScenarioResult,
     TeamSummary,
+    TradeQuickAnalysisRequest,
+    TradeQuickAnalysisResult,
     WeeklyLineupResult,
 )
+from fantasy_football.app.quick_analysis import project_trade
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.canonical.validation import (
     authoritative_current_matchup_period_scoring_weeks,
@@ -101,6 +105,16 @@ from fantasy_football.weekly_transactions import (
     WaiverBoundaryPolicy,
     WeeklyTransactionPolicy,
 )
+
+
+def _manual_scenario(intent: ManualScenarioInput) -> ManualScenario:
+    return ManualScenario(
+        intent.scenario_id,
+        tuple(ExplicitRosterChange(item.player_id, item.from_team_id, item.to_team_id)
+              for item in intent.changes),
+        tuple(ProtectedPlayerPin(item.team_id, item.player_id)
+              for item in intent.protected_players),
+    )
 
 
 class ApplicationServiceError(ValueError):
@@ -638,6 +652,40 @@ class ApplicationService:
             interval_upper_probability_points=item.interval.upper,
         )
 
+    def run_trade_quick_analysis(
+        self, request: TradeQuickAnalysisRequest,
+    ) -> TradeQuickAnalysisResult:
+        loaded = self._load(request.snapshot)
+        snapshot = loaded.snapshot
+        if request.canonical_sha256 != loaded.metadata.canonical_sha256:
+            raise ApplicationServiceError(
+                "snapshot_identity_mismatch", "invalid_request",
+                "The snapshot content differs from the trade draft.",
+            )
+        live = snapshot.live_scoring
+        if request.scenario.effective_trades or (
+            live is not None and (
+                live.partial_week_simulation_required or not has_safe_v1_boundary(
+                    live,
+                    authoritative_current_matchup_period_scoring_weeks=(
+                        authoritative_current_matchup_period_scoring_weeks(snapshot)
+                    ),
+                )
+            )
+        ):
+            raise ApplicationServiceError(
+                "quick_trade_full_week_required", "unsupported_configuration",
+                "Quick Analysis requires a supported full-week snapshot and an untimed exchange.",
+            )
+        state = initialize_evolving_state(
+            snapshot, scoring_week=snapshot.first_simulation_week,
+            ir_policy=IRPolicy(request.ir_policy),
+        )
+        return project_trade(
+            snapshot, loaded.metadata.canonical_sha256, state,
+            _manual_scenario(request.scenario),
+        )
+
     def run_manual_scenario(
         self, request: ManualScenarioRequest
     ) -> ManualScenarioResult:
@@ -666,13 +714,7 @@ class ApplicationService:
             )
         precision = self._precision(request.precision)
         self._validate_precision_paths(simulation, precision)
-        scenario = ManualScenario(
-            request.scenario.scenario_id,
-            tuple(ExplicitRosterChange(item.player_id, item.from_team_id, item.to_team_id)
-                  for item in request.scenario.changes),
-            tuple(ProtectedPlayerPin(item.team_id, item.player_id)
-                  for item in request.scenario.protected_players),
-        )
+        scenario = _manual_scenario(request.scenario)
         if request.scenario.effective_trades:
             try:
                 if simulation.partial_week is None:
