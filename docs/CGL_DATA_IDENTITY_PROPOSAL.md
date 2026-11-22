@@ -45,4 +45,14 @@ A second read-only check used the newest available local War Room snapshot for t
 
 These comparisons establish agreement for the stored evidence. No fresh ESPN requests were issued. No member identifiers or private snapshot data were copied into the repository.
 
-Before Phase 1 starts, accept the adapter input and version rules and confirm the default manager perspective for teams with an unresolved secondary owner. The observed primary-owner mapping supports the proposed starting perspective. The [feature inventory](CGL_FEATURE_INVENTORY.md) records the historical parity checks that remain.
+**Approved manager default (November 22, 2026).** When opening a team perspective, use its mapped ESPN primary owner by default. Preserve additional ESPN owner memberships and keep their career identities unresolved until confirmed. A confirmed co-owner can be selected independently. If the primary owner has no confirmed mapping, leave the default perspective unset.
+
+## Phase 1 adapter acceptance
+
+Use the approved local, versioned copy of the published CGL history as the initial input. The first adapter supports exactly the inspected Record Book schema version **2**. It takes the archive and a source record containing the full Record Book Git revision and the expected SHA-256 of the archive bytes. It verifies the digest before parsing and validates the archive's league and season identities before projecting any rows. Keep the input and source record local.
+
+The first projection includes completed seasons, final standings, regular-season and championship matchup results, and champion identity. Preserve scores, ties, byes and full scoring-period membership from the source. Keep partial 2026 out of the completed-season projection. Verify all supplied records for the projection before making it available to the workspace. A failed attempt leaves the previous valid input available. An unsupported schema fails with the detected version and supported version. Support for a newer version requires an explicit adapter update with a representative fixture and parity check.
+
+Verify the 2025 standings, matchups and title series against the published archive, year switching with 2024, and rejection or exclusion of incomplete 2026 from completed results. Also check a wrong digest, unsupported schema, duplicate identity and unresolved references. The [feature inventory](CGL_FEATURE_INVENTORY.md) records parity checks for later views.
+
+This is the proposed bounded Phase 1 adapter package. Automated archive generation, refresh scheduling, migration of the remaining pages and public deployment have separate backlog gates.
