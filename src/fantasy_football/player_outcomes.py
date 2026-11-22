@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
 from fantasy_football.canonical.model import LeagueSnapshot, ProjectionClass
+from fantasy_football.canonical.validation import supports_immutable_snapshot_reuse
 from fantasy_football.historical_dataset import (
     HistoricalResearchDataset,
     ProjectionTemporalProvenance,
@@ -478,6 +481,26 @@ _NORMAL_GENERATE = ProvisionalNormalModel.generate_scenario
 _NORMAL_DRAW = ProvisionalNormalModel._standard_normal
 
 
+_NORMAL_TABLE_SCOPE = ContextVar("normal_table_scope", default=None)
+
+
+@contextmanager
+def share_normal_preparation(snapshot, model):
+    """Own one exact snapshot/model's immutable tables for an evaluation."""
+    if (
+        not PreparedNormalOutcomes.supports(model)
+        or type(model.version) is not str
+        or not supports_immutable_snapshot_reuse(snapshot)
+    ):
+        yield
+        return
+    token = _NORMAL_TABLE_SCOPE.set((snapshot, model, None))
+    try:
+        yield
+    finally:
+        _NORMAL_TABLE_SCOPE.reset(token)
+
+
 class PreparedNormalOutcomes:
     """Exact historical keys with immutable JSON fragments prepared once.
 
@@ -508,7 +531,20 @@ class PreparedNormalOutcomes:
             ).encode()[:-1]
             + b","
         )
-        self.records = tuple(
+        self.last_scenario = None
+        scoped = _NORMAL_TABLE_SCOPE.get()
+        if scoped is not None and scoped[0] is snapshot and scoped[1] is model:
+            tables = scoped[2]
+            if tables is None:
+                tables = self._prepare_tables(snapshot, model)
+                _NORMAL_TABLE_SCOPE.set((snapshot, model, tables))
+        else:
+            tables = self._prepare_tables(snapshot, model)
+        self.records, self.digest_prefixes = tables
+
+    @staticmethod
+    def _prepare_tables(snapshot, model):
+        records = tuple(
             (
                 row.player_id,
                 row.season,
@@ -538,14 +574,14 @@ class PreparedNormalOutcomes:
             <= row.scoring_week
             <= snapshot.final_simulation_week
         )
-        self.digest_prefixes = tuple(
+        digest_prefixes = tuple(
             json.dumps(
                 (player, season, week), separators=(",", ":"), ensure_ascii=True
             )[:-1]
             + ","
-            for player, season, week, *_ in self.records
+            for player, season, week, *_ in records
         )
-        self.last_scenario = None
+        return records, digest_prefixes
 
     def generate_scenario(self, path_index):
         if (

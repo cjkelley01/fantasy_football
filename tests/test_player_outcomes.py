@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
+from hashlib import sha256
 
 import pytest
 
 from fantasy_football.canonical.model import ProjectionClass, ProjectionSource
-from fantasy_football.player_outcomes import PlayerOutcomeError, ProvisionalNormalModel
+from fantasy_football.player_outcomes import (
+    PlayerOutcomeError,
+    PreparedNormalOutcomes,
+    ProvisionalNormalModel,
+    share_normal_preparation,
+)
 from tests.test_season_simulator import _snapshot
 
 
@@ -14,6 +21,43 @@ def _score_map(scenario):
         (item.player_id, item.season, item.scoring_week): item.points
         for item in scenario.scores
     }
+
+
+def test_shared_normal_tables_keep_seeds_scenarios_and_identity_boundaries_separate():
+    snapshot = _snapshot()
+    model = ProvisionalNormalModel(3.0, 0.25, version="test-custom-normal")
+
+    def payload(scenario):
+        return json.dumps(
+            [(row.player_id, row.season, row.scoring_week, row.points) for row in scenario.scores],
+            separators=(",", ":"), ensure_ascii=True,
+        ).encode()
+
+    with share_normal_preparation(snapshot, model):
+        left = PreparedNormalOutcomes(snapshot, model, 1)
+        right = PreparedNormalOutcomes(snapshot, model, 2)
+        assert left.records is right.records
+        assert left.digest_prefixes is right.digest_prefixes
+        assert left.prefix != right.prefix
+        for prepared, seed in ((left, 1), (right, 2), (left, 1)):
+            actual = prepared.generate_scenario(9)
+            expected = model.generate_scenario(snapshot, master_seed=seed, path_index=9)
+            assert actual.scenario_id == expected.scenario_id
+            assert payload(actual) == payload(expected)
+            assert prepared.scenario_digest(actual) == sha256(payload(expected)).hexdigest()
+        assert left.last_scenario is not right.last_scenario
+        assert left.scenario_digest(right.last_scenario) is None
+        assert PreparedNormalOutcomes(replace(snapshot), model, 1).records is not left.records
+        assert PreparedNormalOutcomes(snapshot, replace(model), 1).records is not left.records
+    assert PreparedNormalOutcomes(snapshot, model, 1).records is not left.records
+
+    class ExternalRecords(tuple):
+        pass
+
+    external = replace(snapshot, player_weeks=ExternalRecords(snapshot.player_weeks))
+    with share_normal_preparation(external, model):
+        first = PreparedNormalOutcomes(external, model, 1)
+        assert PreparedNormalOutcomes(external, model, 1).records is not first.records
 
 
 def test_same_key_reproduces_and_different_paths_change_draws() -> None:

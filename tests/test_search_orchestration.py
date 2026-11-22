@@ -24,6 +24,7 @@ from fantasy_football.monte_carlo import (
     combine_monte_carlo_batches,
     run_monte_carlo_batch,
 )
+from fantasy_football.player_outcomes import PreparedNormalOutcomes, ProvisionalNormalModel
 from fantasy_football.search_orchestration import (
     OrchestrationStage,
     OrchestrationStopReason,
@@ -165,6 +166,51 @@ def test_search_reuses_one_explanation_workspace_with_exact_results(
         )
     assert result() == optimized
     assert len(workspaces) == 1
+
+
+@pytest.mark.parametrize("mode", list(SearchExecutionMode))
+@pytest.mark.parametrize("evaluation", list(SearchEvaluationMode))
+def test_normal_table_reuse_preserves_production_search_results(mode, evaluation, monkeypatch):
+    snapshot = _scenario_snapshot_with_bench()
+    # Normal draws can vary playoff seeding. Keep the regular schedule and
+    # allow the future bracket to be generated from each path's standings.
+    snapshot = replace(
+        snapshot,
+        fantasy_matchups=tuple(m for m in snapshot.fantasy_matchups if m.bracket_type is None),
+    )
+    baseline = _state(snapshot)
+    model = ProvisionalNormalModel(3.0, 0.35)
+    configuration = _configuration(mode)
+    configuration = replace(
+        configuration, evaluation_mode=evaluation,
+        sampling=replace(configuration.sampling, target_paired_half_width=0.01),
+    )
+    build = PreparedNormalOutcomes._prepare_tables
+    calls = []
+
+    def counted(current, outcome_model):
+        calls.append((current, outcome_model))
+        return build(current, outcome_model)
+
+    monkeypatch.setattr(PreparedNormalOutcomes, "_prepare_tables", staticmethod(counted))
+
+    def run():
+        result = execute_search_orchestration(
+            snapshot, baseline, configuration, simulation_config(2), model
+        )
+        try:
+            return (
+                result.run_sha256, result.enumeration, _candidates(result),
+                result.fixed_evaluation, result.progressive_evaluation, result.stop_reason,
+            )
+        finally:
+            result.close()
+
+    optimized = run()
+    assert len(calls) == 1
+    monkeypatch.setattr(search_orchestration, "share_normal_preparation", lambda *_: nullcontext())
+    assert run() == optimized
+    assert len(calls) > 2
 
 
 @pytest.mark.parametrize("mode", list(SearchExecutionMode))

@@ -778,6 +778,15 @@ source permission and Monte Carlo path result still follows its own checks.
 Standalone evaluators and separately started workers use their own validation
 boundaries.
 
+Fixed and progressive evaluations can reuse one immutable Normal preparation
+for the exact canonical snapshot and exact built-in model instance within a
+search. It contains the ordered player-week projection and dispersion inputs
+and canonical key fragments. Each batch retains its own seed prefix and
+latest scenario for digesting; the shared preparation holds no generated
+scores or scenario digests. Standalone calls and separately spawned workers
+own their preparation, and mutable snapshot representations do not enter the
+shared scope.
+
 Progressive evaluation extends each reconciled state prefix with its next
 contiguous batch after checking numerical configuration, model, seed and path
 identity. Complete-path counts and paired event counts accumulate from the new

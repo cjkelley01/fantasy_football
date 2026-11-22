@@ -34,7 +34,7 @@ from fantasy_football.monte_carlo_parallel import (
     run_monte_carlo_batch_parallel,
 )
 from fantasy_football.monte_carlo_precision import PrecisionConfiguration
-from fantasy_football.player_outcomes import PlayerOutcomeModel
+from fantasy_football.player_outcomes import PlayerOutcomeModel, share_normal_preparation
 from fantasy_football.scenario_evaluator import (
     compare_completed_scenario_batches,
     prepare_search_lineup_explainer,
@@ -868,10 +868,11 @@ def execute_search_orchestration(
                 state_ids = result_index.state_ids()
                 if state_limit is not None:
                     state_ids = state_ids[:state_limit]
-                fixed = _evaluate_indexed_fixed(
-                    snapshot, baseline_state, result_index, state_ids,
-                    simulation, model, precision, parallel, should_stop,
-                )
+                with share_normal_preparation(snapshot, model):
+                    fixed = _evaluate_indexed_fixed(
+                        snapshot, baseline_state, result_index, state_ids,
+                        simulation, model, precision, parallel, should_stop,
+                    )
             else:
                 full_enumeration = enumeration
                 groups = enumeration.completed_states if state_limit is None else enumeration.completed_states[:state_limit]
@@ -886,11 +887,13 @@ def execute_search_orchestration(
                     ),
                     completed_states=groups,
                 )
-                fixed = evaluate_unified_action_states(
-                    snapshot, baseline_state, subset, simulation, model, precision,
-                    parallel_execution=parallel,
-                    should_stop=should_stop,
-                ) if groups and not should_stop() else None
+                if groups and not should_stop():
+                    with share_normal_preparation(snapshot, model):
+                        fixed = evaluate_unified_action_states(
+                            snapshot, baseline_state, subset, simulation, model, precision,
+                            parallel_execution=parallel,
+                            should_stop=should_stop,
+                        )
             evaluated = len(fixed.evaluations) if fixed is not None else 0
             paths = evaluated * sampling.maximum_paths_per_state
             evaluation_coverage_complete = (
@@ -943,7 +946,7 @@ def execute_search_orchestration(
                 ProgressiveStateGroupInput(item.completed_state_sha256, item.state, item.candidate_ids)
                 for item in enumeration.completed_states
             )
-            with prepared_search_snapshot(snapshot):
+            with prepared_search_snapshot(snapshot), share_normal_preparation(snapshot, model):
                 progressive = evaluate_progressive_state_groups(
                     snapshot, baseline_state,
                     state_source,
