@@ -134,8 +134,8 @@ def test_search_reuses_one_explanation_workspace_with_exact_results(
     prepare = scenario_evaluator.prepare_lineup_optimization
     workspaces = []
 
-    def counted(snapshot):
-        workspace = prepare(snapshot)
+    def counted(snapshot, **kwargs):
+        workspace = prepare(snapshot, **kwargs)
         workspaces.append(workspace)
         return workspace
 

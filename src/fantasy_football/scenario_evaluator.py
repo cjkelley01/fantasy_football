@@ -26,9 +26,9 @@ from fantasy_football.evolving_state import (
     initialize_evolving_state,
 )
 from fantasy_football.lineup_optimizer import (
-    LineupOptimizationWorkspace,
     optimize_starting_lineup,
     prepare_lineup_optimization,
+    prepare_projected_lineup_analysis,
 )
 from fantasy_football.monte_carlo import (
     MonteCarloBatchResult,
@@ -769,7 +769,7 @@ def _lineup_explanations(
     baseline_state: EvolvingLeagueState,
     hypothetical_state: EvolvingLeagueState,
     *,
-    workspace: LineupOptimizationWorkspace | None = None,
+    solve_starting_lineup=None,
 ) -> tuple[TeamLineupExplanation, ...]:
     reserve_slot_ids = {
         rule.slot_id for rule in snapshot.rules.lineup_slots if rule.kind is SlotKind.RESERVE
@@ -784,18 +784,13 @@ def _lineup_explanations(
         return tuple(sorted(ordinary - starters)), reserve
 
     def starting_lineup(state, team_id, scoring_week):
-        if workspace is not None:
-            # The reference used a fresh solver for each lineup. Reuse its
-            # indexes and roster slices while preserving Decimal context effects.
-            workspace.starting_cache.clear()
-            workspace.candidate_cache.clear()
-            workspace.projection_profiles.clear()
+        if solve_starting_lineup is not None:
+            return solve_starting_lineup(team_id, scoring_week, state.roster_entries)
         return optimize_starting_lineup(
             snapshot,
             team_id,
             scoring_week,
             roster_entries=state.roster_entries,
-            workspace=workspace,
         )
 
     results = []
@@ -855,8 +850,9 @@ def prepare_search_lineup_explainer(snapshot: LeagueSnapshot):
         if validated_scope is None:
             return None, None
         with validated_scope():
-            workspace = prepare_lineup_optimization(snapshot)
-        return validated_scope, workspace
+            workspace = prepare_lineup_optimization(snapshot, maximum_cache_entries=2048)
+            solve = prepare_projected_lineup_analysis(snapshot, workspace)
+        return validated_scope, solve
 
     def explain(current, baseline, hypothetical):
         nonlocal prepared
@@ -864,12 +860,12 @@ def prepare_search_lineup_explainer(snapshot: LeagueSnapshot):
             _fail("lineup explanation preparation belongs to a different snapshot")
         if prepared is None:
             prepared = prepare()
-        validated_scope, workspace = prepared
+        validated_scope, solve = prepared
         if validated_scope is None:
             return _lineup_explanations(current, baseline, hypothetical)
         with validated_scope():
             return _lineup_explanations(
-                current, baseline, hypothetical, workspace=workspace
+                current, baseline, hypothetical, solve_starting_lineup=solve
             )
 
     return explain

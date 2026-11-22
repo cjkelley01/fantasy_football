@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import datetime, timezone
-from decimal import getcontext, localcontext
+from decimal import Inexact, Rounded, getcontext, localcontext
 import hashlib
 import json
 from pathlib import Path
@@ -11,7 +11,7 @@ from uuid import uuid4
 
 import pytest
 
-from fantasy_football import scenario_evaluator
+from fantasy_football import lineup_optimizer, scenario_evaluator
 from fantasy_football.canonical.model import (
     LineupSlotRule,
     Player,
@@ -106,6 +106,7 @@ def test_prepared_lineup_explanations_preserve_flex_ties_weeks_and_candidate_eff
         return result
 
     monkeypatch.setattr(scenario_evaluator, "optimize_starting_lineup", tracked)
+    monkeypatch.setattr(lineup_optimizer, "optimize_starting_lineup", tracked)
     with localcontext() as context:
         context.prec = 7
         reference = tuple(
@@ -118,7 +119,8 @@ def test_prepared_lineup_explanations_preserve_flex_ties_weeks_and_candidate_eff
         assert tuple(
             explain(snapshot, baseline, candidate) for candidate in turns
         ) == reference
-    assert tuple(assignments) == original_assignments
+    assert 0 < len(assignments) < len(original_assignments)
+    assert all(lineup in original_assignments for lineup in assignments)
     assert set(precisions) == {7}
     assert reference[0][0].weeks[0].hypothetical_starter_player_ids == (11, 12)
     assert reference[1][0].weeks[0].hypothetical_starter_player_ids == (11, 200)
@@ -132,19 +134,59 @@ def test_prepared_lineup_explanations_preserve_flex_ties_weeks_and_candidate_eff
         context.clear_flags()
         assert explain(snapshot, baseline, qb) == rounded
         assert dict(context.flags) == reference_flags
+        context.clear_flags()
+        solve_count = len(assignments)
+        assert explain(snapshot, baseline, qb) == rounded
+        assert len(assignments) == solve_count
+        assert dict(context.flags) == reference_flags
+        for run in (scenario_evaluator._lineup_explanations, explain):
+            context.clear_flags()
+            context.flags[Rounded] = True
+            context.traps[Inexact] = True
+            with pytest.raises(Inexact):
+                run(snapshot, baseline, qb)
+            assert context.flags[Inexact] and context.flags[Rounded]
 
     different = replace(snapshot, league_name="Changed snapshot")
     with pytest.raises(ScenarioEvaluationError, match="different snapshot"):
         explain(different, baseline, qb)
     with pytest.raises(LineupOptimizationError, match="different canonical snapshot"):
-        scenario_evaluator._lineup_explanations(
-            different, baseline, qb, workspace=prepare_lineup_optimization(snapshot)
+        lineup_optimizer.prepare_projected_lineup_analysis(
+            different, prepare_lineup_optimization(snapshot)
         )
     invalid = replace(snapshot, rules=replace(snapshot.rules, team_count=999))
     with pytest.raises(CanonicalValidationError, match="team_count"):
         scenario_evaluator.prepare_search_lineup_explainer(invalid)(
             invalid, baseline, qb
         )
+
+
+def test_projected_lineup_analysis_rejects_equal_invalid_roster_and_bounds_reuse(
+    monkeypatch,
+):
+    snapshot = _scenario_snapshot_with_bench()
+    roster = _state(snapshot).roster_entries
+    workspace = prepare_lineup_optimization(snapshot, maximum_cache_entries=1)
+    solve = lineup_optimizer.prepare_projected_lineup_analysis(snapshot, workspace)
+    original = lineup_optimizer.optimize_starting_lineup
+    calls = []
+
+    def counted(*args, **kwargs):
+        calls.append(args[1])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(lineup_optimizer, "optimize_starting_lineup", counted)
+    week = snapshot.first_simulation_week
+    first = solve(1, week, roster)
+    assert solve(1, week, tuple(list(roster))) == first
+    assert calls == [1]
+    invalid = (replace(roster[0], team_id=True), *roster[1:])
+    assert invalid == roster
+    with pytest.raises(LineupOptimizationError, match="unknown team"):
+        solve(1, week, invalid)
+    solve(2, week, roster)
+    assert solve(1, week, roster) == first
+    assert calls == [1, 2, 1]
 
 
 def _scenario_snapshot():

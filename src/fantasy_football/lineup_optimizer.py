@@ -14,7 +14,10 @@ from fantasy_football.canonical.model import (
     RosterEntry,
     SlotKind,
 )
-from fantasy_football.canonical.validation import validate_snapshot
+from fantasy_football.canonical.validation import (
+    supports_immutable_snapshot_reuse,
+    validate_snapshot,
+)
 
 
 class LineupOptimizationError(ValueError):
@@ -214,6 +217,62 @@ def prepare_lineup_optimization(
     return LineupOptimizationWorkspace(
         snapshot, maximum_cache_entries=maximum_cache_entries
     )
+
+
+def _decimal_context_key(context):
+    return (
+        context.prec,
+        context.rounding,
+        context.Emin,
+        context.Emax,
+        context.clamp,
+        tuple(context.traps.items()),
+        tuple(context.flags.items()),
+    )
+
+
+def prepare_projected_lineup_analysis(
+    snapshot: LeagueSnapshot, workspace: LineupOptimizationWorkspace
+):
+    """Prepare bounded, exact team/week solves with fresh-call Decimal effects."""
+    _workspace(snapshot, workspace)
+    if not supports_immutable_snapshot_reuse(snapshot):
+        raise LineupOptimizationError(
+            "lineup analysis requires an immutable canonical snapshot"
+        )
+    validate_snapshot(snapshot)
+    results = OrderedDict()
+
+    def solve(team_id: int, week: int, roster: tuple[RosterEntry, ...]) -> OptimizedLineup:
+        context = getcontext()
+        key = None
+        if (
+            type(team_id) is int
+            and type(week) is int
+            and workspace._validated_roster_input(roster) is not None
+        ):
+            key = (
+                team_id, week, workspace.team_roster(roster, team_id),
+                _decimal_context_key(context),
+            )
+            cached = workspace._get(results, key)
+            if cached is not None:
+                result, flags = cached
+                context.flags.update(dict(flags))
+                return result
+
+        # This cache models a fresh solve, including its flag and trap effects.
+        workspace.starting_cache.clear()
+        workspace.candidate_cache.clear()
+        workspace.projection_profiles.clear()
+        result = optimize_starting_lineup(
+            snapshot, team_id, week, roster_entries=roster, workspace=workspace
+        )
+        if key is not None:
+            workspace._put(results, key, (result, tuple(context.flags.items())))
+        return result
+
+    return solve
 
 
 def _workspace(
@@ -612,15 +671,6 @@ def optimize_candidate_lineup(
     # is still constructed separately. Preserve Decimal context/trap/flag
     # effects as well, rather than assuming a different arithmetic policy.
     context = getcontext()
-    context_key = (
-        context.prec,
-        context.rounding,
-        context.Emin,
-        context.Emax,
-        context.clamp,
-        tuple(context.traps.items()),
-        tuple(context.flags.items()),
-    )
     profile_key = (
         canonical_player_ids,
         tuple(
@@ -630,7 +680,7 @@ def optimize_candidate_lineup(
         tuple(sorted(limited_player_ids)),
         maximum_limited_players,
         use_exact_limited_dominance,
-        context_key,
+        _decimal_context_key(context),
     )
     profile = prepared._get(prepared.projection_profiles, profile_key)
     if profile is not None:
