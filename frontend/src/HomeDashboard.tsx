@@ -33,8 +33,8 @@ export function HomeDashboard({ snapshot, managerState, projection, runs, runLis
   const champion = snapshot.teams.find(row => row.team_id === projected?.champion_team_id);
   const hasRetainedBaseline = runs?.some(run => run.snapshot_id === snapshot.snapshot_id &&
     run.run_type === "baseline" && run.status === "completed" && run.result_available);
-  return <div className="surface">
-    <section className="hero">
+  return <div className="surface workspace-page">
+    <section className="hero workspace-page-heading">
       <div><h1>Home</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p>
         <p>Snapshot · {snapshotTime.format(new Date(snapshot.retrieval_finished_at_utc))}</p>
       </div>
@@ -67,6 +67,7 @@ export function HomeDashboard({ snapshot, managerState, projection, runs, runLis
         <button className="primary-button" type="button" onClick={openMatchups}>View league matchups</button>
       </section>
     </div> : <ManagerSelectionStatus state={state}/>}
+    <div className="overview-source-grid home-outlooks">
     {projection && <section className="analytics-panel home-summary">
       <h2>Projected season outlook</h2>
       <p>One projected season using ESPN projections and verified scoring evidence.</p>
@@ -79,19 +80,20 @@ export function HomeDashboard({ snapshot, managerState, projection, runs, runLis
         {outlook?.final_placement != null && <div><dt>Projected final placement</dt><dd>{outlook.final_placement}</dd></div>}
         {champion && <div><dt>Projected champion</dt><dd>{champion.display_name}</dd></div>}
       </dl>}
-      <button onClick={openLeague}>View projected season details</button>
+      <button className="workspace-action" type="button" onClick={openLeague}>View projected season details</button>
     </section>}
     <section className="analytics-panel home-summary">
       <h2>Monte Carlo outlook</h2>
       <p>{runListStatus === "loading" ? "Checking retained Monte Carlo runs." :
         runListStatus === "unavailable" ? "Retained Monte Carlo results are unavailable." : hasRetainedBaseline ? "A retained run is listed for this snapshot. View compatible probability estimates and sampling intervals in Playoff Race." :
         "No retained baseline for this snapshot. Request Monte Carlo in Simulation Center for probability estimates."}</p>
-      <button type="button" onClick={openPlayoffRace}>Open Playoff Race</button>
+      <button className="workspace-action" type="button" onClick={openPlayoffRace}>Open Playoff Race</button>
     </section>
+    </div>
     <nav className="home-shortcuts" aria-label="League and analysis shortcuts">
       {!projection && <button className="primary-button" type="button" onClick={openLeague}>Open League Overview</button>}
-      {openTrades && <button type="button" onClick={openTrades}>Open Trade Lab</button>}
-      {openOpportunities && <button type="button" onClick={openOpportunities}>Open Opportunity Explorer</button>}
+      {openTrades && <button className="workspace-action" type="button" onClick={openTrades}>Open Trade Lab</button>}
+      {openOpportunities && <button className="workspace-action" type="button" onClick={openOpportunities}>Open Opportunity Explorer</button>}
       <button className="primary-button" type="button" onClick={openSimulation}>Open Simulation Center</button>
     </nav>
   </div>;

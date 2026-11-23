@@ -54,6 +54,18 @@ test("opens a bookmarked archive year and restores it with browser Back", async 
   expect(await screen.findByRole("heading", { name: "2025 final standings" })).toBeInTheDocument();
 });
 
+test("moves keyboard focus to the destination after mobile navigation", async () => {
+  mockApi();
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Home" });
+  await user.click(screen.getByRole("button", { name: "Open navigation" }));
+  const navigation = screen.getByLabelText("Mobile primary navigation");
+  await user.click(within(navigation).getByRole("button", { name: "League Matchups" }));
+  expect(await screen.findByRole("heading", { name: "League Matchups" })).toBeInTheDocument();
+  expect(screen.getByRole("main")).toHaveFocus();
+});
+
 test("browses verified results and scheduled pairings without mixing their scores", async () => {
   mockApi({
     detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } },

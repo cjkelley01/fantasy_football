@@ -27,8 +27,8 @@ export function SeasonArchive({ initialYear, focusBracket = false, onYearChange 
   const requestedYear = onYearChange ? initialYear : year;
   const season = requestedYear === undefined ? history?.seasons.at(-1)
     : history?.seasons.find(item => item.season === requestedYear);
-  return <div className="surface">
-    <section className="hero">
+  return <div className="surface workspace-page">
+    <section className="hero workspace-page-heading">
       <div><h1>Season Archive</h1><p>Completed CGL seasons</p></div>
       {!!history?.seasons.length && <label className="snapshot-control">
         <span>Season</span>
@@ -60,7 +60,7 @@ function SeasonResults({ season, revision, focusBracket }: { season: Season; rev
         <h2>{season.season} final standings</h2>
         <span>Champion · {names.get(season.champion_team_id)}</span>
       </div>
-      <div className="table-wrap"><table aria-label="Final standings">
+      <div className="table-wrap workspace-table" role="region" aria-label="Archived standings" tabIndex={0}><table aria-label="Final standings">
         <thead><tr><th scope="col">Finish</th><th scope="col">Team</th><th scope="col">W–L–T</th><th scope="col">Points for</th><th scope="col">Points against</th></tr></thead>
         <tbody>{season.teams.map(({ team_id, team_name, final_rank, regular_season: record }) => (
           <tr key={team_id}>
@@ -85,7 +85,7 @@ function MatchupResults({ title, names, matchups, focusHeading = false }: {
 }) {
   return <section className="card">
     <div className="card-head"><h2 tabIndex={focusHeading ? -1 : undefined} ref={focusHeading ? heading => heading?.focus() : undefined}>{title}</h2></div>
-    <div className="table-wrap"><table aria-label={title}>
+  <div className="table-wrap workspace-table" role="region" aria-label={title} tabIndex={0}><table aria-label={title}>
       <thead><tr><th scope="col">Week</th><th scope="col">Home</th><th scope="col">Away</th><th scope="col">Result</th></tr></thead>
       <tbody>{matchups.map(item => {
         const home = item.home_team_id === null ? null : names.get(item.home_team_id);

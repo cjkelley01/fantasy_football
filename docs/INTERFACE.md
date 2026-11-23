@@ -29,7 +29,7 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview, League Matchups, Playoff Race and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home contains Dashboard, and My Team contains Team Overview.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview, League Matchups, Playoff Race and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home contains Dashboard, and My Team contains Team Overview. Choosing a destination from the narrow-screen menu closes it and moves keyboard focus to the main content. On narrow screens, wide tables in Team Overview, League Matchups, League Overview results and Season Archive scroll within a labeled, keyboard-focusable region.
 
 | Task | Workspace |
 |---|---|

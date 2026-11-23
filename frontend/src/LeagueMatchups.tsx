@@ -36,8 +36,8 @@ export function LeagueMatchups({ snapshot }: { snapshot: SnapshotSummary }) {
   const schedule = snapshot.matchups.filter(item => item.matchup_period_id === periodId);
   const teams = new Map(snapshot.teams.map(team => [team.team_id, team.display_name]));
 
-  return <div className="surface">
-    <section className="hero">
+  return <div className="surface workspace-page">
+    <section className="hero workspace-page-heading">
       <div><h1>League Matchups</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p></div>
       {ordered.length > 0 && <label className="snapshot-control">
         <span>Matchup period</span>
@@ -54,16 +54,16 @@ export function LeagueMatchups({ snapshot }: { snapshot: SnapshotSummary }) {
       </div>
       {actuals ? <ObservedScoresTable snapshot={snapshot} result={actuals} label="Reconciled scores"/>
         : <>
-          {error ? <p>Completed results could not be verified for this snapshot.</p>
-            : results === undefined ? <p role="status">Checking completed results…</p>
-            : <p>No reconciled scores are available for this period.</p>}
-          {schedule.length ? <div className="table-wrap"><table aria-label="Scheduled pairings">
+          {error ? <p className="workspace-panel-note">Completed results could not be verified for this snapshot.</p>
+            : results === undefined ? <p className="workspace-panel-note" role="status">Checking completed results…</p>
+            : <p className="workspace-panel-note">No reconciled scores are available for this period.</p>}
+          {schedule.length ? <div className="table-wrap workspace-table" role="region" aria-label="Matchup schedule" tabIndex={0}><table aria-label="Scheduled pairings">
             <thead><tr><th scope="col">Away</th><th scope="col">Home</th></tr></thead>
             <tbody>{schedule.map(item => <tr key={item.matchup_id}>
               <td>{item.away_team_id === null ? "—" : teams.get(item.away_team_id)}</td>
               <td>{item.home_team_id === null ? "—" : teams.get(item.home_team_id)}</td>
             </tr>)}</tbody>
-          </table></div> : <p>No pairings are available for this period.</p>}
+          </table></div> : <p className="workspace-panel-note">No pairings are available for this period.</p>}
         </>}
     </section>
   </div>;

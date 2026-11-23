@@ -39,7 +39,7 @@ export function ObservedScoresTable({ snapshot, result, label }: {
   label: string;
 }) {
   const teams = new Map(snapshot.teams.map(team => [team.team_id, team.display_name]));
-  return <div className="table-wrap"><table aria-label={label}>
+  return <div className="table-wrap workspace-table" role="region" aria-label={label} tabIndex={0}><table aria-label={label}>
         <thead><tr><th scope="col">Away</th><th scope="col">Home</th><th scope="col">Result</th></tr></thead>
         <tbody>{result.results.map(item => {
           const home = teams.get(item.home_team_id);

@@ -79,6 +79,7 @@ export function App() {
   const menuClose=useRef<HTMLButtonElement>(null);
   const contextPanel=useRef<HTMLElement>(null);
   const menuPanel=useRef<HTMLElement>(null);
+  const focusAfterMenuNavigation = useRef(false);
 
   const readRuns = useCallback(async (signal?: AbortSignal) => {
     const version = ++runRequestVersion.current;
@@ -139,6 +140,12 @@ export function App() {
   useEffect(()=>{document.documentElement.dataset.theme=theme;localStorage.setItem("war-room-theme",theme);},[theme]);
   useEffect(()=>drawerFocus(contextOpen,contextPanel,contextClose,contextTrigger,setContextOpen),[contextOpen]);
   useEffect(()=>drawerFocus(menuOpen,menuPanel,menuClose,menuTrigger,setMenuOpen),[menuOpen]);
+  useEffect(() => {
+    if (!menuOpen && focusAfterMenuNavigation.current) {
+      focusAfterMenuNavigation.current = false;
+      document.getElementById("main-content")?.focus();
+    }
+  }, [menuOpen]);
 
   const chooseSnapshot=async(id:string)=>{
     activeController.current?.abort();const controller=new AbortController();activeController.current=controller;const version=++requestVersion.current;
@@ -163,6 +170,7 @@ export function App() {
     if (window.location.pathname !== path) window.history.pushState(null, "", path);
     setRoute(next);
     setFocusArchiveBracket(focusBracket);
+    if (menuOpen) focusAfterMenuNavigation.current = true;
     setMenuOpen(false);
   }
   const navigate=(id:Destination)=>{go({destination:id});if(id!=="playoffs"&&id!=="opportunities")setPreferredRun(null);};

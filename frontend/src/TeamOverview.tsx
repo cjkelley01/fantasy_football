@@ -3,8 +3,8 @@ import type { SnapshotSummary } from "./types/api";
 
 export function TeamOverview({ snapshot, managerState }: { snapshot: SnapshotSummary; managerState: ReturnType<typeof useManagerPerspective> }) {
   const state = managerState;
-  return <div className="surface">
-    <section className="hero">
+  return <div className="surface workspace-page">
+    <section className="hero workspace-page-heading">
       <div><h1>Team Overview</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p></div>
     </section>
     {state.team ? <ObservedTeam snapshot={snapshot} team={state.team}/>
@@ -26,7 +26,7 @@ function ObservedTeam({ snapshot, team }: {
       <h2>{team.display_name}</h2>
       <p>Record {team.wins}–{team.losses}–{team.ties} · Standing {team.standing ?? "Unavailable"} · {team.points_for.toFixed(1)} PF</p>
     </div></div>
-    {roster.length ? <div className="table-wrap">
+    {roster.length ? <div className="table-wrap workspace-table" role="region" aria-label="Team roster" tabIndex={0}>
       <table aria-label="Snapshot roster">
         <thead><tr><th scope="col">Player</th><th scope="col">Slot</th></tr></thead>
         <tbody>{roster.map(({ player_id, lineup_slot_id }) => <tr key={player_id}>

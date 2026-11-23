@@ -208,3 +208,49 @@ main { min-width:0; }.surface{padding:42px clamp(20px,4vw,64px) 72px;max-width:1
   .header-manager-control { flex-basis: 100%; }
   .header-manager-control select { width: min(100%, 320px); }
 }
+
+.workspace-page-heading { align-items: flex-end; }
+.workspace-page-heading h1 { font-size: clamp(28px, 3.5vw, 50px); }
+.workspace-page > .card + .card { margin-top: 18px; }
+.workspace-page > .card > p,
+.workspace-panel-note { margin: 0; padding: 14px 18px; color: var(--muted); }
+.workspace-panel { padding: 18px; }
+.workspace-panel h2 { margin: 0; font-size: 18px; }
+.workspace-panel p { color: var(--muted); }
+
+.workspace-table { max-width: 100%; }
+.workspace-table th[scope="row"] {
+  position: static;
+  background: transparent;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 13px;
+}
+.workspace-table:focus-visible { outline-offset: -2px; }
+.workspace-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.workspace-action:hover { border-color: var(--teal); }
+.home-outlooks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.home-outlooks > :only-child { grid-column: 1 / -1; }
+.playoff-actions { margin-bottom: 14px; }
+.playoff-race-page .overview-masthead h1 { margin-bottom: 4px; }
+
+@media (max-width: 700px) {
+  .workspace-page-heading .snapshot-control { margin-top: 12px; }
+  .workspace-page-heading .snapshot-control select { max-width: 100%; }
+  .home-outlooks { grid-template-columns: 1fr; }
+  .workspace-table th, .workspace-table td { padding: 9px 10px; }
+}

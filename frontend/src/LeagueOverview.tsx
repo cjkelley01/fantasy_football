@@ -12,10 +12,10 @@ type OverviewProps = {
   openArchive?: (year: number) => void; openPlayoffRace?: () => void;
 };
 export function LeagueOverview({snapshot, projection, openSimulation, openArchive, openPlayoffRace}: OverviewProps) {
-  return <div className="overview analytics-overview"><header className="overview-masthead"><div><span className="overline">League overview</span><h1>{snapshot.league_name??`League ${snapshot.league_id}`}</h1><p>{snapshot.season} season · {snapshot.teams.length} teams · weeks {snapshot.first_simulation_week}–{snapshot.final_simulation_week}</p></div><div className="snapshot-stamp"><Database/><span><strong>Canonical snapshot</strong>{formatDate(snapshot.published_at_utc)}</span></div></header><div className="overview-source-grid"><div className="overview-source-stack"><ObservedSnapshot snapshot={snapshot}/><RecentResults key={snapshot.snapshot_id} snapshot={snapshot}/></div><div className="overview-source-stack"><CurrentMatchups snapshot={snapshot}/>{openArchive&&<PreviousChampionship leagueId={snapshot.league_id} season={snapshot.season} openArchive={openArchive}/>}</div></div>{projection&&<ProjectedBaseline snapshot={snapshot} projection={projection} openSimulation={openSimulation}/>}{openPlayoffRace && <section className="analytics-panel">
+  return <div className="overview analytics-overview"><header className="overview-masthead"><div><span className="overline">League overview</span><h1>{snapshot.league_name??`League ${snapshot.league_id}`}</h1><p>{snapshot.season} season · {snapshot.teams.length} teams · weeks {snapshot.first_simulation_week}–{snapshot.final_simulation_week}</p></div><div className="snapshot-stamp"><Database/><span><strong>Canonical snapshot</strong>{formatDate(snapshot.published_at_utc)}</span></div></header><div className="overview-source-grid"><div className="overview-source-stack"><ObservedSnapshot snapshot={snapshot}/><RecentResults key={snapshot.snapshot_id} snapshot={snapshot}/></div><div className="overview-source-stack"><CurrentMatchups snapshot={snapshot}/>{openArchive&&<PreviousChampionship leagueId={snapshot.league_id} season={snapshot.season} openArchive={openArchive}/>}</div></div>{projection&&<ProjectedBaseline snapshot={snapshot} projection={projection} openSimulation={openSimulation}/>}{openPlayoffRace && <section className="analytics-panel workspace-panel">
     <h2>Playoff outlook</h2>
     <p>See retained War Room probabilities, placement distributions and run details.</p>
-    <button type="button" onClick={openPlayoffRace}>Open Playoff Race</button>
+    <button className="workspace-action" type="button" onClick={openPlayoffRace}>Open Playoff Race</button>
   </section>}</div>;
 }
 
@@ -36,11 +36,13 @@ export function PlayoffRace({snapshot, runs, runListStatus="loaded", preferredRu
   const visible = summary?.run.run_id === selectedRun &&
     completed.some(run => run.run_id === selectedRun) ? summary : null;
   const activeSummary = visible && !validateResult(visible, snapshot, visible.run.run_id) ? visible : null;
-  return <div className="overview analytics-overview"><header className="overview-masthead">
+  return <div className="overview analytics-overview playoff-race-page"><header className="overview-masthead">
     <div><h1>Playoff Race</h1><p>{snapshot.league_name ?? `League ${snapshot.league_id}`} / {snapshot.season}</p></div>
     <div className="snapshot-stamp"><Database/><span><strong>Canonical snapshot</strong>{formatDate(snapshot.published_at_utc)}</span></div>
   </header>
-  {openSimulation && <button className="primary-button" type="button" onClick={openSimulation}>Open Simulation Center</button>}
+  {openSimulation && <div className="playoff-actions">
+    <button className="workspace-action" type="button" onClick={openSimulation}>Open Simulation Center</button>
+  </div>}
   {runListStatus!=="loaded"?<AnalyticsState icon={<Activity/>} title={runListStatus==="loading"?"Checking retained runs":"Retained baseline results unavailable"} body={runListStatus==="loading"?"Loading the run list.":"Use Retry run list to check for retained Monte Carlo analysis."}/>:<><RunContext completed={completed} selected={selectedRun} onChange={setSelectedRun}/>{loading?<AnalyticsState icon={<Activity/>} title="Loading retained analysis" body="Reading the selected completed run without starting new simulation work."/>:error?<AnalyticsState icon={<AlertTriangle/>} title="Result unavailable" body={error}/>:activeSummary?<AnalyticsDashboard snapshot={snapshot} summary={activeSummary}/>:<NoAnalysis runs={matching}/>}</>}</div>;
 }
 function RunContext({completed,selected,onChange}:{completed:readonly BackgroundRunRecord[];selected:string|null;onChange:(id:string)=>void}){return <section className="analysis-context" aria-label="Analysis context"><div><span className="overline">Analysis source</span><strong>{completed.length?`${completed.length} completed baseline run${completed.length===1?"":"s"}`:"No usable completed baseline"}</strong><small>Newest retained result is selected by default. Selection never launches a run.</small></div>{completed.length>0&&<label><span>Completed run</span><select value={selected??""} onChange={event=>onChange(event.target.value)}>{completed.map(run=><option key={run.run_id} value={run.run_id}>{formatDate(run.finished_at_utc??run.created_at_utc)} · {short(run.run_id)}</option>)}</select></label>}</section>}
