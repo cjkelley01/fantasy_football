@@ -92,7 +92,7 @@ def build_current_week_input(
         ) from exc
 
 
-def _reconcile_standings_prefix(teams, schedule, prior_ids, regular_count):
+def reconcile_standings_prefix(teams, schedule, prior_ids, regular_count):
     """Verify completed standings against exact source totals."""
     historical = defaultdict(lambda: [0, 0, 0, Fraction(0), Fraction(0)])
     source_order_totals = defaultdict(lambda: [0.0, 0.0])
@@ -259,7 +259,7 @@ def _build_current_week_input(
     prior_ids = {
         int(pid) for pid, weeks in configured_periods.items() if max(weeks) < start
     }
-    settled = _reconcile_standings_prefix(
+    settled = reconcile_standings_prefix(
         snapshot.teams,
         schedule,
         prior_ids,

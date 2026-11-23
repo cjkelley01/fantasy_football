@@ -29,7 +29,7 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses horizontal navigation; narrow screens use a menu. League Insights is visibly deferred.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home contains Dashboard, and My Team contains Team Overview.
 
 | Task | Workspace |
 |---|---|
@@ -68,7 +68,13 @@ Confidence intervals measure Monte Carlo sampling uncertainty, not model error. 
 
 [Monte Carlo](METHODOLOGY.md#monte-carlo-simulation-and-estimators), [manual scenarios](METHODOLOGY.md#manual-scenarios-and-action-search-methodology) and [search](METHODOLOGY.md#manual-scenarios-and-action-search-methodology) own formulas, paired sampling, multiplicity and stopping. The interface does not redefine them.
 
+## Dashboard
+
+**Home → Dashboard** uses the same remembered manager perspective as Team Overview. It shows the selected team's observed record, standing, points for and known matchup in the snapshot's current scoring period. The snapshot timestamp identifies the evidence. The roster and league matchup shortcuts open the full views. League Overview and Simulation Center remain reachable before a manager is selected. League Overview remains the default landing page in this local slice.
+
 ## League Overview
+
+The overview leads with observed standings and the known team pairings for the snapshot's current scoring period. Recent results shows the latest prior regular-season period only when the captured ESPN schedule reconciles to that snapshot's standings. Results are as of the snapshot and can change with later stat corrections. Incomplete or conflicting evidence has an explicit unavailable state. A configured archive for the same league supplies the latest completed championship before the active snapshot's season. The bracket shortcut opens that year in Season Archive and leaves the active snapshot unchanged. The projected baseline and retained War Room forecast remain separately labeled below the observed and historical sections.
 
 Select a retained completed baseline with available result for the active snapshot. The newest usable matching run is the deterministic default (finish/creation time, then run ID); explicit selection or a preferred run from Simulation Center changes the complete evidence context. The viewer never submits work.
 
@@ -81,6 +87,10 @@ Select a retained completed baseline with available result for the active snapsh
 | Progressive technical disclosure | Paths, stop reason, precision, provenance and limitations are exact facts without decorative charts. |
 
 League-wide and metric precision warnings remain prominent after completion. Nulls follow shared rules. With no usable baseline, explain active/unsuccessful/no-result states and retain factual standings without invented analytics. Validation rejects unknown teams and mismatched provenance. Rapid run/snapshot changes cannot blend retained numbers.
+
+## League Matchups
+
+The League Matchups scoreboard groups the active snapshot's schedule and verified prior regular-season scores by matchup period. It defaults to the current period when known. Select a week or multiweek period to view its pairings or reconciled scores. Scores are tied to the selected snapshot and use captured ESPN winner labels. Unverified periods show known pairings and an explicit score-availability message. Archived postseason results remain in Season Archive.
 
 ## Opportunity Explorer
 
@@ -139,6 +149,14 @@ The timeline uses backend status and `started_at_utc`. Queued/Running are active
 Cancellation requires backend acknowledgement and is cooperative; committed completion can win. Terminal deletion is separately confirmed by identity. History searches/filters snapshot/type/status and shows expiry. The **browser requests the newest 50 records**, then filters locally, not complete lifetime history or a server snapshot query. API list capacity can be larger; 50 is the current browser choice.
 
 Completed runs navigate by explicit preferred run ID and matching snapshot: baseline → Overview, search → Explorer, manual → Trade Lab. Viewers independently validate provenance. Expired/deleted results stay unavailable. Export is **retrieved run metadata JSON only**, labeled scope/timestamp units/snapshot/checksum/run, not full candidate/state universes or saved request configuration. Numerical checkpoints are separate from interrupted application jobs and unsupported HTTP resume.
+
+## Team Overview
+
+**My Team → Team Overview** reads manager options for the active snapshot. It remembers a confirmed manager/team choice locally for each league and season and revalidates that choice when the snapshot changes. A manager selection changes the displayed roster and observed team record. The analytical snapshot and run state stay separate. Shared owners with a confirmed manager key are independently selectable. Without an explicit or remembered choice, the league-wide context has no default manager.
+
+## Season Archive
+
+The local Season Archive reads completed CGL history from the backend independently of analytical snapshot selection. It shows final standings, champion, championship series and byes, regular-season results, and archive revision. The selected year defaults to the latest completed entry. Missing configuration, empty history and a request failure have distinct messages. Archive deep links remain part of WR-027's later navigation work.
 
 ## Accessibility and responsive behavior
 

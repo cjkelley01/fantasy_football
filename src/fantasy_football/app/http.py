@@ -38,6 +38,7 @@ from fantasy_football.app.contracts import (
     LeagueRefreshProfile,
     ManualScenarioRequest,
     ManualScenarioResult,
+    RecentLeagueResults,
     ProjectedBaselineRequest,
     ProjectedBaselineResult,
     ProjectedOpportunityRequest,
@@ -52,12 +53,21 @@ from fantasy_football.app.contracts import (
     SnapshotSelector,
     SnapshotSummary,
 )
+from fantasy_football.app.current_results import league_results, recent_league_results
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
 from fantasy_football.app.service import (
     ApplicationDependencies,
     ApplicationService,
     ApplicationServiceError,
 )
+from fantasy_football.cgl_history import CglHistory
+from fantasy_football.cgl_managers import (
+    CglManagerError,
+    ManagerCrosswalk,
+    ManagerPerspectives,
+    resolve_manager_perspectives,
+)
+from fantasy_football.current_week import CurrentWeekEvidenceError
 from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.monte_carlo import MonteCarloError
 from fantasy_football.monte_carlo_precision import PrecisionError
@@ -88,6 +98,8 @@ def create_app(
     refresh_coordinator: SnapshotRefreshCoordinator | None = None,
     frontend_directory: str | Path | None = None,
     launcher_run_id: str | None = None,
+    history: CglHistory | None = None,
+    manager_crosswalk: ManagerCrosswalk | None = None,
 ) -> FastAPI:
     """Construct the credential-free local API with injectable storage/services."""
 
@@ -263,6 +275,11 @@ def create_app(
             launcher_run_id=launcher_run_id,
         )
 
+    @app.get("/api/v1/history/cgl", response_model=CglHistory | None)
+    def cgl_history(response: Response) -> CglHistory | None:
+        response.headers["Cache-Control"] = "no-store"
+        return history
+
     @app.get("/api/v1/snapshots", response_model=tuple[SnapshotSummary, ...])
     def snapshots(
         league_id: int | None = Query(default=None, gt=0),
@@ -281,6 +298,32 @@ def create_app(
         return current.inspect_snapshot(
             SnapshotSelector(snapshot_id=snapshot_id, league_id=league_id, season=season)
         )
+
+    @app.get("/api/v1/snapshots/{snapshot_id}/league-results", response_model=tuple[RecentLeagueResults, ...] | None)
+    def snapshot_league_results(snapshot_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return league_results(snapshot_store.load(snapshot_id))
+        except CurrentWeekEvidenceError as error:
+            return _error(422, "league_results_unverified", "invalid_request", str(error))
+
+    @app.get("/api/v1/snapshots/{snapshot_id}/recent-results", response_model=RecentLeagueResults | None)
+    def snapshot_recent_results(snapshot_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return recent_league_results(snapshot_store.load(snapshot_id))
+        except CurrentWeekEvidenceError as error:
+            return _error(422, "recent_results_unverified", "invalid_request", str(error))
+
+    @app.get("/api/v1/snapshots/{snapshot_id}/managers", response_model=ManagerPerspectives | None)
+    def snapshot_managers(snapshot_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        if manager_crosswalk is None:
+            return None
+        try:
+            return resolve_manager_perspectives(snapshot_store.load(snapshot_id), manager_crosswalk)
+        except CglManagerError as error:
+            return _error(422, "manager_evidence_invalid", "invalid_request", str(error))
 
     @app.get("/api/v1/refresh/profile", response_model=LeagueRefreshProfile)
     def refresh_profile(

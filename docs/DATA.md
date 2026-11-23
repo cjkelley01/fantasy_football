@@ -186,6 +186,10 @@ Ordinary V1 authorizes only the **current** explicitly unplayed week at the star
 
 Player observations keep actual points/source separate from full-game projections; remaining_projection/lineup_locked remain unavailable in live translation. No source observation establishes in-progress remainder, lineup-lock permissions, verified carry, fantasy settlement or stat-correction finalization. [Partial Week](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence) owns detailed validated companion/execution/composition rules, including fixed actuals plus remaining contributions exactly once. DATA does not authorize automatic live translation or new distributions.
 
+### Recent regular-season results
+
+The local recent-results reader uses the initial captured ESPN schedule and the source-bound period configuration on the selected immutable snapshot. It takes the configured regular-season periods ending before the current period and reconciles the full prefix with canonical W/L/T and PF/PA using the same exact standings check as Stage A. The scoreboard receives all reconciled periods in chronological order; the overview receives the latest period from the same projection. Each period carries snapshot and source identity, ESPN winner labels, and original home and away scores. Missing evidence or an empty prefix yields no result. Conflicting, undecided or incomplete evidence yields a typed rejection. This is an as-of observation. WR-010 still covers independent settlement and stat-correction authority.
+
 ### Observed assignments and independent authority
 
 For partial-week execution, canonical roster slots establish observed assignments only when snapshot timing reliably represents the current scoring week. [Observed assignments and locks](TECHNICAL_REFERENCE.md#permission-and-realization-interfaces) requires exact player/team/slot reconciliation and configured capacities; individually eligible replacement slots cannot rewrite observed evidence. Independently supported locked/changeable state is separate from slot eligibility or an INDIVIDUAL_GAME setting. Unreliable timing and unresolved locks fail closed.

@@ -268,7 +268,7 @@ When implementing an enhancement, update its authoritative domain reference and 
 | Owning domain references | Approved current/future analytical requirements change only under explicit authorization. Explain rationale, coordinate related owners and preserve compatibility/gates; an editorial cleanup cannot adopt a model. |
 | Immutable Git revisions / reviewed PRs | Retain ordinary history and selected historical citations there. Preserve source-authentication contracts, required numerical artifacts/oracles and applicable acceptance gates in current owners; do not overwrite historical measurements with current counts. |
 
-Use an ordinary reviewed PR; no extra committee, tracker, template or workflow is required. Cross-check edited commands against their executable source and update affected links/anchors. For source/evidence changes, record raw field/endpoint, transformations, retrieval context and verification class as required by AGENTS. Report actual checks in the PR/backlog; avoid duplicating execution logs across multiple current guides. Currentness should come from README/domain references, not maintaining parallel milestone catalogs.
+Use an ordinary PR for documentation and backlog coordination. Apply the review policy below when a documentation change records a gated decision. Cross-check edited commands against their executable source and update affected links/anchors. For source/evidence changes, record raw field/endpoint, transformations, retrieval context and verification class as required by AGENTS. Report actual checks in the PR/backlog; avoid duplicating execution logs across multiple current guides. Currentness should come from README/domain references, not maintaining parallel milestone catalogs.
 
 
 ## Review and completion

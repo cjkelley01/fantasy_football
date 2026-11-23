@@ -3,20 +3,41 @@ import { Activity, BarChart3, Database, FlaskConical, LayoutGrid, Menu, Moon, Re
 import { api, ApiError } from "./lib/api";
 import type { BackgroundRunRecord, HealthResponse, SnapshotSummary } from "./types/api";
 import { LeagueOverview } from "./LeagueOverview";
+import { LeagueMatchups } from "./LeagueMatchups";
 import { OpportunityExplorer } from "./OpportunityExplorer";
 import { TradeLab } from "./TradeLab";
 import { SimulationCenter } from "./SimulationCenter";
 import { LeagueRefresh } from "./LeagueRefresh";
+import { SeasonArchive } from "./SeasonArchive";
+import { TeamOverview } from "./TeamOverview";
+import { HomeDashboard } from "./HomeDashboard";
 import type { SnapshotRefreshResult } from "./types/api";
 
-type Destination = "league" | "opportunities" | "trades" | "simulation" | "insights";
+type Destination = "league" | "opportunities" | "trades" | "simulation" | "insights" | "history" | "team" | "matchups" | "home";
 type Theme = "dark" | "light";
-const nav: readonly [Destination, string, typeof Users, boolean][] = [
-  ["league", "League Overview", Users, false],
-  ["opportunities", "Opportunity Explorer", LayoutGrid, false],
-  ["trades", "Trade Lab", FlaskConical, false],
-  ["simulation", "Simulation Center", Activity, false],
-  ["insights", "League Insights", BarChart3, true],
+type NavigationItem = readonly [Destination, string, typeof Users, boolean];
+const navigationGroups: readonly { label: string; items: readonly NavigationItem[] }[] = [
+  { label: "Home", items: [
+    ["home", "Dashboard", Users, false],
+  ] },
+  { label: "My Team", items: [
+    ["team", "Team Overview", Users, false],
+  ] },
+  { label: "Players & Moves", items: [
+    ["opportunities", "Opportunity Explorer", LayoutGrid, false],
+    ["trades", "Trade Lab", FlaskConical, false],
+  ] },
+  { label: "League", items: [
+    ["league", "League Overview", Users, false],
+    ["matchups", "League Matchups", Activity, false],
+    ["insights", "League Insights", BarChart3, true],
+  ] },
+  { label: "History", items: [
+    ["history", "Season Archive", Trophy, false],
+  ] },
+  { label: "Tools", items: [
+    ["simulation", "Simulation Center", Activity, false],
+  ] },
 ];
 
 function initialTheme(): Theme {
@@ -28,6 +49,7 @@ function initialTheme(): Theme {
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [destination, setDestination] = useState<Destination>("league");
+  const [archiveYear, setArchiveYear] = useState<number>();
   const [health, setHealth] = useState<HealthResponse>();
   const [snapshots, setSnapshots] = useState<readonly SnapshotSummary[]>([]);
   const [selected, setSelected] = useState<SnapshotSummary>();
@@ -84,7 +106,7 @@ export function App() {
     catch(cause){if(!(cause instanceof DOMException&&cause.name==="AbortError")&&version===requestVersion.current)setError(cause instanceof ApiError?cause:new ApiError("Snapshot could not be loaded.",-1));}
     finally{if(!controller.signal.aborted&&version===requestVersion.current)setLoading(false);}
   };
-  const navigate=(id:Destination)=>{setDestination(id);setMenuOpen(false);if(id!=="league"&&id!=="opportunities")setPreferredRun(null);};
+  const navigate=(id:Destination)=>{setDestination(id);setArchiveYear(undefined);setMenuOpen(false);if(id!=="league"&&id!=="opportunities")setPreferredRun(null);};
   const openRun=(run:BackgroundRunRecord)=>{if(run.snapshot_id!==selected?.snapshot_id)return;setPreferredRun(run.run_id);setDestination(run.run_type==="baseline"?"league":run.run_type==="action_search"?"opportunities":"trades");};
   const retry=()=>{activeController.current?.abort();const controller=new AbortController();activeController.current=controller;void load(controller.signal);};
   const activeRuns=runs.filter(run=>["queued","running","cancel_requested"].includes(run.status));
@@ -94,7 +116,6 @@ export function App() {
     <a className="skip-link" href="#main-content">Skip to analytical content</a>
     <header className="app-header">
       <div className="brand"><div className="brand-mark"><Trophy/></div><div><strong>War Room</strong><span>Fantasy intelligence</span></div></div>
-      <nav className="desktop-nav" aria-label="Primary navigation"><NavButtons destination={destination} navigate={navigate}/></nav>
       <div className="header-tools">
         <div className="snapshot-control"><strong>{selected?.league_name??"Current league"}</strong>{selected&&<small>Updated {formatDate(selected.retrieval_finished_at_utc)}</small>}</div>
         <button className="icon-button" aria-label="Refresh ESPN league" onClick={()=>setRefreshOpen(true)}><RefreshCw/></button>
@@ -105,7 +126,14 @@ export function App() {
         <button ref={menuTrigger} className="icon-button menu-trigger" aria-label="Open navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu/></button>
       </div>
     </header>
-    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
+    <div className="workspace-layout">
+      <nav className="workspace-sidebar" aria-label="Primary navigation">
+        <NavButtons destination={destination} navigate={navigate}/>
+      </nav>
+      <div className="workspace-content">
+    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{destination==="history"?<SeasonArchive initialYear={archiveYear} focusBracket={archiveYear !== undefined}/>:loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="home"?<HomeDashboard key={selected.snapshot_id} snapshot={selected} openTeam={()=>navigate("team")} openMatchups={()=>navigate("matchups")} openLeague={()=>navigate("league")} openSimulation={()=>navigate("simulation")}/>:destination==="matchups"?<LeagueMatchups key={selected.snapshot_id} snapshot={selected}/>:destination==="team"?<TeamOverview key={selected.snapshot_id} snapshot={selected}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")} openArchive={year=>{navigate("history");setArchiveYear(year)}}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
+      </div>
+    </div>
     <LeagueRefresh open={refreshOpen} onClose={()=>setRefreshOpen(false)} onPublished={acceptPublication} automaticStart={automaticRefresh} leagueName={selected?.league_name} onOpen={()=>setRefreshOpen(true)}/>
     {(menuOpen||contextOpen)&&<div className="scrim" aria-hidden="true" onClick={()=>{setMenuOpen(false);setContextOpen(false);}}/>}
     {menuOpen&&<aside ref={menuPanel} className="mobile-menu open" role="dialog" aria-modal="true" aria-label="Mobile primary navigation">
@@ -121,10 +149,24 @@ export function App() {
   </div>;
 }
 
-function NavButtons({destination,navigate}:{destination:Destination;navigate:(id:Destination)=>void}) { return <>{nav.map(([id,label,Icon,future])=><button key={id} className={destination===id?"active":""} aria-current={destination===id?"page":undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span>{future&&<small>Future</small>}</button>)}</>; }
+function NavButtons({
+  destination, navigate,
+}: { destination: Destination; navigate: (id: Destination) => void }) {
+  return navigationGroups.filter(group => group.items.length > 0).map(group => (
+    <div key={group.label} role="group" aria-label={group.label} className="workspace-nav-group">
+      <p>{group.label}</p>
+      {group.items.map(([id, label, Icon, future]) => (
+        <button key={id} type="button" className={destination === id ? "active" : ""}
+          aria-current={destination === id ? "page" : undefined} onClick={() => navigate(id)}>
+          <Icon aria-hidden="true"/><span>{label}</span>{future && <small>Future</small>}
+        </button>
+      ))}
+    </div>
+  ));
+}
 function drawerFocus(open:boolean,panel:React.RefObject<HTMLElement|null>,close:React.RefObject<HTMLButtonElement|null>,trigger:React.RefObject<HTMLButtonElement|null>,setOpen:(value:boolean)=>void) {
   if(!open)return;
-  const background=[document.querySelector<HTMLElement>(".app-header"),document.querySelector<HTMLElement>("#main-content")].filter((item):item is HTMLElement=>item!==null);
+  const background=document.querySelectorAll<HTMLElement>(".app-header, .workspace-sidebar, #main-content");
   background.forEach(item=>item.inert=true);
   close.current?.focus();
   const handler=(event:KeyboardEvent)=>{

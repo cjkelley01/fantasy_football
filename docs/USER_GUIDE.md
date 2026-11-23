@@ -134,6 +134,20 @@ If refresh reports a late error, inspect any publication identity/committed indi
 
 Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. Startup selects the newest saved snapshot for the configured league/season; saved snapshots remain in league context. Set `WAR_ROOM_AUTO_REFRESH=true` in local configuration to opt into read-only retrieval on startup; the default displays cached data and offers **Refresh now**. The header shows the actual league name and retrieval time; cached data is not a claim of a fresh ESPN observation.
 
+League Overview shows **Recent results** for the latest completed regular-season matchup period that reconciles with the active snapshot's standings. The panel uses the saved snapshot's scores and can be unavailable if evidence is incomplete. Open **League → League Matchups** and select a period to browse completed scores or scheduled pairings. Refresh and choose the latest validated snapshot to see newer results.
+
+## Browse the local Season Archive
+
+Configure `WAR_ROOM_HISTORY_ARCHIVE` with the local schema-2 archive path, `WAR_ROOM_HISTORY_SOURCE` with its JSON source record containing `revision` and `sha256`, and `WAR_ROOM_HISTORY_LEAGUE_ID` with the matching ESPN league ID. Set all three process environment variables in the terminal before starting War Room. Absolute paths let the launcher resolve the files consistently. Keep both files outside Git.
+
+The server validates the pair on startup and serves the completed-season projection to **Season Archive**. A bad or incomplete configuration fails startup with a diagnostic. An app started without any of these variables remains usable and reports that history is unconfigured. To adopt a newer valid archive, restart with its matching source record. The app keeps serving its validated in-memory history while running.
+
+## Choose a manager perspective
+
+For local CGL use, set `WAR_ROOM_MANAGER_CROSSWALK` to the absolute path of a private JSON file with `league_id` and `owners`. Each owner entry maps an ESPN member ID to a CGL `manager_id` and `display_name`. Keep this file outside Git. The server validates it at startup. The manager endpoint compares the initial and reconciliation ownership sources of the selected saved snapshot and returns only matched CGL labels, keys and teams. ESPN member IDs stay on the server.
+
+Choose a manager in **Home** or open **My Team → Team Overview** to choose a manager. The browser remembers the selection for the league and season. If a new snapshot lacks a matching membership, choose again. An unmapped owner remains unavailable as a selectable manager. The selector does not change the analysis snapshot or grant privileges.
+
 ## Run a baseline and evaluate hypothetical changes
 
 Baseline, Trade Lab and action search use the [mandatory marginal-lineup roster policy](TECHNICAL_REFERENCE.md#automatic-roster-execution) for new simulations. When a required acquisition needs a drop, the policy uses the approved full-horizon lineup valuation and snapshot ownership evidence. Missing evidence required for a drop stops the run. Retained historical results keep their original policy and identity.

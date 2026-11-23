@@ -5,6 +5,9 @@ import type {
   BackgroundBaselineResultSummary,
   BackgroundActionSearchResultSummary, CandidateDetail, CandidateQueryPage, CompletedStateDetail,
   HealthResponse,
+  ManagerPerspectives,
+  RecentLeagueResults,
+  CglHistory,
   SnapshotSummary,
   LeagueRefreshProfile, SnapshotRefreshRequest, SnapshotRefreshSubmission,
   SnapshotRefreshRecord, SnapshotRefreshResult,
@@ -51,6 +54,7 @@ async function postJson<T>(path:string,body:unknown,signal?:AbortSignal):Promise
 async function deleteRequest(path:string,signal?:AbortSignal):Promise<void>{const response=await fetch(path,{method:"DELETE",signal});if(!response.ok){let payload:ApiErrorEnvelope|undefined;try{payload=await response.json() as ApiErrorEnvelope}catch{/* typed fallback */}throw new ApiError(payload?.error.message??`Request failed (${response.status}).`,response.status,payload?.error.code)}}
 
 export const api = {
+  cglHistory: (signal?: AbortSignal) => getJson<CglHistory | null>("/api/v1/history/cgl", signal),
   projectedOpportunities: (snapshot: SnapshotSummary, team: number, counterparty: number, signal?: AbortSignal) =>
     postJson<ProjectedOpportunityResult>("/api/v1/analyses/projected-opportunities", {
       snapshot: {snapshot_id: snapshot.snapshot_id, league_id: snapshot.league_id, season: snapshot.season},
@@ -73,6 +77,12 @@ export const api = {
   snapshots: (signal?: AbortSignal) => getJson<readonly SnapshotSummary[]>("/api/v1/snapshots", signal),
   snapshot: (snapshotId: string, signal?: AbortSignal) =>
     getJson<SnapshotSummary>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}`, signal),
+  snapshotManagers: (snapshotId: string, signal?: AbortSignal) =>
+    getJson<ManagerPerspectives | null>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}/managers`, signal),
+  recentLeagueResults: (snapshotId: string, signal?: AbortSignal) =>
+    getJson<RecentLeagueResults | null>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}/recent-results`, signal),
+  leagueResults: (snapshotId: string, signal?: AbortSignal) =>
+    getJson<readonly RecentLeagueResults[] | null>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}/league-results`, signal),
   refreshProfile:(signal?:AbortSignal)=>getJson<LeagueRefreshProfile>("/api/v1/refresh/profile",signal),
   submitRefresh:(request:SnapshotRefreshRequest,signal?:AbortSignal)=>postJson<SnapshotRefreshSubmission>("/api/v1/refreshes",request,signal),
   currentRefresh:(signal?:AbortSignal)=>getJson<SnapshotRefreshRecord|null>("/api/v1/refreshes/current",signal),

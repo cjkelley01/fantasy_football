@@ -51,7 +51,8 @@ def _validate_work_rows(rows: list[list[str]]) -> None:
     integration = rows[anchors.index("cgl-record-book-integration")]
     assert integration[3] == "Backlog"
     assert (
-        "Roadmap direction approved; implementation is not authorized" in integration[4]
+        "Implementation is not authorized beyond the separately agreed Phase 1 slices"
+        in integration[4]
     )
 
 

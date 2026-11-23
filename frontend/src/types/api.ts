@@ -38,6 +38,19 @@ export interface TeamSummary {
   readonly waiver_priority: number | null;
 }
 
+export interface ManagerPerspective {
+  readonly manager_id: string;
+  readonly display_name: string;
+  readonly team_id: number;
+  readonly is_primary: boolean;
+}
+
+export interface ManagerPerspectives {
+  readonly snapshot_id: string;
+  readonly choices: readonly ManagerPerspective[];
+  readonly unresolved_owner_count: number;
+}
+
 export interface PlayerSummary {
   readonly player_id: number;
   readonly display_name: string | null;
@@ -75,6 +88,21 @@ export interface MatchupSummary {
   readonly away_team_id: number | null;
   readonly bracket_type: string | null;
   readonly entry_status: string;
+}
+
+export interface RecentLeagueResults {
+  readonly snapshot_id: string;
+  readonly source_id: string;
+  readonly matchup_period_id: number;
+  readonly scoring_weeks: readonly number[];
+  readonly results: readonly {
+    readonly matchup_id: number;
+    readonly home_team_id: number;
+    readonly away_team_id: number;
+    readonly home_score: number;
+    readonly away_score: number;
+    readonly winner: "HOME" | "AWAY" | "TIE";
+  }[];
 }
 
 export interface LeagueStructure {
@@ -269,6 +297,32 @@ export interface ApiErrorEnvelope {
     readonly context: Readonly<Record<string, string | number | boolean | null>>;
   };
 }
+export interface CglHistory {
+  league_id: number;
+  source: { revision: string; sha256: string };
+  seasons: {
+    season: number;
+    champion_team_id: number;
+    teams: {
+      team_id: number;
+      team_name: string;
+      final_rank: number;
+      regular_season: { wins: number; losses: number; ties: number; points_for: number; points_against: number };
+    }[];
+    matchups: {
+      matchup_id: number;
+      scoring_periods: number[];
+      stage: "regular_season" | "championship_playoffs";
+      playoff_round: number | null;
+      home_team_id: number | null;
+      away_team_id: number | null;
+      home_score: number | null;
+      away_score: number | null;
+      winner: "HOME" | "AWAY" | "TIE" | "UNDECIDED";
+    }[];
+  }[];
+}
+
 
 export interface ProjectedBaselineResult {
   snapshot_id: string;
