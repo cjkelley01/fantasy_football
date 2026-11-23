@@ -42,14 +42,19 @@ def resolve_observed_score(
             )
         points, basis = actual, "final_actual"
     elif status is PlayerScoreState.IN_PROGRESS:
-        if actual is None or sampled_points is not None:
-            raise ValueError(
-                "In-progress scoring requires observed points and an approved outcome mode."
+        if actual is None:
+            raise ValueError("In-progress scoring requires verified observed points.")
+        if sampled_points is not None:
+            if projection is None:
+                raise ValueError(
+                    "In-progress final sampling requires a full-game projection."
+                )
+            points, basis = sampled_points, "sampled_final"
+        else:
+            points, basis = (
+                projection,
+                "projected_final" if projection is not None else "unresolved",
             )
-        points, basis = (
-            projection,
-            "projected_final" if projection is not None else "unresolved",
-        )
     elif status is PlayerScoreState.UNSTARTED:
         if actual is not None or projection is None:
             raise ValueError("Unstarted score requires a projection and no actual.")

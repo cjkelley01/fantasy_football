@@ -29,7 +29,7 @@ Use the guide in order for a first session, or jump to the task you need:
 
 Opening a viewer or selecting players does not launch an analysis. The application uses a provisional outcome model; results are conditional on its assumptions and the available evidence. A search can finish with incomplete coverage or unresolved rankings. See [current capabilities and limitations](../README.md#current-capabilities) before treating an output as advice.
 
-Current-week simulation supports completed fixed scores plus unstarted-player draws when source evidence reconciles. In-progress games remain unsupported without an approved remaining-performance model; current-week transactions cannot retroactively change observed assignments or points. Weekly Deep Dive, League Insights, automatic application-analysis resume and a saved manual-scenario comparison library remain unavailable. Exact support is in [partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence).
+Current-week simulation uses verified final actuals for completed players and existing full-game draws for unstarted and verified in-progress players. An in-progress draw uses the ESPN projected final score as input and can fall below the points already scored. It does not model a conditional remaining performance. Current-week transactions preserve observed lineup locks and prior scoring. Weekly Deep Dive, League Insights, automatic application-analysis resume and a saved manual-scenario comparison library remain unavailable. Exact support is in [partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence).
 
 ## Install and launch safely
 

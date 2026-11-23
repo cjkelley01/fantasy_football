@@ -106,7 +106,7 @@ def test_contradictory_and_unsupported_score_observations():
         "espn-page",
     )
     assert resolve_observed_score(state).points is None
-    with pytest.raises(ValueError, match="approved outcome mode"):
+    with pytest.raises(ValueError, match="requires a full-game projection"):
         resolve_observed_score(state, sampled_points=7)
     with pytest.raises(ValueError, match="projection and no actual"):
         resolve_observed_score(replace(state, score_state=PlayerScoreState.UNSTARTED))

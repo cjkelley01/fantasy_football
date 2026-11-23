@@ -31,6 +31,7 @@ from fantasy_football.lineup_optimizer import (
     prepare_projected_lineup_analysis,
 )
 from fantasy_football.monte_carlo import (
+    IN_PROGRESS_FINAL_ASSUMPTION,
     MonteCarloBatchResult,
     MonteCarloConfig,
     run_monte_carlo_batch,
@@ -1198,6 +1199,9 @@ def compare_completed_scenario_batches(
             "paired_difference_sampling_uncertainty_only",
             "bonferroni_familywise_paired_intervals_v1",
             "outcome_model_uncertainty_not_in_interval",
+        ) + (
+            (IN_PROGRESS_FINAL_ASSUMPTION,)
+            if IN_PROGRESS_FINAL_ASSUMPTION in baseline_batch.assumptions else ()
         ),
     )
 

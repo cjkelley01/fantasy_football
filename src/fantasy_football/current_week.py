@@ -352,10 +352,6 @@ def _build_current_week_input(
         elif game is None and player.nfl_team_id in bye_teams:
             state = PlayerScoreState.NONPARTICIPATING
         elif status is NFLGameStatus.IN_PROGRESS:
-            if not projected_final:
-                raise CurrentWeekEvidenceError(
-                    "An NFL game is in progress; no approved remaining-performance model is available."
-                )
             _require(
                 lock
                 and observation is not None
@@ -366,6 +362,11 @@ def _build_current_week_input(
             row = projections.get(pid)
             if row is not None and row.raw_projection is not None:
                 projection = row.effective_projection
+            _require(
+                projection is not None
+                or roles[entry.lineup_slot_id] is not LineupRole.STARTER,
+                "An in-progress starter lacks an observed full-game projection.",
+            )
             state = PlayerScoreState.IN_PROGRESS
             remaining = RemainingContributionStatus.UNRESOLVED
         else:
@@ -519,7 +520,10 @@ def _build_current_week_input(
         ),
     )
     require_executable_partial_week_evidence(
-        snapshot, evidence, projected_final=projected_final
+        snapshot,
+        evidence,
+        projected_final=projected_final
+        or any(state.score_state is PlayerScoreState.IN_PROGRESS for state in players),
     )
     return MonteCarloPartialWeekInput(
         evidence,

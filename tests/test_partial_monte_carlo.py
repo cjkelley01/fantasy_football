@@ -245,7 +245,7 @@ def test_changed_partial_input_invalidates_checkpoint(tmp_path, change):
         PlayerScoreState.MISSING,
     ),
 )
-def test_nonpregame_states_reject_before_sampling(state):
+def test_unverified_started_or_missing_states_reject_before_sampling(state):
     snapshot, config, _model = _case()
     partial = config.partial_week
     started = state in {PlayerScoreState.COMPLETED_FIXED, PlayerScoreState.IN_PROGRESS}
@@ -288,7 +288,8 @@ def test_nonpregame_states_reject_before_sampling(state):
             pytest.fail("unsupported states must be rejected before sampling")
 
     with pytest.raises(
-        MonteCarloError, match="completed-fixed or unstarted|nonparticipation requires"
+        MonteCarloError,
+        match="canonical live scoring evidence|completed-fixed or unstarted|nonparticipation requires",
     ):
         run_monte_carlo_path(
             snapshot, replace(config, partial_week=partial), NoSampling(), 0

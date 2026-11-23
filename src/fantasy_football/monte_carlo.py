@@ -30,6 +30,7 @@ from fantasy_football.lineup_optimizer import (
     LineupOptimizationWorkspace,
     prepare_lineup_optimization,
 )
+from fantasy_football.live_scoring import NFLGameStatus, ScoreEvidenceStatus
 from fantasy_football.partial_week import (
     DeterministicPlayerValue,
     PartialWeekEvidence,
@@ -208,6 +209,9 @@ class MonteCarloBatchResult:
     projection_class_counts: tuple[tuple[str, int], ...]
 
 
+IN_PROGRESS_FINAL_ASSUMPTION = "in_progress_unconditional_full_game_final_can_be_below_observed"
+
+
 SIMULATION_SEMANTICS = (
     ("fingerprint_contract", "m2.6-simulation-config-v1"),
     ("deterministic_coordinator", "m2.5-accepted-30435fa"),
@@ -383,7 +387,11 @@ def simulation_configuration_fingerprint(
     if config.partial_week is not None:
         _validate_pregame_partial_week(snapshot, config.partial_week)
         payload["partial_week"] = {
-            "contract": "lw2.3a-unstarted-partial-week-v1",
+            "contract": (
+                "in-progress-unconditional-final-v1"
+                if _has_in_progress(config.partial_week)
+                else "lw2.3a-unstarted-partial-week-v1"
+            ),
             "evidence": partial_week_to_json(config.partial_week.evidence),
             "lineup": _deterministic_value(
                 tuple(
@@ -457,6 +465,10 @@ def _scenario_digest(result, prepared: PreparedNormalOutcomes | None = None) -> 
     ).hexdigest()
 
 
+def _has_in_progress(partial: MonteCarloPartialWeekInput) -> bool:
+    return any(state.score_state is PlayerScoreState.IN_PROGRESS for state in partial.evidence.players)
+
+
 def _validate_pregame_partial_week(
     snapshot: LeagueSnapshot, partial: MonteCarloPartialWeekInput
 ) -> None:
@@ -484,6 +496,25 @@ def _validate_pregame_partial_week(
     selected_starters = {
         a.player_id for a in partial.lineup if a.lineup_slot_id in starter_slots
     }
+    in_progress = _has_in_progress(partial)
+    if in_progress:
+        live = snapshot.live_scoring
+        if live is None or live.current_scoring_period != evidence.scoring_period:
+            players = sorted(
+                state.player_id for state in evidence.players
+                if state.score_state is PlayerScoreState.IN_PROGRESS
+            )
+            raise MonteCarloError(
+                f"In-progress sampling requires canonical live scoring evidence for players {players}."
+            )
+        observations = {row.player_id: row for row in live.observations if row.scoring_week == evidence.scoring_period}
+        nfl_teams = {item.player_id: item.nfl_team_id for item in snapshot.players}
+        live_teams = {
+            team for game in snapshot.nfl_games
+            if game.scoring_week == evidence.scoring_period
+            and game.status is NFLGameStatus.IN_PROGRESS and game.status_source_id in evidence.source_ids
+            for team in (game.home_nfl_team_id, game.away_nfl_team_id)
+        }
     for state in evidence.players:
         if state.player_id not in rostered:
             continue
@@ -498,6 +529,29 @@ def _validate_pregame_partial_week(
         }:
             # Full-universe draws remain generated and hashed, but the composer
             # receives no resimulation input for a fixed player.
+            continue
+        if state.score_state is PlayerScoreState.IN_PROGRESS:
+            observation = observations.get(state.player_id)
+            if (
+                nfl_teams.get(state.player_id) not in live_teams
+                or observation is None
+                or observation.actual_status is not ScoreEvidenceStatus.CONFIRMED
+                or observation.actual_points != state.fixed_actual_points
+                or observation.source_id != state.source_id
+            ):
+                raise MonteCarloError(
+                    f"player {state.player_id}: in-progress sampling requires matching canonical game and actual evidence"
+                )
+            if state.player_id not in selected_starters:
+                continue
+            projection = projections.get(state.player_id)
+            if (
+                projection is None or projection.raw_projection is None
+                or projection.effective_projection != state.full_game_projection
+            ):
+                raise MonteCarloError(
+                    f"player {state.player_id}: in-progress sampling requires a matching nonmissing canonical projection"
+                )
             continue
         if (
             state.score_state is not PlayerScoreState.UNSTARTED
@@ -515,7 +569,7 @@ def _validate_pregame_partial_week(
             raise MonteCarloError(
                 f"player {state.player_id}: approved full-game projection must match the nonmissing canonical draw mean"
             )
-    require_executable_partial_week_evidence(snapshot, evidence)
+    require_executable_partial_week_evidence(snapshot, evidence, projected_final=in_progress)
     validate_proposed_lineup(snapshot, evidence, partial.lineup)
 
 
@@ -555,26 +609,26 @@ def _partial_week_draws(
     required = {
         state.player_id: state
         for state in observed_starter_states(snapshot, partial)
-        if state.score_state is PlayerScoreState.UNSTARTED
+        if state.score_state in {PlayerScoreState.UNSTARTED, PlayerScoreState.IN_PROGRESS}
     }
     missing = set(required) - set(first_scores)
     if missing:
         raise MonteCarloError(
             f"partial-week starters lack generated current-week draws: {sorted(missing)}"
         )
+    values = []
+    for player_id, state in sorted(required.items()):
+        score = resolve_observed_score(state, sampled_points=first_scores[player_id])
+        if state.score_state is PlayerScoreState.IN_PROGRESS:
+            values.append(DeterministicPlayerValue(player_id, sampled_final_points=score.points))
+        else:
+            values.append(DeterministicPlayerValue(player_id, unstarted_realized_points=score.points))
     deterministic = DeterministicPartialWeekInput(
         partial.evidence,
         partial.lineup,
-        tuple(
-            DeterministicPlayerValue(
-                player_id,
-                unstarted_realized_points=resolve_observed_score(
-                    required[player_id], sampled_points=first_scores[player_id]
-                ).points,
-            )
-            for player_id in sorted(required)
-        ),
+        tuple(values),
         partial.prior_postseason_scores,
+        sampled_final=_has_in_progress(partial),
     )
     future = replace(
         scenario,
@@ -810,6 +864,10 @@ def _aggregate(
             "provisional_not_empirically_calibrated",
             "conditionally_independent_player_weeks_v1",
             "fixed_requested_path_denominator_required_for_frequencies",
+        ) + (
+            (IN_PROGRESS_FINAL_ASSUMPTION,)
+            if config.partial_week is not None and _has_in_progress(config.partial_week)
+            else ()
         ),
         validated_prefix.projection_class_counts
         if validated_prefix is not None

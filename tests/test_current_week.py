@@ -214,7 +214,7 @@ def test_mutated_raw_source_is_rejected_without_republication(tmp_path):
         build_current_week_input(snapshot, responses)
 
 
-def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
+def test_started_game_without_projection_preserves_timing_but_blocks_scoring(tmp_path):
     from fantasy_football.app.contracts import ManualScenarioRequest, SnapshotSelector
     from fantasy_football.app.service import (
         ApplicationDependencies,
@@ -236,9 +236,19 @@ def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
         for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
             if game["homeProTeamId"] == 3:
                 game["status"] = "STATUS_IN_PROGRESS"
+    for page in bundle.future_player_pages:
+        if page.scoring_week == 2:
+            for row in page.response.payload["players"]:
+                if row["id"] == 2:
+                    row["player"]["stats"] = [
+                        item
+                        for item in row["player"]["stats"]
+                        if item["statSourceId"] != 1
+                    ]
     snapshot, responses = _publish(tmp_path, bundle)
     with pytest.raises(
-        CurrentWeekEvidenceError, match="no approved remaining-performance model"
+        CurrentWeekEvidenceError,
+        match="in-progress starter lacks an observed full-game projection",
     ):
         build_current_week_input(snapshot, responses)
 
@@ -258,7 +268,8 @@ def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
     assert dict(summary.player_earliest_trade_weeks)[4] == 2
     assert summary.trade_timing_limitation is None
     assert (
-        "no approved remaining-performance model" in summary.current_week_limitations[0]
+        "in-progress starter lacks an observed full-game projection"
+        in summary.current_week_limitations[0]
     )
     moves = [
         {
