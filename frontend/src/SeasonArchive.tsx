@@ -6,9 +6,10 @@ const points = new Intl.NumberFormat(undefined, { maximumFractionDigits: 15 });
 const score = (value: number | null) => value === null ? "Unavailable" : points.format(value);
 type Season = CglHistory["seasons"][number];
 
-export function SeasonArchive({ initialYear, focusBracket = false }: {
+export function SeasonArchive({ initialYear, focusBracket = false, onYearChange }: {
   initialYear?: number;
   focusBracket?: boolean;
+  onYearChange?: (year: number) => void;
 }) {
   const [history, setHistory] = useState<CglHistory | null>();
   const [year, setYear] = useState(initialYear);
@@ -23,16 +24,21 @@ export function SeasonArchive({ initialYear, focusBracket = false }: {
     return () => controller.abort();
   }, []);
 
-  const season = history?.seasons.find(item => item.season === year) ?? history?.seasons.at(-1);
+  const requestedYear = onYearChange ? initialYear : year;
+  const season = requestedYear === undefined ? history?.seasons.at(-1)
+    : history?.seasons.find(item => item.season === requestedYear);
   return <div className="surface">
     <section className="hero">
       <div><h1>Season Archive</h1><p>Completed CGL seasons</p></div>
-      {season && <label className="snapshot-control">
+      {!!history?.seasons.length && <label className="snapshot-control">
         <span>Season</span>
-        <select value={season.season} onChange={event => {
+        <select value={season?.season ?? ""} onChange={event => {
           setFocusInitialBracket(false);
-          setYear(Number(event.target.value));
+          const next = Number(event.target.value);
+          if (onYearChange) onYearChange(next);
+          else setYear(next);
         }}>
+          {!season && <option value="" disabled>Choose an available season</option>}
           {[...(history?.seasons ?? [])].reverse().map(item => <option key={item.season}>{item.season}</option>)}
         </select>
       </label>}
@@ -40,7 +46,8 @@ export function SeasonArchive({ initialYear, focusBracket = false }: {
     {error ? <p role="alert">CGL history could not be loaded from the local service.</p>
       : history === undefined ? <p role="status">Loading season history…</p>
       : history === null ? <p>CGL history is not configured.</p>
-      : season ? <SeasonResults key={season.season} season={season} revision={history.source.revision} focusBracket={focusInitialBracket && season.season === initialYear} />
+      : season ? <SeasonResults key={season.season} season={season} revision={history.source.revision} focusBracket={(onYearChange ? focusBracket : focusInitialBracket) && season.season === initialYear} />
+      : requestedYear !== undefined ? <p>Completed results for {requestedYear} are unavailable in this archive.</p>
       : <p>The configured archive contains no completed seasons.</p>}
   </div>;
 }

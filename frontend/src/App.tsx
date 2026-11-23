@@ -14,7 +14,7 @@ import { TeamOverview } from "./TeamOverview";
 import { HomeDashboard } from "./HomeDashboard";
 import type { SnapshotRefreshResult } from "./types/api";
 
-type Destination = "league" | "opportunities" | "trades" | "simulation" | "insights" | "history" | "team" | "matchups" | "home";
+import { readWorkspaceRoute, workspacePath, type Destination, type WorkspaceRoute } from "./workspaceRoutes";
 type Theme = "dark" | "light";
 type NavigationItem = readonly [Destination, string, typeof Users, boolean];
 const navigationGroups: readonly { label: string; items: readonly NavigationItem[] }[] = [
@@ -49,8 +49,10 @@ function initialTheme(): Theme {
 
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
-  const [destination, setDestination] = useState<Destination>("home");
-  const [archiveYear, setArchiveYear] = useState<number>();
+  const [route, setRoute] = useState(() => readWorkspaceRoute(window.location.pathname));
+  const [focusArchiveBracket, setFocusArchiveBracket] = useState(false);
+  const { destination } = route;
+  const archiveYear = route.destination === "history" ? route.year : undefined;
   const [health, setHealth] = useState<HealthResponse>();
   const [snapshots, setSnapshots] = useState<readonly SnapshotSummary[]>([]);
   const [selected, setSelected] = useState<SnapshotSummary>();
@@ -142,8 +144,26 @@ export function App() {
     catch(cause){if(!(cause instanceof DOMException&&cause.name==="AbortError")&&version===requestVersion.current)setError(cause instanceof ApiError?cause:new ApiError("Snapshot could not be loaded.",-1));}
     finally{if(!controller.signal.aborted&&version===requestVersion.current)setLoading(false);}
   };
-  const navigate=(id:Destination)=>{setDestination(id);setArchiveYear(undefined);setMenuOpen(false);if(id!=="league"&&id!=="opportunities")setPreferredRun(null);};
-  const openRun=(run:BackgroundRunRecord)=>{if(run.snapshot_id!==selected?.snapshot_id)return;setPreferredRun(run.run_id);setDestination(run.run_type==="baseline"?"league":run.run_type==="action_search"?"opportunities":"trades");};
+  useEffect(() => {
+    function onPopState() {
+      setRoute(readWorkspaceRoute(window.location.pathname));
+      setFocusArchiveBracket(false);
+      setPreferredRun(null);
+      setMenuOpen(false);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  function go(next: WorkspaceRoute, focusBracket = false) {
+    const path = workspacePath(next);
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+    setRoute(next);
+    setFocusArchiveBracket(focusBracket);
+    setMenuOpen(false);
+  }
+  const navigate=(id:Destination)=>{go({destination:id});if(id!=="league"&&id!=="opportunities")setPreferredRun(null);};
+  const openRun=(run:BackgroundRunRecord)=>{if(run.snapshot_id!==selected?.snapshot_id)return;setPreferredRun(run.run_id);go({destination:run.run_type==="baseline"?"league":run.run_type==="action_search"?"opportunities":"trades"});};
   const retry=()=>{retryRuns();activeController.current?.abort();const controller=new AbortController();activeController.current=controller;void load(controller.signal);};
   const projection=useProjectedSeason(selected);
   const activeRuns=runs.filter(run=>["queued","running","cancel_requested"].includes(run.status));
@@ -169,7 +189,7 @@ export function App() {
       </nav>
       <div className="workspace-content">
     <LeagueRefresh open={refreshOpen} onClose={()=>setRefreshOpen(false)} onPublished={acceptPublication} automaticStart={automaticRefresh} leagueName={selected?.league_name} onOpen={()=>setRefreshOpen(true)}/>
-    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{runListStatus==="unavailable"&&<p role="status" className="runtime-caveat">The run list could not be loaded. <button onClick={retryRuns}>Retry run list</button></p>}{error&&selected&&<p role="alert" className="runtime-caveat">{error.message} <button onClick={retry}>Try again</button></p>}{destination==="history"?<SeasonArchive initialYear={archiveYear} focusBracket={archiveYear !== undefined}/>:loading&&!selected?<LoadingState connected={Boolean(health)}/>:error&&!selected?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="home"?<HomeDashboard key={selected.snapshot_id} snapshot={selected} projection={projection} runs={runs} runListStatus={runListStatus} openTrades={()=>navigate("trades")} openOpportunities={()=>navigate("opportunities")} openTeam={()=>navigate("team")} openMatchups={()=>navigate("matchups")} openLeague={()=>navigate("league")} openSimulation={()=>navigate("simulation")}/>:destination==="matchups"?<LeagueMatchups key={selected.snapshot_id} snapshot={selected}/>:destination==="team"?<TeamOverview key={selected.snapshot_id} snapshot={selected}/>:destination==="league"?<LeagueOverview snapshot={selected} projection={projection} runs={runs} runListStatus={runListStatus} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")} openArchive={year=>{navigate("history");setArchiveYear(year)}}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} runListStatus={runListStatus} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} runListStatus={runListStatus} loadRuns={readRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={runListStatus==="loaded"?activeRuns:undefined}/>}</main>
+    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{runListStatus==="unavailable"&&<p role="status" className="runtime-caveat">The run list could not be loaded. <button onClick={retryRuns}>Retry run list</button></p>}{error&&selected&&<p role="alert" className="runtime-caveat">{error.message} <button onClick={retry}>Try again</button></p>}{destination==="history"?<SeasonArchive initialYear={archiveYear} focusBracket={focusArchiveBracket} onYearChange={year=>go({destination:"history",year})}/>:loading&&!selected?<LoadingState connected={Boolean(health)}/>:error&&!selected?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="home"?<HomeDashboard key={selected.snapshot_id} snapshot={selected} projection={projection} runs={runs} runListStatus={runListStatus} openTrades={()=>navigate("trades")} openOpportunities={()=>navigate("opportunities")} openTeam={()=>navigate("team")} openMatchups={()=>navigate("matchups")} openLeague={()=>navigate("league")} openSimulation={()=>navigate("simulation")}/>:destination==="matchups"?<LeagueMatchups key={selected.snapshot_id} snapshot={selected}/>:destination==="team"?<TeamOverview key={selected.snapshot_id} snapshot={selected}/>:destination==="league"?<LeagueOverview snapshot={selected} projection={projection} runs={runs} runListStatus={runListStatus} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")} openArchive={year=>{setPreferredRun(null);go({destination:"history",year},true)}}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} runListStatus={runListStatus} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} runListStatus={runListStatus} loadRuns={readRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={runListStatus==="loaded"?activeRuns:undefined}/>}</main>
       </div>
     </div>
     {(menuOpen||contextOpen)&&<div className="scrim" aria-hidden="true" onClick={()=>{setMenuOpen(false);setContextOpen(false);}}/>}

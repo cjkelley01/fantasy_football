@@ -27,7 +27,32 @@ function outlook(value: typeof snapshot, champion = value.teams[0].team_id) {
 }
 async function openSnapshots(user:ReturnType<typeof userEvent.setup>){await user.click(screen.getByRole("button",{name:"Open league context"}));await user.click(screen.getByText("Saved snapshots"));}
 
-afterEach(()=>vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  window.history.replaceState(null, "", "/");
+});
+
+test("opens a bookmarked archive year and restores it with browser Back", async () => {
+  const team = { team_id: 1, team_name: "Archived Harbor", final_rank: 1,
+    regular_season: { wins: 1, losses: 0, ties: 0, points_for: 12, points_against: 0 } };
+  mockApi({ snapshots: [], runs: [], history: {
+    league_id: 42, source: { revision: "a".repeat(40), sha256: "b".repeat(64) },
+    seasons: [2024, 2025].map(season => ({ season, champion_team_id: 1, teams: [team], matchups: [] })),
+  } });
+  window.history.replaceState(null, "", "/history/seasons/2024");
+  const user = userEvent.setup();
+  const app = render(<App />);
+  expect(await screen.findByRole("heading", { name: "2024 final standings" })).toBeInTheDocument();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Season" }), "2025");
+  expect(window.location.pathname).toBe("/history/seasons/2025");
+  window.history.back();
+  expect(await screen.findByRole("heading", { name: "2024 final standings" })).toBeInTheDocument();
+  window.history.forward();
+  expect(await screen.findByRole("heading", { name: "2025 final standings" })).toBeInTheDocument();
+  app.unmount();
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "2025 final standings" })).toBeInTheDocument();
+});
 
 test("browses verified results and scheduled pairings without mixing their scores", async () => {
   mockApi({
