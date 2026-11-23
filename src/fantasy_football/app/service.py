@@ -33,6 +33,8 @@ from fantasy_football.app.contracts import (
     ProbabilityValue,
     ProjectedBaselineRequest,
     ProjectedBaselineResult,
+    ProjectedScenarioRequest,
+    ProjectedScenarioResult,
     RosterAssignment,
     RuleCapability,
     RunIdentity,
@@ -45,21 +47,18 @@ from fantasy_football.app.contracts import (
     TeamProbabilityResult,
     TeamScenarioResult,
     TeamSummary,
-    TradeQuickAnalysisRequest,
-    TradeQuickAnalysisResult,
     WeeklyLineupResult,
 )
-from fantasy_football.app.quick_analysis import project_trade
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.canonical.validation import (
     authoritative_current_matchup_period_scoring_weeks,
+    validated_snapshot,
 )
 from fantasy_football.effective_trades import (
     EffectiveTradeError,
     TradeTransfer,
     inspect_trade_timing,
     prepare_trade_timeline,
-    validate_trade_timeline,
 )
 from fantasy_football.evolving_state import (
     AcquisitionAvailability,
@@ -81,6 +80,7 @@ from fantasy_football.scenario_evaluator import (
     ProtectedPlayerPin,
     evaluate_effective_trade_plan,
     evaluate_manual_scenario,
+    prepare_manual_transaction,
 )
 from fantasy_football.search_orchestration import (
     SearchEvaluationMode,
@@ -117,6 +117,20 @@ def _manual_scenario(intent: ManualScenarioInput) -> ManualScenario:
         tuple(ProtectedPlayerPin(item.team_id, item.player_id)
               for item in intent.protected_players),
     )
+
+
+def _requested_trade_timeline(loaded, intent):
+    requested = tuple(
+        (
+            trade.selected_week,
+            tuple(TradeTransfer(move.player_id, move.from_team_id, move.to_team_id)
+                  for move in trade.transfers),
+        )
+        for trade in intent.effective_trades
+    )
+    return prepare_trade_timeline(
+        loaded.snapshot, tuple(item.response for item in loaded.raw_sources), requested
+    ) if requested else ()
 
 
 class ApplicationServiceError(ValueError):
@@ -637,6 +651,56 @@ class ApplicationService:
                 "engine_request_rejected", "unsupported_configuration", str(exc)
             ) from exc
 
+    def run_projected_scenario(self, request: ProjectedScenarioRequest) -> ProjectedScenarioResult:
+        from fantasy_football.app.projected_baseline import (
+            prepare_projection_request,
+            projected_season_result,
+        )
+        from fantasy_football.automatic_rosters import AutomaticRosterError
+        from fantasy_football.current_week import CurrentWeekEvidenceError
+        from fantasy_football.partial_week import PartialWeekError
+        from fantasy_football.projected_season import compare_projected_scenario
+        from fantasy_football.season_simulator import SeasonSimulationError
+
+        loaded = self._load(request.snapshot)
+        digest = loaded.metadata.canonical_sha256
+        if request.canonical_sha256 != digest:
+            raise ApplicationServiceError(
+                "snapshot_identity_mismatch", "invalid_request",
+                "The snapshot content differs from the analysis selection.",
+            )
+        try:
+            with validated_snapshot(loaded.snapshot):
+                trades = _requested_trade_timeline(loaded, request.scenario)
+                inputs = prepare_projection_request(loaded, request, observed_lineup=bool(trades))
+                baseline, hypothetical, completed = compare_projected_scenario(
+                    inputs, _manual_scenario(request.scenario), trades=trades,
+                )
+        except EffectiveTradeError as exc:
+            raise ApplicationServiceError(
+                "partial_week_trade_timing_unresolved", "unsupported_configuration", str(exc)
+            ) from exc
+        except CurrentWeekEvidenceError as exc:
+            raise ApplicationServiceError(
+                "current_week_evidence_unresolved", "unsupported_configuration", str(exc)
+            ) from exc
+        except (SeasonSimulationError, PartialWeekError, AutomaticRosterError) as exc:
+            raise ApplicationServiceError(
+                "engine_request_rejected", "unsupported_configuration", str(exc)
+            ) from exc
+
+        return ProjectedScenarioResult(
+            scenario_id=request.scenario.scenario_id,
+            timeline=trades,
+            explicit_changes=request.scenario.changes,
+            forced_drops=completed.forced_drops if completed else (),
+            automatic_additions=completed.automatic_additions if completed else (),
+            baseline=projected_season_result(digest, inputs, *baseline),
+            hypothetical=projected_season_result(digest, inputs, *hypothetical),
+            baseline_final_roster=baseline[0].final_evolving_state.roster_entries,
+            hypothetical_final_roster=hypothetical[0].final_evolving_state.roster_entries,
+        )
+
     def run_baseline(self, request: BaselineAnalysisRequest) -> BaselineAnalysisResult:
         loaded = self._load(request.snapshot)
         simulation = self._simulation(request.simulation, loaded=loaded)
@@ -674,40 +738,6 @@ class ApplicationService:
             interval_upper_probability_points=item.interval.upper,
         )
 
-    def run_trade_quick_analysis(
-        self, request: TradeQuickAnalysisRequest,
-    ) -> TradeQuickAnalysisResult:
-        loaded = self._load(request.snapshot)
-        snapshot = loaded.snapshot
-        if request.canonical_sha256 != loaded.metadata.canonical_sha256:
-            raise ApplicationServiceError(
-                "snapshot_identity_mismatch", "invalid_request",
-                "The snapshot content differs from the trade draft.",
-            )
-        live = snapshot.live_scoring
-        if request.scenario.effective_trades or (
-            live is not None and (
-                live.partial_week_simulation_required or not has_safe_v1_boundary(
-                    live,
-                    authoritative_current_matchup_period_scoring_weeks=(
-                        authoritative_current_matchup_period_scoring_weeks(snapshot)
-                    ),
-                )
-            )
-        ):
-            raise ApplicationServiceError(
-                "quick_trade_full_week_required", "unsupported_configuration",
-                "Quick Analysis requires a supported full-week snapshot and an untimed exchange.",
-            )
-        state = initialize_evolving_state(
-            snapshot, scoring_week=snapshot.first_simulation_week,
-            ir_policy=IRPolicy(request.ir_policy),
-        )
-        return project_trade(
-            snapshot, loaded.metadata.canonical_sha256, state,
-            _manual_scenario(request.scenario),
-        )
-
     def run_manual_scenario(
         self, request: ManualScenarioRequest
     ) -> ManualScenarioResult:
@@ -722,22 +752,8 @@ class ApplicationService:
             simulation_input = simulation_input.model_copy(
                 update={"use_observed_current_week_lineup": True}
             )
-            requested = tuple(
-                (
-                    trade.selected_week,
-                    tuple(
-                        TradeTransfer(move.player_id, move.from_team_id, move.to_team_id)
-                        for move in trade.transfers
-                    ),
-                )
-                for trade in request.scenario.effective_trades
-            )
             try:
-                trades = prepare_trade_timeline(
-                    loaded.snapshot,
-                    tuple(item.response for item in loaded.raw_sources),
-                    requested,
-                )
+                trades = _requested_trade_timeline(loaded, request.scenario)
             except EffectiveTradeError as exc:
                 raise ApplicationServiceError(
                     "partial_week_trade_timing_unresolved",
@@ -778,13 +794,9 @@ class ApplicationService:
                     raise EffectiveTradeError(
                         "A timed trade requires a verified current-week snapshot."
                     )
-                validate_trade_timeline(
-                    loaded.snapshot,
-                    state,
-                    trades,
+                prepare_manual_transaction(
+                    loaded.snapshot, state, scenario, trades=trades,
                     observed_evidence=simulation.partial_week.evidence,
-                    changes=scenario.changes,
-                    pins=scenario.protected_pins,
                 )
             except ValueError as exc:
                 raise ApplicationServiceError(

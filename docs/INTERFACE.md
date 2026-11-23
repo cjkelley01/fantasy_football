@@ -108,7 +108,7 @@ Temporary team/player/filter/editor choices do not change committed revision or 
 
 ### Evaluate and inspect
 
-Intentional Evaluate final state reviews seed, matched paths, confidence, precision, IR/waiver policies and provisional Normal parameters. Preflight validates finite/integral/range relationships, enums, nonnegative/nonzero dispersion and known rostered pins; backend remains authoritative. Player selection alone submits nothing.
+**Evaluate Trade** compares the unchanged and hypothetical seasons. The secondary **Explore probabilities** action uses the same committed draft and exposes seed, matched paths, confidence, precision, and provisional Normal settings. Both modes use the selected IR and waiver policies. Preflight validates finite/integral/range relationships, enums, nonnegative/nonzero dispersion and known rostered pins; backend remains authoritative. Player selection alone submits nothing.
 
 The timeline is an **intermediate structural hypothesis**. API 1.0 accepts aggregate final ownership, not an executable ordered chain. The engine performs deterministic completion and paired evaluation. Forced drops/automatic additions remain separate from explicit actions. Weekly before/after starter/bench/reserve/vacancy explanations show projected-point consequences, not new source player projections.
 

@@ -31,12 +31,12 @@ test("preserves first and middle transaction identity and position while editing
 test("canceling an edit preserves the committed sequence",async()=>{const user=userEvent.setup();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:"Edit step 1"}));await user.click(screen.getByRole("button",{name:/Avery Runner.*Sending/}));await user.click(screen.getByRole("button",{name:/Bailey Receiver.*Select/}));await user.click(screen.getByRole("button",{name:"Cancel edit"}));expect(screen.getByText("1 transaction step")).toBeInTheDocument();expect(screen.getByRole("listitem")).toHaveTextContent("Avery Runner");expect(screen.getByRole("listitem")).not.toHaveTextContent("Bailey Receiver")});
 test("reorders independent multi-step transactions without changing their identities",async()=>{const user=userEvent.setup();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Dakota Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:"Move step 1 later"}));const items=screen.getAllByRole("listitem");expect(items[0]).toHaveTextContent("Dakota Runner");expect(items[1]).toHaveTextContent("Avery Runner")});
 test("rejects edits, removals, and reordering that break later ownership dependencies",async()=>{const user=userEvent.setup();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:"Edit step 1"}));await user.click(screen.getByRole("button",{name:/Avery Runner.*Sending/}));await user.click(screen.getByRole("button",{name:/Bailey Receiver.*Select/}));await user.click(screen.getByRole("button",{name:"Save transaction step"}));expect(screen.getByText(/Player 101 is not owned by team 2 at step step-2/)).toBeInTheDocument();expect(screen.getByText("Editing step 1")).toBeInTheDocument();await user.click(screen.getByRole("button",{name:"Cancel edit"}));await user.click(screen.getByRole("button",{name:"Remove step 1"}));expect(screen.getByText(/not owned by team 2/)).toBeInTheDocument();expect(screen.getByText("2 transaction steps")).toBeInTheDocument();await user.click(screen.getByRole("button",{name:"Move step 1 later"}));expect(screen.getByText(/not owned by team 2/)).toBeInTheDocument();expect(screen.getAllByRole("listitem")[0]).toHaveTextContent("North Harbor → Sunday Union")});
-test("submits intentionally, renders all-team paired impacts, completion, lineup effects, and assumptions",async()=>{const user=userEvent.setup(),fetch=mockEvaluation();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));expect(fetch).not.toHaveBeenCalled();await user.click(screen.getByRole("button",{name:/Evaluate final state/}));expect(await screen.findByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();expect(screen.getAllByText("+4.00 pp").length).toBeGreaterThan(0);expect(screen.getAllByText("Bailey Receiver").length).toBeGreaterThan(0);expect(screen.getAllByText("Dakota Runner").length).toBeGreaterThan(0);expect(screen.getByText("+3.00 projected points")).toBeInTheDocument();expect(screen.getByText("Counterparty acceptance is not modeled.")).toBeInTheDocument();const body=JSON.parse(String(fetch.mock.calls[0][1]?.body));expect(body.scenario.changes).toHaveLength(2);expect(body.precision.maximum_paths).toBe(100)});
-test("temporary selection preserves completed analysis while committed changes make it stale",async()=>{const user=userEvent.setup();mockEvaluation();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));expect(await screen.findByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));expect(screen.getByText("Temporary player selection is not part of the completed analysis.")).toBeInTheDocument();expect(screen.getByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));expect(screen.getByText(/Committed scenario or evaluation settings changed/)).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
-test("committed edits stop local observation without claiming backend cancellation",async()=>{const user=userEvent.setup();let resolveRun!:(value:Response)=>void;const runResponse=new Promise<Response>(resolve=>resolveRun=resolve),fetch=vi.spyOn(globalThis,"fetch").mockImplementation((input,init)=>{const url=String(input);if(url.endsWith("/runs/manual-scenario"))return json({api_schema_version:"1.0",run_id:run.run_id,run_type:"manual_scenario",status:"queued",created_at_utc:run.created_at_utc});if(url.endsWith(`/runs/${run.run_id}`))return runResponse;if(url.endsWith("/result"))return json(result);throw new Error(url)});render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));expect(screen.getByText(/backend job may continue independently/)).toBeInTheDocument();expect(fetch.mock.calls.every(([url])=>!String(url).includes("/cancel"))).toBe(true);await act(async()=>resolveRun(new Response(JSON.stringify(run),{headers:{"Content-Type":"application/json"}})));expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
-test("protected players are synchronized into the submitted request",async()=>{const user=userEvent.setup(),fetch=mockEvaluation();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));await screen.findByRole("heading",{name:"League-wide paired impact"});const body=JSON.parse(String(fetch.mock.calls[0][1]?.body));expect(body.scenario.protected_players).toEqual([{team_id:1,player_id:102}])});
-test("snapshot changes isolate drafts and late responses cannot overwrite the new context",async()=>{const user=userEvent.setup(),pending:{resolve?:(value:Response)=>void,promise:Promise<Response>}={promise:Promise.resolve(new Response())};pending.promise=new Promise(resolve=>pending.resolve=resolve);vi.spyOn(globalThis,"fetch").mockImplementation(input=>String(input).endsWith("/runs/manual-scenario")?pending.promise:json(run));const view=render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));view.rerender(<TradeLab snapshot={{...snapshot,snapshot_id:"new-snapshot",canonical_sha256:"9".repeat(64)}}/>);expect(screen.getByText("No transaction steps yet")).toBeInTheDocument();await act(async()=>pending.resolve?.(new Response(JSON.stringify({api_schema_version:"1.0",run_id:run.run_id,run_type:"manual_scenario",status:"queued",created_at_utc:run.created_at_utc}),{headers:{"Content-Type":"application/json"}})));expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
-test("failed submission is recoverable and does not appear successful",async()=>{const user=userEvent.setup();vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("offline"));render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));expect(await screen.findByText("The local decision engine is not reachable.")).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument();expect(screen.getByRole("button",{name:/Evaluate final state/})).toBeEnabled()});
+test("submits intentionally, renders all-team paired impacts, completion, lineup effects, and assumptions",async()=>{const user=userEvent.setup(),fetch=mockEvaluation();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));expect(fetch).not.toHaveBeenCalled();await user.click(screen.getByRole("button",{name:/Explore probabilities/}));expect(await screen.findByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();expect(screen.getAllByText("+4.00 pp").length).toBeGreaterThan(0);expect(screen.getAllByText("Bailey Receiver").length).toBeGreaterThan(0);expect(screen.getAllByText("Dakota Runner").length).toBeGreaterThan(0);expect(screen.getByText("+3.00 projected points")).toBeInTheDocument();expect(screen.getByText("Counterparty acceptance is not modeled.")).toBeInTheDocument();const body=JSON.parse(String(fetch.mock.calls[0][1]?.body));expect(body.scenario.changes).toHaveLength(2);expect(body.precision.maximum_paths).toBe(100)});
+test("temporary selection preserves completed analysis while committed changes make it stale",async()=>{const user=userEvent.setup();mockEvaluation();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Explore probabilities/}));expect(await screen.findByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));expect(screen.getByText("Temporary player selection is not part of the completed analysis.")).toBeInTheDocument();expect(screen.getByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));expect(screen.getByText(/Committed scenario or evaluation settings changed/)).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
+test("committed edits stop local observation without claiming backend cancellation",async()=>{const user=userEvent.setup();let resolveRun!:(value:Response)=>void;const runResponse=new Promise<Response>(resolve=>resolveRun=resolve),fetch=vi.spyOn(globalThis,"fetch").mockImplementation((input,init)=>{const url=String(input);if(url.endsWith("/runs/manual-scenario"))return json({api_schema_version:"1.0",run_id:run.run_id,run_type:"manual_scenario",status:"queued",created_at_utc:run.created_at_utc});if(url.endsWith(`/runs/${run.run_id}`))return runResponse;if(url.endsWith("/result"))return json(result);throw new Error(url)});render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Explore probabilities/}));await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));expect(screen.getByText(/backend job may continue independently/)).toBeInTheDocument();expect(fetch.mock.calls.every(([url])=>!String(url).includes("/cancel"))).toBe(true);await act(async()=>resolveRun(new Response(JSON.stringify(run),{headers:{"Content-Type":"application/json"}})));expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
+test("protected players are synchronized into the submitted request",async()=>{const user=userEvent.setup(),fetch=mockEvaluation();render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Explore probabilities/}));await screen.findByRole("heading",{name:"League-wide paired impact"});const body=JSON.parse(String(fetch.mock.calls[0][1]?.body));expect(body.scenario.protected_players).toEqual([{team_id:1,player_id:102}])});
+test("snapshot changes isolate drafts and late responses cannot overwrite the new context",async()=>{const user=userEvent.setup(),pending:{resolve?:(value:Response)=>void,promise:Promise<Response>}={promise:Promise.resolve(new Response())};pending.promise=new Promise(resolve=>pending.resolve=resolve);vi.spyOn(globalThis,"fetch").mockImplementation(input=>String(input).endsWith("/runs/manual-scenario")?pending.promise:json(run));const view=render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Explore probabilities/}));view.rerender(<TradeLab snapshot={{...snapshot,snapshot_id:"new-snapshot",canonical_sha256:"9".repeat(64)}}/>);expect(screen.getByText("No transaction steps yet")).toBeInTheDocument();await act(async()=>pending.resolve?.(new Response(JSON.stringify({api_schema_version:"1.0",run_id:run.run_id,run_type:"manual_scenario",status:"queued",created_at_utc:run.created_at_utc}),{headers:{"Content-Type":"application/json"}})));expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument()});
+test("failed submission is recoverable and does not appear successful",async()=>{const user=userEvent.setup();vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("offline"));render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Explore probabilities/}));expect(await screen.findByText("The local decision engine is not reachable.")).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument();expect(screen.getByRole("button",{name:/Explore probabilities/})).toBeEnabled()});
 test("large configurable rosters retain keyboard controls and accessible analysis",async()=>{const large={...snapshot,teams:Array.from({length:14},(_,index)=>({...snapshot.teams[index%4],team_id:index+1,display_name:`Configured Team ${index+1}`}))};const {container}=render(<TradeLab snapshot={large}/>);const first=screen.getByRole("button",{name:/Avery Runner.*Select/});first.focus();expect(first).toHaveFocus();expect((await axe.run(container)).violations).toEqual([])});
 
 test.each([true, false])("shows timing independently of simulation availability (%s)", async (canScore) => {
@@ -58,8 +58,7 @@ test.each([true, false])("shows timing independently of simulation availability 
   await user.click(screen.getByRole("button", {name: /Avery Runner.*Select/}));
   await user.click(screen.getByRole("button", {name: /Casey Quarterback.*Select/}));
   await user.click(screen.getByRole("button", {name: "Add transaction step"}));
-  expect(screen.getByRole("button", {name: "Run Quick Analysis"})).toBeDisabled();
-  expect(screen.getByRole("button", {name: "Evaluate final state"})).toBeDisabled();
+  expect(screen.getByRole("button", {name: "Explore probabilities"})).toBeDisabled();
   await user.click(screen.getByRole("button", {name: "Use effective timing"}));
   expect(screen.getByText("Effective week 9")).toBeInTheDocument();
   expect(screen.queryByRole("combobox", {name: "Scoring week"})).toBeNull();
@@ -70,12 +69,12 @@ test.each([true, false])("shows timing independently of simulation availability 
   await user.click(screen.getByRole("button", {name: "Selected week"}));
   expect(screen.getByRole("combobox", {name: "Scoring week"})).toHaveValue("10");
   if (!canScore) {
-    expect(screen.getByRole("status")).toHaveTextContent("Season simulation unavailable");
-    expect(screen.getByRole("button", {name: "Evaluate scenario"})).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Monte Carlo unavailable");
+    expect(screen.getByRole("button", {name: "Explore probabilities"})).toBeDisabled();
     expect(fetch).not.toHaveBeenCalled();
     return;
   }
-  await user.click(screen.getByRole("button", {name: "Evaluate scenario"}));
+  await user.click(screen.getByRole("button", {name: "Explore probabilities"}));
   await screen.findByText("Evaluation complete");
   const posted = fetch.mock.calls.find(([input]) => String(input).endsWith("/runs/manual-scenario"));
   const request = JSON.parse(String(posted?.[1]?.body));
@@ -88,64 +87,59 @@ test.each([true, false])("shows timing independently of simulation availability 
   ]);
 });
 
-test("runs Quick Analysis then submits the same committed trade for simulation",async()=>{
-  const user=userEvent.setup();
-  const preview={api_schema_version:"1.0",snapshot_id:snapshot.snapshot_id,canonical_sha256:snapshot.canonical_sha256,
-    completed_state_sha256:"b".repeat(64),first_scoring_week:8,final_scoring_week:8,explicit_changes:oneStep.transfers,
-    forced_drops:[],automatic_additions:[],teams:[{team_id:1,baseline_projected_points:17,hypothetical_projected_points:20,difference:3,weeks:[]}],assumptions:[]};
-  const fetch=mockEvaluation();
-  const simulation=fetch.getMockImplementation()!;
-  fetch.mockImplementation((input,init)=>String(input).endsWith("/analyses/trade-quick")?json(preview):simulation(input,init));
-  const unplayed: SnapshotSummary = {
+test.each([false, true])("refines the same evaluated trade with matched probabilities (timed %s)", async (timed) => {
+  const user = userEvent.setup();
+  const active: SnapshotSummary = timed ? {
     ...snapshot,
     live_scoring: {
       current_scoring_period: 8, last_fully_completed_period: 7,
-      earliest_unresolved_period: null, next_fully_unplayed_period: 8,
-      supported_simulation_week: 8, partial_week_simulation_required: false,
-      boundary_method: "automatic", boundary_rationale: "", weeks: [],
+      earliest_unresolved_period: null, next_fully_unplayed_period: 9,
+      supported_simulation_week: null, partial_week_simulation_required: true,
+      boundary_method: "unresolved", boundary_rationale: "", weeks: [],
       unresolved_capabilities: [], current_week_execution_available: true,
-      supported_trade_weeks: [8, 9, 10], player_earliest_trade_weeks: [[101, 8], [201, 8]],
+      supported_trade_weeks: [8, 9, 10], player_earliest_trade_weeks: [[101, 8], [201, 9]],
     },
-  };
-  render(<TradeLab snapshot={unplayed}/>);
+  } : snapshot;
+  const fetch = mockEvaluation();
+  const simulation = fetch.getMockImplementation()!;
+  fetch.mockImplementation((input, init) => {
+    if (!String(input).endsWith("/analyses/projected-scenario")) return simulation(input, init);
+    const request = JSON.parse(String(init?.body));
+    const season = {
+      snapshot_id: snapshot.snapshot_id, canonical_sha256: snapshot.canonical_sha256,
+      teams: [], weeks: [], postseason: [], transactions: [], unresolved_capabilities: [],
+      champion_team_id: 1,
+    };
+    return json({
+      scenario_id: request.scenario.scenario_id, timeline: [], explicit_changes: request.scenario.changes,
+      baseline: season, hypothetical: {...season, champion_team_id: 2},
+      baseline_final_roster: [], hypothetical_final_roster: [],
+    });
+  });
+  render(<TradeLab snapshot={active}/>);
   await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));
   await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));
   await user.click(screen.getByRole("button",{name:"Add transaction step"}));
-  expect(fetch).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button",{name:"Run Quick Analysis"}));
-  expect(await screen.findByRole("heading",{name:"Projected starter points"})).toBeInTheDocument();
-  expect(fetch).toHaveBeenCalledTimes(1);
-  expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument();
-  await user.click(screen.getByRole("button",{name:"Evaluate final state"}));
+  if (timed) {
+    await user.click(screen.getByRole("button",{name:"Use effective timing"}));
+    await user.click(screen.getByRole("button",{name:"Selected week"}));
+    await user.selectOptions(screen.getByRole("combobox",{name:"Scoring week"}), "10");
+  }
+  expect(screen.getAllByRole("button",{name:"Evaluate Trade"})).toHaveLength(1);
+  expect(screen.queryByRole("button",{name:/quick analysis/i})).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button",{name:"Evaluate Trade"}));
+  expect(await screen.findByText(/Champion in each projection/)).toBeInTheDocument();
+  const projected = JSON.parse(String(fetch.mock.calls[0][1]?.body));
+  expect(projected).not.toHaveProperty("outcome_model");
+  expect(projected).not.toHaveProperty("simulation");
+  await user.click(screen.getByRole("button",{name:"Explore probabilities"}));
   expect(await screen.findByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();
-  const quick=JSON.parse(String(fetch.mock.calls[0][1]?.body));
-  const manual=JSON.parse(String(fetch.mock.calls[1][1]?.body));
-  expect(quick).not.toHaveProperty("simulation");
-  expect(quick).not.toHaveProperty("precision");
-  expect(quick).not.toHaveProperty("outcome_model");
-  expect(manual.snapshot).toEqual(quick.snapshot);
-  expect(quick.scenario).not.toHaveProperty("effective_trades");
-  expect(manual.scenario).not.toHaveProperty("effective_trades");
-  expect(manual.simulation.use_observed_current_week_lineup).toBe(false);
-  expect(manual.simulation.ir_policy).toBe(quick.ir_policy);
-  expect(manual.scenario.changes).toEqual(quick.scenario.changes);
-  expect(manual.scenario.protected_players).toEqual(quick.scenario.protected_players);
+  const sampled = JSON.parse(String(fetch.mock.calls[1][1]?.body));
+  expect(sampled.snapshot).toEqual(projected.snapshot);
+  expect(sampled.scenario).toEqual({...projected.scenario, scenario_id: sampled.scenario.scenario_id});
+  expect(sampled.scenario.effective_trades?.[0]?.selected_week).toBe(timed ? 10 : undefined);
+  expect(sampled.simulation.waiver_boundary).toBe(projected.waiver_boundary);
+  expect(sampled.simulation.ir_policy).toBe(projected.ir_policy);
   await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));
-  expect(screen.queryByRole("heading",{name:"Projected starter points"})).not.toBeInTheDocument();
-});
-
-test("ignores a late Quick Analysis response after a snapshot change",async()=>{
-  const user=userEvent.setup();
-  let resolve!: (response:Response)=>void;
-  const pending=new Promise<Response>(done=>resolve=done);
-  const fetch=vi.spyOn(globalThis,"fetch").mockImplementation(()=>pending);
-  const view=render(<TradeLab snapshot={snapshot}/>);
-  await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));
-  await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));
-  await user.click(screen.getByRole("button",{name:"Add transaction step"}));
-  await user.click(screen.getByRole("button",{name:"Run Quick Analysis"}));
-  view.rerender(<TradeLab snapshot={{...snapshot,snapshot_id:"other-snapshot",canonical_sha256:"e".repeat(64)}}/>);
-  expect(fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
-  await act(async()=>resolve(await json({snapshot_id:snapshot.snapshot_id,canonical_sha256:snapshot.canonical_sha256})));
-  expect(screen.queryByRole("heading",{name:"Projected starter points"})).not.toBeInTheDocument();
+  expect(screen.queryByText(/Champion in each projection/)).not.toBeInTheDocument();
 });

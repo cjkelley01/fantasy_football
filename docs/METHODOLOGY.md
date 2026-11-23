@@ -426,6 +426,14 @@ and league deadlines still apply. Immediate hypothetical approval does not
 change either restriction. Earlier observed points and lineup assignments stay
 with their original team.
 
+A manual projected comparison evaluates the same prepared season twice. The
+baseline retains the roster as published and uses the configured automatic
+transactions. The hypothetical adds the validated structural edit or dated
+timeline. Any current-week adjustment changes which eligible unstarted players
+contribute their resolved score. The current locked lineup and historical
+standings cutoff remain fixed. Placement, playoff entry, and the champion in
+each run are outcomes of those runs, with no associated probability estimate.
+
 The opt-in deterministic path uses M3's **same season coordinator**, in this logical dependency sequence (the implementation performs composition during preparation and checks further season gates before returning a result):
 
 1. Validate snapshot/companion linkage, timing, sources and preservation invariants; require the season path's verified companion-level authority and no unresolved dependent capabilities.
@@ -872,14 +880,6 @@ Inspected baseline: revision `9f08b9a58258702d0b2b87fee345036c07812b7b`. Source 
 M8 connects their hypothetical starting states to M3–M7 without creating another season engine, valuation rule or probability estimator. An **action path**, its **completed evolving state**, and its **numerical evaluation** are distinct objects. Hypothetical completion is not M5's operational future acquisition policy and does not establish ESPN execution or acceptance.
 
 ### Explicit scenarios and one-time completion
-
-Trade Lab Quick Analysis uses the same one-time completion for a reciprocal
-two-team exchange on a supported full-week snapshot. It compares optimal
-projected starters under the unchanged and completed rosters for the same
-scoring weeks. The horizon sum holds those rosters fixed and preserves missing
-versus explicit zero projection evidence. This is a projected points
-comparison rather than V(R), a season forecast, or evidence of trade
-acceptance. [Trade Lab operation](USER_GUIDE.md#compare-projected-lineups-before-simulation)
 
 A manual scenario supplies exact ownership edits $(j,\text{from},\text{to})$ and protected player/team pins against a matching immutable baseline. A null source adds an unowned player; a null destination releases an owned player. Each player can be edited once, its source must match actual modeled ownership, teams/players must exist, and identical endpoints reject. Edits bind together, so a multi-team exchange does not need an artificial valid intermediate roster after every listed row. No duplicate ownership is permitted. Explicit releases need affirmative drop permission; an undroppable designation is not automatically a prohibition on transferring that player in a trade.
 

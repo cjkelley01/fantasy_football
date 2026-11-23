@@ -145,20 +145,12 @@ When the snapshot verifies timing but season scoring is unavailable, Trade Lab
 still shows the effective week and the scoring limitation. Evaluation remains
 unavailable until the needed scoring evidence and mode are supported.
 
-### Compare projected lineups before simulation
-
-On a supported full-week snapshot, commit one untimed exchange with players going
-in both directions, then select **Run Quick Analysis**. Expand either team's
-result to inspect projected starters, bench, reserve, vacancies, and missing
-versus explicit zero projections by week. Both sides use the same displayed
-horizon. The comparison holds the completed rosters fixed, including any
-reported forced drops or automatic additions. It does not forecast weekly
-transactions, playoff outcomes, championship probabilities, or trade acceptance.
-
-Use **Evaluate final state** to submit the same snapshot and draft to the
-existing simulation workflow. Committed edits or a snapshot change clear the
-Quick Analysis result. Effective-dated trades and partial weeks are outside
-Quick Analysis.
+Choose **Evaluate Trade** to compare the unchanged and hypothetical seasons
+under the same evidence and policies. Review the trade participants first and
+expand the league, matchup and postseason details as needed. Choose
+**Explore probabilities** for optional matched Monte Carlo analysis using
+the same committed trade when sampling is supported. Committed edits or a
+snapshot change clear the comparison.
 
 ### Project one season
 
@@ -168,16 +160,18 @@ details. A projected champion is the winner of this single scenario. Choose
 **Open Monte Carlo** to estimate probabilities with the same selected snapshot.
 The projected result is temporary. Monte Carlo runs remain available in history.
 
-### First workflow: baseline, then a specific exchange
+### Evaluate a specific exchange
 
-This walkthrough uses your selected validated snapshot and real roster records. It asserts no observed league result or recommended trade.
-
-1. In **Simulation Center → Configure**, choose **Baseline season**. Start with a bounded **Quick** workload. Review the model parameters, seed, path count, policies and **Advanced and effective settings / Effective request review** before choosing **Submit baseline**. A preset is a workload, not a time or precision guarantee.
-2. Follow the run in **Monitor**. Once a completed result is available, use **Open results** or select it in **League Overview**. Check the snapshot/run identity, paths, precision/stop reason and limitations before reading championship/playoff/placement views. Without a usable forecast the Overview shows factual context, not fabricated probabilities.
-3. Open **Trade Lab** for that same snapshot. Choose two teams and actual rostered players; add the intended exchange as a committed draft step. Further steps can involve other teams. Search/filter changes are temporary until committed. Protect a player with a pin only if you want to prevent automatic roster-completion removal; this is not an ESPN lineup lock or execution permission.
-4. Review the complete draft, protected players and evaluation settings. Intentionally choose **Evaluate final state**. The displayed chronology is a structural hypothesis; the current API evaluates aggregate final ownership, not proof every intermediate step is executable. Selecting a player alone submits nothing.
-5. Inspect **League-wide paired impact**, **Forced drops**, **Automatic additions**, and **Projected lineup consequences**. Separate your explicit exchange from the engine's roster-completion changes. Its paired comparison includes its own matched baseline; an earlier Overview run with different model/settings/paths is not automatically that same comparison.
-6. If you commit a changed step, pin or evaluation setting, evaluate again. Prior results do not certify the new draft. Navigating away can discard local drafts; accepted backend work may continue. Reopening a retained manual result does not reconstruct its original editable draft.
+1. Open **Trade Lab** on the selected snapshot. Choose teams and rostered players,
+   then add the exchange as a committed draft step. Pins protect players
+   against structural completion drops. They do not grant ESPN permissions.
+2. Choose **Evaluate Trade**. Review the effective timing, the two teams'
+   projected results, and any automatic changes that follow the exchange.
+3. If you need probability estimates, choose **Explore probabilities**.
+   Review the matched baseline, path coverage, precision and limitations.
+   League Overview does not need a separate simulation for this comparison.
+4. Evaluate again after committing draft or policy changes. Reopening a retained
+   Monte Carlo result does not reconstruct its editable draft.
 
 Review [interpretation](#interpret-and-compare-results) before acting outside War Room. No counterparty acceptance, waiver-claim success or ESPN submission is predicted. Backend legality/evidence validation remains authoritative and can reject the scenario. Manual completion and ordinary future-week transactions have different roles; [MANUAL_SCENARIOS](METHODOLOGY.md#explicit-scenarios-and-one-time-completion) owns the exact analytical rules.
 

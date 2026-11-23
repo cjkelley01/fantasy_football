@@ -470,8 +470,8 @@ Path braces identify required URL strings; body `none` means no JSON body parame
 | POST | `/api/v1/refreshes/{refresh_id}/cancel` | `none` | `SnapshotRefreshRecord` | 200 |
 | GET | `/api/v1/refreshes/{refresh_id}/result` | `none` | `SnapshotRefreshResult` | 200 |
 | POST | `/api/v1/analyses/projected-baseline` | `ProjectedBaselineRequest` | `ProjectedBaselineResult` | 200 |
+| POST | `/api/v1/analyses/projected-scenario` | `ProjectedScenarioRequest` | `ProjectedScenarioResult` | 200 |
 | POST | `/api/v1/analyses/baseline` | `BaselineAnalysisRequest` | `BaselineAnalysisResult` | 200 |
-| POST | `/api/v1/analyses/trade-quick` | `TradeQuickAnalysisRequest` | `TradeQuickAnalysisResult` | 200 |
 | POST | `/api/v1/analyses/manual-scenario` | `ManualScenarioRequest` | `ManualScenarioResult` | 200 |
 | POST | `/api/v1/analyses/action-search` | `ActionSearchRequest` | `ActionSearchResult` | 200 |
 | POST | `/api/v1/runs/baseline` | `BaselineAnalysisRequest` | `BackgroundRunSubmission` | 202 |
@@ -491,7 +491,25 @@ Path braces identify required URL strings; body `none` means no JSON body parame
 
 Projected baseline is a synchronous, snapshot-digest-bound execution of one season. The request accepts IR and waiver policies, incomplete-valuation handling, and an optional standings tiebreak seed. No outcome-model seed, path count, or precision settings are used. The response returns weekly matchups and lineups, rankings and postseason placements, the transaction ledger, scoring policy and source identifiers, and unresolved capabilities. The operation creates no retained run. Invalid or unsupported execution evidence returns 422.
 
-Trade Quick Analysis accepts the selected snapshot and its canonical digest, IR policy, and one reciprocal two-team manual exchange with optional pins. Effective-dated intents and unresolved or partial-week boundaries return 422. The server applies the same manual completion as simulation, then solves both rosters for each canonical horizon week. The result binds the completed-state fingerprint, reports explicit and automatic moves separately, and returns starting slots, bench, reserve, vacancy reasons, missing projection IDs and explicit zero IDs. Totals sum weekly projected points and deltas. The operation creates no run, draws, or statistical results. An optional Trade Lab simulation uses the same committed transaction and snapshot through the existing manual-scenario route.
+Projected scenario comparison adds the existing manual scenario intent to the
+projection request. The response contains both season results, their final
+rosters, the resolved effective timeline, explicit edits and structural roster
+completion actions. `prepare_projected_season()` resolves the common evidence
+and score table. `compare_projected_scenario()` uses the same manual transaction
+preparation as sampled comparison. It reuses the resolved scores across both
+runs and reselects their applicable current-week starter values after eligible
+transfers. Existing Monte Carlo request, path, and result identities are unchanged.
+The projection operation uses no sampling and creates no retained run.
+
+Retained Monte Carlo trade results carry the baseline engine run, configuration
+and precision identities alongside the paired estimates. Timed comparisons
+continue to reuse compatible baseline paths in the existing process-local
+store. Cross-workspace reuse requires exposing the corresponding standalone
+baseline estimates, completeness and precision through retained results. League
+Overview must match snapshot, evidence and policy context and prefer stronger
+compatible statistical evidence. A paired trade result never replaces the
+unchanged baseline or launches another run to populate League Overview.
+
 
 | GET query surface | Declared parameters / defaults |
 |---|---|
@@ -570,18 +588,13 @@ After validation, background submission checks closing/queue capacity under lock
 | `ProtectedPlayerInput` | `team_id: integer`; `player_id: integer` |
 | `EffectiveTradeInput` | `transfers: RosterChangeInput[]{minItems=1}`; `selected_week?: integer{>=1,<=25} or null=null` |
 | `ManualScenarioInput` | `scenario_id: string{minLength=1}`; `changes: RosterChangeInput[]`; `protected_players?: ProtectedPlayerInput[]=[]`; `effective_trades?: EffectiveTradeInput[]=[]` |
+| `ProjectedScenarioRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy?: "projection_based" / "strict"="projection_based"`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `standings_fallback_seed?: integer or null=null`; `scenario: ManualScenarioInput` |
+| `ProjectedScenarioResult` | `api_schema_version?: "1.0"="1.0"`; `scenario_id: string`; `timeline: EffectiveTrade[]`; `explicit_changes: RosterChangeInput[]`; `forced_drops: ScenarioRosterAction[]`; `automatic_additions: ScenarioRosterAction[]`; `baseline: ProjectedBaselineResult`; `hypothetical: ProjectedBaselineResult`; `baseline_final_roster: RosterEntry[]`; `hypothetical_final_roster: RosterEntry[]` |
 | `ManualScenarioRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `simulation: SimulationConfiguration`; `precision: PrecisionSettings`; `outcome_model: NormalOutcomeModelConfiguration`; `scenario: ManualScenarioInput` |
 | `PairedMetricResult` | `baseline_probability: number`; `scenario_probability: number`; `difference_probability_points: number`; `improved_paths: integer`; `worsened_paths: integer`; `unchanged_paths: integer`; `interval_lower_probability_points: number`; `interval_upper_probability_points: number` |
 | `TeamScenarioResult` | `team_id: integer`; `championship: PairedMetricResult`; `playoff_qualification: PairedMetricResult`; `final_placements: [integer, PairedMetricResult]{minItems=2,maxItems=2}[]` |
 | `WeeklyLineupResult` | `scoring_week: integer`; `baseline_starter_player_ids: integer[]`; `hypothetical_starter_player_ids: integer[]`; `baseline_bench_player_ids: integer[]`; `hypothetical_bench_player_ids: integer[]`; `baseline_reserve_player_ids: integer[]`; `hypothetical_reserve_player_ids: integer[]`; `baseline_projected_points: number`; `hypothetical_projected_points: number`; `projected_points_difference: number`; `baseline_vacancy_count: integer`; `hypothetical_vacancy_count: integer` |
 | `TeamLineupResult` | `team_id: integer`; `changed_scoring_weeks: integer[]`; `weeks: WeeklyLineupResult[]` |
-| `TradeQuickAnalysisRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy: "projection_based" / "strict"`; `scenario: ManualScenarioInput` |
-| `ProjectedStarter` | `slot_id: integer`; `slot_index: integer`; `player_id: integer`; `points: number` |
-| `QuickProjectedLineup` | `projected_points: number`; `starters: ProjectedStarter[]`; `bench_player_ids: integer[]`; `reserve_player_ids: integer[]`; `vacancies: [integer, integer, string]{minItems=3,maxItems=3}[]`; `missing_projection_player_ids: integer[]`; `explicit_zero_player_ids: integer[]` |
-| `QuickTradeWeek` | `scoring_week: integer`; `baseline: QuickProjectedLineup`; `hypothetical: QuickProjectedLineup`; `difference: number` |
-| `QuickTradeTeam` | `team_id: integer`; `baseline_projected_points: number`; `hypothetical_projected_points: number`; `difference: number`; `weeks: QuickTradeWeek[]` |
-| `QuickRosterAction` | `team_id: integer`; `player_id: integer` |
-| `TradeQuickAnalysisResult` | `api_schema_version?: "1.0"="1.0"`; `snapshot_id: string`; `canonical_sha256: string`; `completed_state_sha256: string`; `first_scoring_week: integer`; `final_scoring_week: integer`; `explicit_changes: RosterChangeInput[]`; `forced_drops: QuickRosterAction[]`; `automatic_additions: QuickRosterAction[]`; `teams: QuickTradeTeam[]`; `assumptions: string[]` |
 | `ManualScenarioResult` | `api_schema_version?: "1.0"="1.0"`; `provenance: AnalysisProvenance`; `scenario_id: string`; `scenario_sha256: string`; `precision_config_sha256: string`; `baseline_simulation_config_sha256: string`; `hypothetical_simulation_config_sha256: string`; `baseline_engine_run_identity_sha256: string`; `hypothetical_engine_run_identity_sha256: string`; `matched_path_count: integer`; `affected_team_ids: integer[]`; `forced_drop_player_ids: integer[]`; `automatic_addition_player_ids: integer[]`; `teams: TeamScenarioResult[]`; `lineup_explanations: TeamLineupResult[]`; `assumptions: string[]` |
 | `TradeShapeInput` | `outgoing_count: integer{>0}`; `incoming_count: integer{>0}` |
 | `UnifiedCandidateConfiguration` | `requesting_team_id: integer`; `action_families: "trade" / "trade_chain" / "acquisition"[]`; `action_orderings: "standalone_trade" / "standalone_chain" / "standalone_acquisition" / "trade_then_acquisition" / "acquisition_then_trade" / "chain_then_acquisition" / "multiple_acquisitions"[]`; `counterparty_team_ids?: integer[]=[]`; `tradeable_player_ids?: integer[]=[]`; `acquisition_player_ids?: integer[]=[]`; `eligible_drop_player_ids?: integer[] or null=null`; `trade_shapes?: TradeShapeInput[]=[]`; `minimum_trade_chain_length?: integer{>0}=2`; `maximum_trade_chain_length?: integer{>0}=2`; `maximum_total_action_count?: integer{>0}=2`; `acquisition_status_filter?: "free_agent" / "waivers" / "hold" / "unresolved"[] or null=null`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="unresolved"`; `protected_player_ids?: integer[]=[]` |

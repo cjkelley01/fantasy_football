@@ -633,7 +633,7 @@ def test_projected_baseline_preserves_observed_actual_separately(
 def test_projected_baseline_rejects_unresolved_current_week(
     tmp_path, monkeypatch, game_status, rationale
 ):
-    from fantasy_football.app import projected_baseline
+    from fantasy_football import projected_season
     from fantasy_football.app.contracts import (
         ProjectedBaselineRequest,
         SnapshotSelector,
@@ -661,8 +661,8 @@ def test_projected_baseline_rejects_unresolved_current_week(
             "Unresolved evidence reached projected score preparation or execution"
         )
 
-    monkeypatch.setattr(projected_baseline, "projected_scores", unexpected)
-    monkeypatch.setattr(projected_baseline, "build_current_week_input", unexpected)
+    monkeypatch.setattr(projected_season, "projected_scores", unexpected)
+    monkeypatch.setattr(projected_season, "build_current_week_input", unexpected)
     store = SnapshotStore(tmp_path / "snapshots.sqlite3")
     loaded = store.load(snapshot.snapshot_id)
     with pytest.raises(ApplicationServiceError, match=rationale) as error:

@@ -9,7 +9,8 @@ import type {
   LeagueRefreshProfile, SnapshotRefreshRequest, SnapshotRefreshSubmission,
   SnapshotRefreshRecord, SnapshotRefreshResult,
   BackgroundProgress, BaselineAnalysisRequest, ActionSearchRequest,
-  TradeQuickAnalysisRequest, TradeQuickAnalysisResult, ProjectedBaselineResult,
+  ProjectedScenarioResult,
+  ProjectedBaselineResult,
 } from "../types/api";
 
 export class ApiError extends Error {
@@ -50,6 +51,13 @@ async function postJson<T>(path:string,body:unknown,signal?:AbortSignal):Promise
 async function deleteRequest(path:string,signal?:AbortSignal):Promise<void>{const response=await fetch(path,{method:"DELETE",signal});if(!response.ok){let payload:ApiErrorEnvelope|undefined;try{payload=await response.json() as ApiErrorEnvelope}catch{/* typed fallback */}throw new ApiError(payload?.error.message??`Request failed (${response.status}).`,response.status,payload?.error.code)}}
 
 export const api = {
+  projectedScenario: (snapshot: SnapshotSummary, scenario: ManualScenarioRequest["scenario"],
+      policy: Pick<ManualScenarioRequest["simulation"], "ir_policy" | "waiver_boundary">, signal?: AbortSignal) =>
+    postJson<ProjectedScenarioResult>("/api/v1/analyses/projected-scenario", {
+      snapshot: {snapshot_id: snapshot.snapshot_id, league_id: snapshot.league_id, season: snapshot.season},
+      canonical_sha256: snapshot.canonical_sha256,
+      scenario, ...policy,
+    }, signal),
   projectedBaseline: (snapshot: SnapshotSummary, signal?: AbortSignal) =>
     postJson<ProjectedBaselineResult>("/api/v1/analyses/projected-baseline", {
       snapshot: {snapshot_id: snapshot.snapshot_id, league_id: snapshot.league_id, season: snapshot.season},
@@ -77,8 +85,6 @@ export const api = {
   candidates: (runId:string,query:string,signal?:AbortSignal)=>getJson<CandidateQueryPage>(`/api/v1/runs/${encodeURIComponent(runId)}/candidates?${query}`,signal),
   candidate: (runId:string,candidateId:string,signal?:AbortSignal)=>getJson<CandidateDetail>(`/api/v1/runs/${encodeURIComponent(runId)}/candidates/${encodeURIComponent(candidateId)}`,signal),
   completedState: (runId:string,stateId:string,signal?:AbortSignal)=>getJson<CompletedStateDetail>(`/api/v1/runs/${encodeURIComponent(runId)}/states/${encodeURIComponent(stateId)}`,signal),
-  tradeQuickAnalysis:(request:TradeQuickAnalysisRequest,signal?:AbortSignal)=>
-    postJson<TradeQuickAnalysisResult>("/api/v1/analyses/trade-quick",request,signal),
   submitManualScenario:(request:ManualScenarioRequest,signal?:AbortSignal)=>postJson<BackgroundRunSubmission>("/api/v1/runs/manual-scenario",request,signal),
   run:(runId:string,signal?:AbortSignal)=>getJson<BackgroundRunRecord>(`/api/v1/runs/${encodeURIComponent(runId)}`,signal),
   manualScenarioResult:(runId:string,signal?:AbortSignal)=>getJson<BackgroundManualScenarioResultSummary>(`/api/v1/runs/${encodeURIComponent(runId)}/result`,signal),
