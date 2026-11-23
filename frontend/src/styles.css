@@ -178,3 +178,18 @@ main { min-width:0; }.surface{padding:42px clamp(20px,4vw,64px) 72px;max-width:1
   .workspace-layout { display: block; }
   .workspace-sidebar { display: none; }
 }
+
+.overview-source-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.overview-source-stack { display: grid; gap: 16px; align-content: start; }
+.overview-source-stack .analytics-panel { padding: 16px; }
+.overview-source-stack h2 { font-size: 16px; margin: 0 0 8px; }
+.overview-source-stack p { color: var(--muted); }
+.overview-source-stack ul { padding-inline-start: 20px; }
+@media (max-width: 1250px) {
+  .overview-source-grid { grid-template-columns: minmax(0, 1fr); }
+}

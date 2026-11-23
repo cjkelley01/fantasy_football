@@ -6,9 +6,13 @@ const points = new Intl.NumberFormat(undefined, { maximumFractionDigits: 15 });
 const score = (value: number | null) => value === null ? "Unavailable" : points.format(value);
 type Season = CglHistory["seasons"][number];
 
-export function SeasonArchive() {
+export function SeasonArchive({ initialYear, focusBracket = false }: {
+  initialYear?: number;
+  focusBracket?: boolean;
+}) {
   const [history, setHistory] = useState<CglHistory | null>();
-  const [year, setYear] = useState<number>();
+  const [year, setYear] = useState(initialYear);
+  const [focusInitialBracket, setFocusInitialBracket] = useState(focusBracket);
   const [error, setError] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -25,7 +29,10 @@ export function SeasonArchive() {
       <div><h1>Season Archive</h1><p>Completed CGL seasons</p></div>
       {season && <label className="snapshot-control">
         <span>Season</span>
-        <select value={season.season} onChange={event => setYear(Number(event.target.value))}>
+        <select value={season.season} onChange={event => {
+          setFocusInitialBracket(false);
+          setYear(Number(event.target.value));
+        }}>
           {[...(history?.seasons ?? [])].reverse().map(item => <option key={item.season}>{item.season}</option>)}
         </select>
       </label>}
@@ -33,12 +40,12 @@ export function SeasonArchive() {
     {error ? <p role="alert">CGL history could not be loaded from the local service.</p>
       : history === undefined ? <p role="status">Loading season history…</p>
       : history === null ? <p>CGL history is not configured.</p>
-      : season ? <SeasonResults key={season.season} season={season} revision={history.source.revision} />
+      : season ? <SeasonResults key={season.season} season={season} revision={history.source.revision} focusBracket={focusInitialBracket && season.season === initialYear} />
       : <p>The configured archive contains no completed seasons.</p>}
   </div>;
 }
 
-function SeasonResults({ season, revision }: { season: Season; revision: string }) {
+function SeasonResults({ season, revision, focusBracket }: { season: Season; revision: string; focusBracket: boolean }) {
   const names = new Map(season.teams.map(team => [team.team_id, team.team_name]));
   return <>
     <section className="card">
@@ -57,19 +64,20 @@ function SeasonResults({ season, revision }: { season: Season; revision: string 
         ))}</tbody>
       </table></div>
     </section>
-    <MatchupResults title="Championship bracket" names={names} matchups={season.matchups.filter(item => item.stage === "championship_playoffs")} />
+    <MatchupResults title="Championship bracket" names={names} focusHeading={focusBracket} matchups={season.matchups.filter(item => item.stage === "championship_playoffs")} />
     <MatchupResults title="Regular-season results" names={names} matchups={season.matchups.filter(item => item.stage === "regular_season")} />
     <p>Source · CGL Record Book revision <code>{revision.slice(0, 12)}</code></p>
   </>;
 }
 
-function MatchupResults({ title, names, matchups }: {
+function MatchupResults({ title, names, matchups, focusHeading = false }: {
   title: string;
   names: Map<number, string>;
   matchups: Season["matchups"];
+  focusHeading?: boolean;
 }) {
   return <section className="card">
-    <div className="card-head"><h2>{title}</h2></div>
+    <div className="card-head"><h2 tabIndex={focusHeading ? -1 : undefined} ref={focusHeading ? heading => heading?.focus() : undefined}>{title}</h2></div>
     <div className="table-wrap"><table aria-label={title}>
       <thead><tr><th scope="col">Week</th><th scope="col">Home</th><th scope="col">Away</th><th scope="col">Result</th></tr></thead>
       <tbody>{matchups.map(item => {

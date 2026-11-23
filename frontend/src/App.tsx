@@ -41,6 +41,7 @@ function initialTheme(): Theme {
 export function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [destination, setDestination] = useState<Destination>("league");
+  const [archiveYear, setArchiveYear] = useState<number>();
   const [health, setHealth] = useState<HealthResponse>();
   const [snapshots, setSnapshots] = useState<readonly SnapshotSummary[]>([]);
   const [selected, setSelected] = useState<SnapshotSummary>();
@@ -97,7 +98,7 @@ export function App() {
     catch(cause){if(!(cause instanceof DOMException&&cause.name==="AbortError")&&version===requestVersion.current)setError(cause instanceof ApiError?cause:new ApiError("Snapshot could not be loaded.",-1));}
     finally{if(!controller.signal.aborted&&version===requestVersion.current)setLoading(false);}
   };
-  const navigate=(id:Destination)=>{setDestination(id);setMenuOpen(false);if(id!=="league"&&id!=="opportunities")setPreferredRun(null);};
+  const navigate=(id:Destination)=>{setDestination(id);setArchiveYear(undefined);setMenuOpen(false);if(id!=="league"&&id!=="opportunities")setPreferredRun(null);};
   const openRun=(run:BackgroundRunRecord)=>{if(run.snapshot_id!==selected?.snapshot_id)return;setPreferredRun(run.run_id);setDestination(run.run_type==="baseline"?"league":run.run_type==="action_search"?"opportunities":"trades");};
   const retry=()=>{activeController.current?.abort();const controller=new AbortController();activeController.current=controller;void load(controller.signal);};
   const activeRuns=runs.filter(run=>["queued","running","cancel_requested"].includes(run.status));
@@ -122,7 +123,7 @@ export function App() {
         <NavButtons destination={destination} navigate={navigate}/>
       </nav>
       <div className="workspace-content">
-    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{destination==="history"?<SeasonArchive/>:loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
+    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{destination==="history"?<SeasonArchive initialYear={archiveYear} focusBracket={archiveYear !== undefined}/>:loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")} openArchive={year=>{navigate("history");setArchiveYear(year)}}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
       </div>
     </div>
     <LeagueRefresh open={refreshOpen} onClose={()=>setRefreshOpen(false)} onPublished={acceptPublication} automaticStart={automaticRefresh} leagueName={selected?.league_name} onOpen={()=>setRefreshOpen(true)}/>

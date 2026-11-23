@@ -5,20 +5,47 @@ import { App } from "./App";
 import { activeRun, health, snapshot } from "./test/fixtures";
 
 function response(body: unknown, status=200) { return Promise.resolve(new Response(JSON.stringify(body), { status, headers:{"Content-Type":"application/json"} })); }
-function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown } = {}) {
+function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown } = {}) {
   vi.spyOn(globalThis,"fetch").mockImplementation((input) => {
     const url=String(input);
     if(url.includes("/health")) return response(health);
     if(url.includes(`/snapshots/${snapshot.snapshot_id}`)) return response(options.detail ?? snapshot);
     if(url.endsWith("/snapshots")) return response(options.snapshots ?? [snapshot]);
     if(url.includes("/runs")) return response(options.runs ?? [activeRun]);
-    if(url.endsWith("/history/cgl")) return response(null);
+    if(url.endsWith("/history/cgl")) return response(options.history ?? null);
     throw new Error(`Unexpected URL ${url}`);
   });
 }
 async function openSnapshots(user:ReturnType<typeof userEvent.setup>){await user.click(screen.getByRole("button",{name:"Open league context"}));await user.click(screen.getByText("Saved snapshots"));}
 
 afterEach(()=>vi.restoreAllMocks());
+
+test("opens the matching historical bracket without changing the active snapshot", async () => {
+  const records = {
+    league_id: snapshot.league_id,
+    source: { revision: "a".repeat(40), sha256: "b".repeat(64) },
+    seasons: [2025, 2026].map(season => ({
+      season, champion_team_id: 1, matchups: [],
+      teams: [{ team_id: 1, team_name: "Archived Harbor", final_rank: 1,
+        regular_season: { wins: 1, losses: 0, ties: 0, points_for: 12, points_against: 0 } }],
+    })),
+  };
+  mockApi({ history: records, detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } } });
+  const user = userEvent.setup();
+  render(<App />);
+  expect(await screen.findByText("Red Zone Club at North Harbor")).toBeInTheDocument();
+  await user.click(await screen.findByRole("button", { name: "View 2025 championship bracket" }));
+  expect(await screen.findByRole("heading", { name: "Championship bracket" })).toHaveFocus();
+  expect(screen.getByRole("combobox", { name: "Season" })).toHaveValue("2025");
+  expect(localStorage.getItem("war-room-snapshot")).toBe(snapshot.snapshot_id);
+});
+
+test("keeps history for a different league out of the current league overview", async () => {
+  mockApi({ history: { league_id: 99, seasons: [] } });
+  render(<App />);
+  expect(await screen.findByText("No earlier completed season is available for this league.")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /championship bracket/i })).not.toBeInTheDocument();
+});
 
 test("groups existing workspaces and keeps the archive reachable without snapshots", async () => {
   mockApi({ snapshots: [], runs: [] });
