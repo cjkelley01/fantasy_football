@@ -51,7 +51,7 @@ from fantasy_football.app.contracts import (
     TradeQuickAnalysisRequest,
     TradeQuickAnalysisResult,
 )
-from fantasy_football.app.current_results import recent_league_results
+from fantasy_football.app.current_results import league_results, recent_league_results
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
 from fantasy_football.app.service import (
     ApplicationDependencies,
@@ -296,6 +296,14 @@ def create_app(
         return current.inspect_snapshot(
             SnapshotSelector(snapshot_id=snapshot_id, league_id=league_id, season=season)
         )
+
+    @app.get("/api/v1/snapshots/{snapshot_id}/league-results", response_model=tuple[RecentLeagueResults, ...] | None)
+    def snapshot_league_results(snapshot_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return league_results(snapshot_store.load(snapshot_id))
+        except CurrentWeekEvidenceError as error:
+            return _error(422, "league_results_unverified", "invalid_request", str(error))
 
     @app.get("/api/v1/snapshots/{snapshot_id}/recent-results", response_model=RecentLeagueResults | None)
     def snapshot_recent_results(snapshot_id: str, response: Response):

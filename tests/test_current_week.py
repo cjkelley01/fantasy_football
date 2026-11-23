@@ -140,14 +140,19 @@ def test_recent_results_only_exposes_reconciled_prior_scores(tmp_path, unsettled
     snapshot, _ = _publish(tmp_path, bundle)
     with TestClient(create_app(database_path=tmp_path / "snapshots.sqlite3")) as client:
         result = client.get(f"/api/v1/snapshots/{snapshot.snapshot_id}/recent-results")
+        board = client.get(f"/api/v1/snapshots/{snapshot.snapshot_id}/league-results")
     if unsettled:
         assert result.status_code == 422
         assert result.json()["error"]["code"] == "recent_results_unverified"
+        assert board.status_code == 422
+        assert board.json()["error"]["code"] == "league_results_unverified"
         assert "settlement is unresolved" in result.json()["error"]["message"]
     else:
         assert result.status_code == 200
         assert result.headers["cache-control"] == "no-store"
         data = result.json()
+        assert board.status_code == 200
+        assert board.json() == [data]
         assert data["scoring_weeks"] == [1]
         assert [(row["home_score"], row["away_score"], row["winner"]) for row in data["results"]] == [
             (10, 7, "HOME"), (3, 4, "AWAY")

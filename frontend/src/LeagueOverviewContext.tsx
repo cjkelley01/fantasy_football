@@ -22,12 +22,24 @@ export function RecentResults({ snapshot }: { snapshot: SnapshotSummary }) {
   }, [snapshot.snapshot_id]);
 
   const result = response?.snapshot_id === snapshot.snapshot_id ? response : null;
-  const teams = new Map(snapshot.teams.map(team => [team.team_id, team.display_name]));
   return <section className="analytics-panel">
     <h2>Recent results</h2>
     {result ? <>
       <p>Scoring {result.scoring_weeks.length === 1 ? "week" : "weeks"} {result.scoring_weeks.join("–")} · Reconciled as of this snapshot</p>
-      <div className="table-wrap"><table aria-label="Recent results">
+      <ObservedScoresTable snapshot={snapshot} result={result} label="Recent results"/>
+    </> : <p>{failed ? "Recent scores could not be verified for this snapshot."
+      : response === undefined ? "Checking recent scores…"
+      : "No completed regular-season results are available for this snapshot."}</p>}
+  </section>;
+}
+
+export function ObservedScoresTable({ snapshot, result, label }: {
+  snapshot: SnapshotSummary;
+  result: RecentLeagueResults;
+  label: string;
+}) {
+  const teams = new Map(snapshot.teams.map(team => [team.team_id, team.display_name]));
+  return <div className="table-wrap"><table aria-label={label}>
         <thead><tr><th scope="col">Away</th><th scope="col">Home</th><th scope="col">Result</th></tr></thead>
         <tbody>{result.results.map(item => {
           const home = teams.get(item.home_team_id);
@@ -38,11 +50,7 @@ export function RecentResults({ snapshot }: { snapshot: SnapshotSummary }) {
             <td>{item.winner === "TIE" ? "Tie" : item.winner === "HOME" ? home : away}</td>
           </tr>;
         })}</tbody>
-      </table></div>
-    </> : <p>{failed ? "Recent scores could not be verified for this snapshot."
-      : response === undefined ? "Checking recent scores…"
-      : "No completed regular-season results are available for this snapshot."}</p>}
-  </section>;
+  </table></div>;
 }
 
 export function CurrentMatchups({ snapshot }: { snapshot: SnapshotSummary }) {

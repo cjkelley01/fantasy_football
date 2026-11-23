@@ -84,6 +84,10 @@ Select a retained completed baseline with available result for the active snapsh
 
 League-wide and metric precision warnings remain prominent after completion. Nulls follow shared rules. With no usable baseline, explain active/unsuccessful/no-result states and retain factual standings without invented analytics. Validation rejects unknown teams and mismatched provenance. Rapid run/snapshot changes cannot blend retained numbers.
 
+## League Matchups
+
+The League Matchups scoreboard groups the active snapshot's schedule and verified prior regular-season scores by matchup period. It defaults to the current period when known. Select a week or multiweek period to view its pairings or reconciled scores. Scores are tied to the selected snapshot and use captured ESPN winner labels. Unverified periods show known pairings and an explicit score-availability message. Archived postseason results remain in Season Archive.
+
 ## Opportunity Explorer
 
 Read-only discovery defaults to the newest usable completed action-search result for the snapshot, with explicit/preferred-run selection. Create/monitor searches in Simulation Center; Explorer does not launch, resume, cancel or alter them.

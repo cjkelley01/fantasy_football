@@ -188,7 +188,7 @@ Player observations keep actual points/source separate from full-game projection
 
 ### Recent regular-season results
 
-The local recent-results reader uses the initial captured ESPN schedule and the source-bound period configuration on the selected immutable snapshot. It takes the configured regular-season periods ending before the current period and reconciles the full prefix with canonical W/L/T and PF/PA using the same exact standings check as Stage A. It returns only the latest reconciled period, with snapshot and source identity, ESPN winner labels, and original home and away scores. Missing evidence or an empty prefix yields no result. Conflicting, undecided or incomplete evidence yields a typed rejection. This is an as-of observation. WR-010 still covers independent settlement and stat-correction authority.
+The local recent-results reader uses the initial captured ESPN schedule and the source-bound period configuration on the selected immutable snapshot. It takes the configured regular-season periods ending before the current period and reconciles the full prefix with canonical W/L/T and PF/PA using the same exact standings check as Stage A. The scoreboard receives all reconciled periods in chronological order; the overview receives the latest period from the same projection. Each period carries snapshot and source identity, ESPN winner labels, and original home and away scores. Missing evidence or an empty prefix yields no result. Conflicting, undecided or incomplete evidence yields a typed rejection. This is an as-of observation. WR-010 still covers independent settlement and stat-correction authority.
 
 ### Observed assignments and independent authority
 

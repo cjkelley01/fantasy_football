@@ -12,6 +12,11 @@ from fantasy_football.snapshot_store import LoadedSnapshot
 
 
 def recent_league_results(loaded: LoadedSnapshot) -> RecentLeagueResults | None:
+    periods = league_results(loaded)
+    return periods[-1] if periods else None
+
+
+def league_results(loaded: LoadedSnapshot) -> tuple[RecentLeagueResults, ...] | None:
     snapshot = loaded.snapshot
     live = snapshot.live_scoring
     current_weeks = authoritative_current_matchup_period_scoring_weeks(snapshot)
@@ -74,9 +79,16 @@ def recent_league_results(loaded: LoadedSnapshot) -> RecentLeagueResults | None:
                 "Historical matchup evidence is unavailable."
             )
         reconcile_standings_prefix(snapshot.teams, schedule, prior, regular_count)
-        latest = max(prior, key=lambda period: max(periods[period]))
-        results = tuple(
-            ObservedMatchupResult(
+        results: dict[int, list[ObservedMatchupResult]] = {
+            period: []
+            for period in sorted(prior, key=lambda period: max(periods[period]))
+        }
+        seen = set()
+        for game in schedule:
+            period = game["matchupPeriodId"]
+            if period not in results:
+                continue
+            matchup = ObservedMatchupResult(
                 matchup_id=game["id"],
                 home_team_id=game["home"]["teamId"],
                 away_team_id=game["away"]["teamId"],
@@ -84,23 +96,25 @@ def recent_league_results(loaded: LoadedSnapshot) -> RecentLeagueResults | None:
                 away_score=game["away"]["totalPoints"],
                 winner=game["winner"],
             )
-            for game in schedule
-            if game["matchupPeriodId"] == latest
-        )
-        if len({item.matchup_id for item in results}) != len(results):
-            raise CurrentWeekEvidenceError(
-                "Recent results contain a duplicate matchup ID."
-            )
+            if matchup.matchup_id in seen:
+                raise CurrentWeekEvidenceError(
+                    "League results contain a duplicate matchup ID."
+                )
+            seen.add(matchup.matchup_id)
+            results[period].append(matchup)
     except CurrentWeekEvidenceError:
         raise
     except (AttributeError, KeyError, TypeError, ValueError, OverflowError):
         raise CurrentWeekEvidenceError(
             "Invalid historical matchup evidence for recent results."
         ) from None
-    return RecentLeagueResults(
-        snapshot_id=loaded.metadata.snapshot_id,
-        source_id=source.source_id,
-        matchup_period_id=latest,
-        scoring_weeks=periods[latest],
-        results=results,
+    return tuple(
+        RecentLeagueResults(
+            snapshot_id=loaded.metadata.snapshot_id,
+            source_id=source.source_id,
+            matchup_period_id=period,
+            scoring_weeks=periods[period],
+            results=tuple(matchups),
+        )
+        for period, matchups in results.items()
     )

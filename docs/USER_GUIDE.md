@@ -134,7 +134,7 @@ If refresh reports a late error, inspect any publication identity/committed indi
 
 Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. Startup selects the newest saved snapshot for the configured league/season; saved snapshots remain in league context. Set `WAR_ROOM_AUTO_REFRESH=true` in local configuration to opt into read-only retrieval on startup; the default displays cached data and offers **Refresh now**. The header shows the actual league name and retrieval time; cached data is not a claim of a fresh ESPN observation.
 
-League Overview shows **Recent results** for the latest completed regular-season matchup period that reconciles with the active snapshot's standings. The panel uses the saved snapshot's scores and can be unavailable if evidence is incomplete. Refresh and choose the latest validated snapshot to see newer results.
+League Overview shows **Recent results** for the latest completed regular-season matchup period that reconciles with the active snapshot's standings. The panel uses the saved snapshot's scores and can be unavailable if evidence is incomplete. Open **League → League Matchups** and select a period to browse completed scores or scheduled pairings. Refresh and choose the latest validated snapshot to see newer results.
 
 ## Browse the local Season Archive
 

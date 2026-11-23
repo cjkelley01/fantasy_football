@@ -5,12 +5,13 @@ import { App } from "./App";
 import { activeRun, health, snapshot } from "./test/fixtures";
 
 function response(body: unknown, status=200) { return Promise.resolve(new Response(JSON.stringify(body), { status, headers:{"Content-Type":"application/json"} })); }
-function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown; managers?: unknown; recentResults?: unknown } = {}) {
+function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown; managers?: unknown; recentResults?: unknown; leagueResults?: unknown } = {}) {
   vi.spyOn(globalThis,"fetch").mockImplementation((input) => {
     const url=String(input);
     if(url.includes("/health")) return response(health);
     if(url.endsWith("/managers")) return response(options.managers ?? null);
     if(url.endsWith("/recent-results")) return response(options.recentResults ?? null);
+    if(url.endsWith("/league-results")) return response(options.leagueResults ?? null);
     if(url.includes(`/snapshots/${snapshot.snapshot_id}`)) return response(options.detail ?? snapshot);
     if(url.endsWith("/snapshots")) return response(options.snapshots ?? [snapshot]);
     if(url.includes("/runs")) return response(options.runs ?? [activeRun]);
@@ -21,6 +22,27 @@ function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknow
 async function openSnapshots(user:ReturnType<typeof userEvent.setup>){await user.click(screen.getByRole("button",{name:"Open league context"}));await user.click(screen.getByText("Saved snapshots"));}
 
 afterEach(()=>vi.restoreAllMocks());
+
+test("browses verified results and scheduled pairings without mixing their scores", async () => {
+  mockApi({
+    detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } },
+    leagueResults: [{
+      snapshot_id: snapshot.snapshot_id, source_id: "fixture", matchup_period_id: 7, scoring_weeks: [7],
+      results: [{ matchup_id: 17, home_team_id: 1, away_team_id: 2, home_score: 0, away_score: 20.25, winner: "AWAY" }],
+    }],
+  });
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Current league standings" });
+  await user.click(screen.getByRole("button", { name: "League Matchups" }));
+  const picker = await screen.findByRole("combobox", { name: "Matchup period" });
+  expect(picker).toHaveValue("8");
+  expect(screen.getByRole("table", { name: "Scheduled pairings" })).toBeInTheDocument();
+  await user.selectOptions(picker, await screen.findByRole("option", { name: "Week 7" }));
+  expect(within(screen.getByRole("table", { name: "Reconciled scores" })).getByText("North Harbor · 0")).toBeInTheDocument();
+  await user.selectOptions(picker, "8");
+  expect(screen.queryByText("Sunday Union · 20.25")).not.toBeInTheDocument();
+});
 
 test("remembers a manager perspective without changing the active snapshot", async () => {
   const key = `war-room-manager:${snapshot.league_id}:${snapshot.season}`;
