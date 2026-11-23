@@ -145,7 +145,34 @@ The server validates the pair on startup and serves the completed-season project
 Baseline, Trade Lab and action search use the [mandatory marginal-lineup roster policy](TECHNICAL_REFERENCE.md#automatic-roster-execution) for new simulations. When a required acquisition needs a drop, the policy uses the approved full-horizon lineup valuation and snapshot ownership evidence. Missing evidence required for a drop stops the run. Retained historical results keep their original policy and identity.
 
 
-On a verified current-week snapshot, each Trade Lab step defaults to **Earliest eligible**. Choose **Selected week** to reveal the week selector and delay that whole exchange. The displayed effective week accounts for all involved players and preceding steps. War Room assumes immediate hypothetical approval and preserves existing game locks. An exchange that needs additional roster moves to fit at its effective boundary is unsupported.
+On a snapshot with verified trade timing, choose **Use effective timing** to schedule the draft. Each step then starts at **Earliest eligible**. Choose **Selected week** to reveal the week selector and delay that whole exchange. The displayed effective week accounts for all involved players and preceding steps. War Room assumes immediate hypothetical approval and preserves existing game locks. An exchange that needs additional roster moves to fit at its effective boundary is unsupported.
+
+When the snapshot verifies timing but season scoring is unavailable, Trade Lab
+still shows the effective week and the scoring limitation. Evaluation remains
+unavailable until the needed scoring evidence and mode are supported.
+
+### Compare projected lineups before simulation
+
+On a supported full-week snapshot, commit one untimed exchange with players going
+in both directions, then select **Run Quick Analysis**. Expand either team's
+result to inspect projected starters, bench, reserve, vacancies, and missing
+versus explicit zero projections by week. Both sides use the same displayed
+horizon. The comparison holds the completed rosters fixed, including any
+reported forced drops or automatic additions. It does not forecast weekly
+transactions, playoff outcomes, championship probabilities, or trade acceptance.
+
+Use **Evaluate final state** to submit the same snapshot and draft to the
+existing simulation workflow. Committed edits or a snapshot change clear the
+Quick Analysis result. Effective-dated trades and partial weeks are outside
+Quick Analysis.
+
+### Project one season
+
+In **League**, select **Run projected baseline** to evaluate one season for the
+selected snapshot. Expand the weekly results, postseason bracket, or transaction
+details. A projected champion is the winner of this single scenario. Choose
+**Open Monte Carlo** to estimate probabilities with the same selected snapshot.
+The projected result is temporary. Monte Carlo runs remain available in history.
 
 ### First workflow: baseline, then a specific exchange
 

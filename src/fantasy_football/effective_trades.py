@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from fantasy_football.canonical.model import SlotKind
 from fantasy_football.evolving_state import validate_evolving_state
 from fantasy_football.lineup_optimizer import optimize_roster_slots
+from fantasy_football.live_scoring import NFLGameStatus
 from fantasy_football.partial_week import (
     LockState,
     PlayerScoreState,
@@ -74,7 +75,17 @@ def trade_weeks(snapshot):
 
 
 def current_trade_eligibility(snapshot, partial, responses):
-    """Compute the earliest week for each player with resolved trade evidence."""
+    """Compatible entry point for callers with prepared observed scoring."""
+    return inspect_trade_timing(snapshot, responses)
+
+
+def inspect_trade_timing(snapshot, responses):
+    """Verify timing from game and ownership/lock evidence, independent of scoring."""
+    from fantasy_football.current_week import (
+        CurrentWeekEvidenceError,
+        bind_current_week_sources,
+    )
+
     if (snapshot.rules.lineup_lock_type, snapshot.rules.roster_lock_type) != (
         "INDIVIDUAL_GAME",
         "INDIVIDUAL_GAME",
@@ -83,50 +94,122 @@ def current_trade_eligibility(snapshot, partial, responses):
             "Effective-dated trades require individual game-time roster and lineup locks."
         )
     weeks = trade_weeks(snapshot)
-    evidence = partial.evidence
-    responses_by_id = {response.source_id: response for response in responses}
-    root = responses_by_id["league-initial"].payload
-    roster = {
-        row["playerId"]: row.get("playerPoolEntry", {})
-        for team in root["teams"]
-        for row in team.get("roster", {}).get("entries", [])
+    try:
+        live = snapshot.live_scoring
+        if live is None:
+            raise EffectiveTradeError("Current-week trade evidence is unavailable.")
+        observation_sources = {
+            observation.source_id for observation in live.observations
+        }
+        timing_sources = (
+            observation_sources
+            | {"league-initial"}
+            | {
+                game.status_source_id
+                for game in snapshot.nfl_games
+                if game.scoring_week == live.current_scoring_period
+            }
+        )
+        live, raw, initial = bind_current_week_sources(
+            snapshot,
+            tuple(
+                response
+                for response in responses
+                if response.source_id in timing_sources
+            ),
+        )
+        roster = {}
+        for team in initial.payload["teams"]:
+            for entry in team.get("roster", {}).get("entries", []):
+                pid = entry["playerId"]
+                if pid in roster:
+                    raise EffectiveTradeError("Current roster ownership is ambiguous.")
+                roster[pid] = (
+                    team["id"],
+                    entry["lineupSlotId"],
+                    entry["playerPoolEntry"],
+                )
+        pool = {}
+        for response in raw.values():
+            if (
+                response.source_id in observation_sources
+                and response.view == "kona_player_info"
+                and dict(response.parameters).get("scoringPeriodId")
+                == live.current_scoring_period
+            ):
+                for row in response.payload["players"]:
+                    pid = row["id"]
+                    if pid in pool and pool[pid] != row:
+                        raise EffectiveTradeError(
+                            "Current player-pool lock copies disagree."
+                        )
+                    pool[pid] = row
+        if not pool:
+            raise EffectiveTradeError(
+                "Current player-pool lock evidence is unavailable."
+            )
+    except CurrentWeekEvidenceError as exc:
+        raise EffectiveTradeError(str(exc)) from exc
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise EffectiveTradeError("Current trade lock evidence is malformed.") from exc
+
+    games = {
+        team: game
+        for game in snapshot.nfl_games
+        if game.scoring_week == live.current_scoring_period
+        for team in (game.home_nfl_team_id, game.away_nfl_team_id)
+        if game.status_source_id in raw
     }
-    source_ids = {item.source_id for item in evidence.players}
-    pool = {
-        (source_id, row["id"]): row
-        for source_id in source_ids
-        if (response := responses_by_id.get(source_id)) is not None
-        for row in response.payload.get("players", [])
+    byes = {
+        team.nfl_team_id for team in snapshot.nfl_teams if team.bye_week == weeks[0]
     }
-    lineups = {item.player_id: item for item in evidence.lineups}
+    players = {player.player_id: player for player in snapshot.players}
     eligible = {}
-    for item in evidence.players:
-        player_id = item.player_id
-        copies = (pool.get((item.source_id, player_id), {}), roster.get(player_id, {}))
+    for entry in snapshot.roster_entries:
+        pid = entry.player_id
+        roster_copy = roster.get(pid)
+        if roster_copy is None or roster_copy[:2] != (
+            entry.team_id,
+            entry.lineup_slot_id,
+        ):
+            continue
+        copies = (pool.get(pid, {}), roster_copy[2])
+        if any(not isinstance(copy, dict) for copy in copies):
+            continue
         roster_flags = tuple(copy.get("rosterLocked") for copy in copies)
         trade_flags = tuple(copy.get("tradeLocked") for copy in copies)
-        # An explicit trade restriction is never presumed to expire.
+        lineup_flags = tuple(copy.get("lineupLocked") for copy in copies)
         if (
-            any(type(value) is not bool for value in trade_flags + roster_flags)
+            any(
+                type(value) is not bool
+                for value in trade_flags + roster_flags + lineup_flags
+            )
             or trade_flags != (False, False)
             or roster_flags[0] != roster_flags[1]
         ):
             continue
-        lock = lineups[player_id].lock_state
+        nfl_team = players[pid].nfl_team_id
+        game = games.get(nfl_team)
+        status = game.status if game is not None else None
         if (
-            item.score_state
-            in {PlayerScoreState.UNSTARTED, PlayerScoreState.NONPARTICIPATING}
-            and lock is LockState.VERIFIED_CHANGEABLE
+            (status is NFLGameStatus.SCHEDULED or (game is None and nfl_team in byes))
+            and lineup_flags == (False, False)
             and roster_flags == (False, False)
         ):
-            eligible[player_id] = weeks[0]
+            eligible[pid] = weeks[0]
         elif (
-            item.score_state is PlayerScoreState.COMPLETED_FIXED
-            and lock is LockState.VERIFIED_LOCKED
+            status in {NFLGameStatus.COMPLETED, NFLGameStatus.IN_PROGRESS}
+            and lineup_flags == (True, True)
             and len(weeks) > 1
         ):
-            eligible[player_id] = weeks[1]
+            eligible[pid] = weeks[1]
     return weeks, eligible
+
+
+def prepare_trade_timeline(snapshot, responses, requested):
+    """Resolve an atomic chronological plan without requiring a score forecast."""
+    weeks, eligibility = inspect_trade_timing(snapshot, responses)
+    return resolve_effective_trades(snapshot, requested, weeks, eligibility)
 
 
 def resolve_effective_trades(snapshot, requested, weeks, eligibility):
@@ -161,6 +244,39 @@ def resolve_effective_trades(snapshot, requested, weeks, eligibility):
         previous_week = week
         owners.update({move.player_id: move.to_team_id for move in transfers})
     return tuple(resolved)
+
+
+def validate_trade_timeline(
+    snapshot, state, trades, *, observed_evidence, changes, pins
+):
+    """Check structural consequences and intent before evaluating any season paths."""
+    entries = state.roster_entries
+    original = {entry.player_id: entry.team_id for entry in entries}
+    for trade in trades:
+        entries = traded_roster(
+            snapshot,
+            entries,
+            trade,
+            evidence=observed_evidence
+            if trade.scoring_week == snapshot.first_simulation_week
+            else None,
+        )
+        validate_evolving_state(replace(state, roster_entries=entries), snapshot)
+    final = {entry.player_id: entry.team_id for entry in entries}
+    expected = {
+        (pid, owner, final[pid])
+        for pid, owner in original.items()
+        if owner != final[pid]
+    }
+    supplied = {
+        (move.player_id, move.from_team_id, move.to_team_id) for move in changes
+    }
+    if expected != supplied or len(supplied) != len(changes):
+        raise EffectiveTradeError(
+            "The trade sequence does not match the declared roster changes."
+        )
+    if any(final.get(pin.player_id) != pin.team_id for pin in pins):
+        raise EffectiveTradeError("A protected player has a different final owner.")
 
 
 def validate_transfers(owners, teams, transfers):

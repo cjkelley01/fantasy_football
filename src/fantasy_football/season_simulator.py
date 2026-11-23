@@ -140,6 +140,7 @@ class DeterministicPartialWeekInput:
     lineup: tuple[ProposedLineupAssignment, ...]
     values: tuple[DeterministicPlayerValue, ...]
     prior_postseason_scores: tuple[WeeklyTeamScore, ...] = ()
+    projected_final: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -678,6 +679,7 @@ def _prepare_partial_week(
         partial.lineup,
         partial.values,
         effective_owners=effective_owners,
+        projected_final=partial.projected_final,
     )
     cutoff = evidence.standings_cutoff
     period_start = evidence.matchup_period_scoring_weeks[0]
@@ -725,12 +727,20 @@ def _prepare_partial_week(
         json.dumps(
             {
                 "evidence": partial_week_to_json(evidence),
+                **({"projected_final": True} if partial.projected_final else {}),
                 "lineup": sorted(
                     (asdict(item) for item in partial.lineup),
                     key=lambda item: item["player_id"],
                 ),
                 "values": sorted(
-                    (asdict(item) for item in partial.values),
+                    (
+                        {
+                            key: value
+                            for key, value in asdict(item).items()
+                            if key != "projected_final_points" or value is not None
+                        }
+                        for item in partial.values
+                    ),
                     key=lambda item: item["player_id"],
                 ),
                 "history": sorted(
@@ -1050,7 +1060,8 @@ def simulate_deterministic_season(
         require_supported_initial_roster_mode(
             uses_partial_week=True,
             has_hypothetical_initial_changes=(
-                evolving.roster_entries != snapshot.roster_entries or bool(evolving.ledger)
+                evolving.roster_entries != snapshot.roster_entries
+                or bool(evolving.ledger)
             ),
         )
         if current_trades:

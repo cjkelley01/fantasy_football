@@ -14,7 +14,6 @@ from functools import wraps
 
 from fantasy_football.canonical.model import (
     LeagueSnapshot,
-    MatchupEntryStatus,
     SlotKind,
 )
 from fantasy_football.canonical.serialization import snapshot_to_json
@@ -47,6 +46,10 @@ from fantasy_football.player_outcomes import (
     projection_class_counts,
 )
 from fantasy_football.postseason import ConsolationLadderConfiguration, WeeklyTeamScore
+from fantasy_football.score_resolution import (
+    observed_starter_states,
+    resolve_observed_score,
+)
 from fantasy_football.season_simulator import (
     DEFAULT_POSTSEASON_TRANSACTION_POLICY,
     DeterministicPartialWeekInput,
@@ -549,30 +552,11 @@ def _partial_week_draws(
                 f"invalid or duplicate current-week draw for player {score.player_id}"
             )
         first_scores[score.player_id] = score.points
-    # Proposed starters may use any configured starter slot, including a previously empty one.
-    starter_slots = {
-        item.slot_id
-        for item in snapshot.rules.lineup_slots
-        if item.kind is SlotKind.STARTER
+    required = {
+        state.player_id: state
+        for state in observed_starter_states(snapshot, partial)
+        if state.score_state is PlayerScoreState.UNSTARTED
     }
-    bye_teams = {
-        item.home_team_id
-        for item in snapshot.fantasy_matchups
-        if item.matchup_period_id == partial.evidence.matchup_period_id
-        and item.entry_status is MatchupEntryStatus.BYE
-    }
-    required = tuple(
-        item.player_id
-        for item in partial.lineup
-        if item.lineup_slot_id in starter_slots
-        and item.team_id not in bye_teams
-        and next(
-            state
-            for state in partial.evidence.players
-            if state.player_id == item.player_id
-        ).score_state
-        is PlayerScoreState.UNSTARTED
-    )
     missing = set(required) - set(first_scores)
     if missing:
         raise MonteCarloError(
@@ -583,7 +567,10 @@ def _partial_week_draws(
         partial.lineup,
         tuple(
             DeterministicPlayerValue(
-                player_id, unstarted_realized_points=first_scores[player_id]
+                player_id,
+                unstarted_realized_points=resolve_observed_score(
+                    required[player_id], sampled_points=first_scores[player_id]
+                ).points,
             )
             for player_id in sorted(required)
         ),

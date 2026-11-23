@@ -38,6 +38,8 @@ from fantasy_football.app.contracts import (
     LeagueRefreshProfile,
     ManualScenarioRequest,
     ManualScenarioResult,
+    ProjectedBaselineRequest,
+    ProjectedBaselineResult,
     SnapshotListQuery,
     SnapshotRefreshRecord,
     SnapshotRefreshRequest,
@@ -45,6 +47,8 @@ from fantasy_football.app.contracts import (
     SnapshotRefreshSubmission,
     SnapshotSelector,
     SnapshotSummary,
+    TradeQuickAnalysisRequest,
+    TradeQuickAnalysisResult,
 )
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
 from fantasy_football.app.service import (
@@ -328,12 +332,26 @@ def create_app(
     ) -> SnapshotRefreshResult:
         return coordinator.result(refresh_id)
 
+    @app.post("/api/v1/analyses/projected-baseline", response_model=ProjectedBaselineResult)
+    def projected_baseline(
+        body: ProjectedBaselineRequest,
+        current: ApplicationService = Depends(dependency),
+    ) -> ProjectedBaselineResult:
+        return current.run_projected_baseline(body)
+
     @app.post("/api/v1/analyses/baseline", response_model=BaselineAnalysisResult)
     def baseline(
         body: BaselineAnalysisRequest,
         current: ApplicationService = Depends(dependency),
     ) -> BaselineAnalysisResult:
         return current.run_baseline(body)
+
+    @app.post("/api/v1/analyses/trade-quick", response_model=TradeQuickAnalysisResult)
+    def trade_quick(
+        body: TradeQuickAnalysisRequest,
+        current: ApplicationService = Depends(dependency),
+    ) -> TradeQuickAnalysisResult:
+        return current.run_trade_quick_analysis(body)
 
     @app.post("/api/v1/analyses/manual-scenario", response_model=ManualScenarioResult)
     def manual_scenario(

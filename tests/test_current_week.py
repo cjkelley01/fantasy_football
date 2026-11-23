@@ -215,7 +215,23 @@ def test_mutated_raw_source_is_rejected_without_republication(tmp_path):
 
 
 def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
+    from fantasy_football.app.contracts import ManualScenarioRequest, SnapshotSelector
+    from fantasy_football.app.service import (
+        ApplicationDependencies,
+        ApplicationService,
+        ApplicationServiceError,
+    )
+    from fantasy_football.effective_trades import (
+        EffectiveTrade,
+        EffectiveTradeError,
+        TradeTransfer,
+        prepare_trade_timeline,
+    )
+    from tests.test_app_service import _model, _precision, _simulation
+
     bundle = _bundle()
+    for source in (bundle.league_initial, bundle.league_reconciliation):
+        source.payload["settings"]["tradeSettings"]["deadlineDate"] = 1798000000000
     for team in bundle.pro_schedule.payload["settings"]["proTeams"]:
         for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
             if game["homeProTeamId"] == 3:
@@ -225,6 +241,54 @@ def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
         CurrentWeekEvidenceError, match="no approved remaining-performance model"
     ):
         build_current_week_input(snapshot, responses)
+
+    transfers = (TradeTransfer(2, 2, 4), TradeTransfer(4, 4, 2))
+    assert prepare_trade_timeline(snapshot, responses, ((None, transfers),)) == (
+        EffectiveTrade(3, transfers),
+    )
+    with pytest.raises(EffectiveTradeError, match="earlier than"):
+        prepare_trade_timeline(snapshot, responses, ((2, transfers),))
+
+    selector = SnapshotSelector(snapshot_id=snapshot.snapshot_id)
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    service = ApplicationService(ApplicationDependencies(store))
+    summary = service.inspect_snapshot(selector).live_scoring
+    assert summary is not None and not summary.current_week_execution_available
+    assert dict(summary.player_earliest_trade_weeks)[2] == 3
+    assert dict(summary.player_earliest_trade_weeks)[4] == 2
+    assert summary.trade_timing_limitation is None
+    assert (
+        "no approved remaining-performance model" in summary.current_week_limitations[0]
+    )
+    moves = [
+        {
+            "player_id": move.player_id,
+            "from_team_id": move.from_team_id,
+            "to_team_id": move.to_team_id,
+        }
+        for move in transfers
+    ]
+    request = ManualScenarioRequest(
+        snapshot=selector,
+        simulation=_simulation(),
+        precision=_precision(),
+        outcome_model=_model(),
+        scenario={
+            "scenario_id": "timing-only",
+            "changes": moves,
+            "effective_trades": [{"selected_week": None, "transfers": moves}],
+        },
+    )
+    with pytest.raises(
+        ApplicationServiceError, match="Trade timing verified for scoring week"
+    ) as exc:
+        service.run_manual_scenario(request)
+    assert exc.value.code == "current_week_evidence_unresolved"
+    assert exc.value.context["effective_scoring_weeks"] == "3"
+
+    responses[0].payload["scoringPeriodId"] = 99
+    with pytest.raises(EffectiveTradeError, match="immutable snapshot provenance"):
+        prepare_trade_timeline(snapshot, responses, ((None, transfers),))
 
 
 def test_historical_standings_reconcile_exact_decimal_totals():
@@ -511,3 +575,101 @@ def test_traded_roster_maximizes_flex_value_under_full_roster_constraints():
     overfull = EffectiveTrade(11, (TradeTransfer(4, 2, 1),))
     with pytest.raises(EffectiveTradeError, match="cannot fit the complete trade"):
         traded_roster(snapshot, entries, overfull, evidence=evidence)
+
+
+@pytest.mark.parametrize(
+    "game_status, points, basis",
+    [
+        ("STATUS_IN_PROGRESS", 12.25, "projected_final"),
+        ("STATUS_FINAL", 13.25, "final_actual"),
+    ],
+)
+def test_projected_baseline_preserves_observed_actual_separately(
+    tmp_path, game_status, points, basis
+):
+    from fantasy_football.app.contracts import (
+        ProjectedBaselineRequest,
+        SnapshotSelector,
+    )
+    from fantasy_football.app.service import ApplicationDependencies, ApplicationService
+
+    bundle = _bundle()
+    for response in (bundle.league_initial, bundle.league_reconciliation):
+        response.payload["settings"]["scheduleSettings"][
+            "consolationLadderDisabled"
+        ] = True
+    for team in bundle.pro_schedule.payload["settings"]["proTeams"]:
+        for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
+            if game["homeProTeamId"] == 3:
+                game["status"] = game_status
+    snapshot, _ = _publish(tmp_path, bundle)
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    loaded = store.load(snapshot.snapshot_id)
+    result = ApplicationService(ApplicationDependencies(store)).run_projected_baseline(
+        ProjectedBaselineRequest(
+            snapshot=SnapshotSelector(snapshot_id=snapshot.snapshot_id),
+            canonical_sha256=loaded.metadata.canonical_sha256,
+        )
+    )
+    score = next(item for item in result.observed_scores if item.player_id == 2)
+    assert (score.observed_points, score.points, score.basis) == (
+        13.25,
+        points,
+        basis,
+    )
+    assert bool(score.projection_source_id) == (basis == "projected_final")
+    team = next(item for item in result.weeks[0].lineups if item.team_id == 2)
+    assert team.realized_points == points
+    assert [assignment.player_id for assignment in team.lineup.assignments] == [2]
+
+
+@pytest.mark.parametrize(
+    "game_status, rationale",
+    [
+        (None, "Game status is missing"),
+        ("STATUS_FINAL", "no verified fantasy-matchup and standings settlement"),
+    ],
+)
+def test_projected_baseline_rejects_unresolved_current_week(
+    tmp_path, monkeypatch, game_status, rationale
+):
+    from fantasy_football.app import projected_baseline
+    from fantasy_football.app.contracts import (
+        ProjectedBaselineRequest,
+        SnapshotSelector,
+    )
+    from fantasy_football.app.service import (
+        ApplicationDependencies,
+        ApplicationService,
+        ApplicationServiceError,
+    )
+
+    bundle = _bundle()
+    for team in bundle.pro_schedule.payload["settings"]["proTeams"]:
+        for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
+            if game_status is None:
+                game.pop("status", None)
+                game["statsOfficial"] = False
+            else:
+                game["status"] = game_status
+    snapshot, _ = _publish(tmp_path, bundle)
+    assert snapshot.live_scoring is not None
+    assert not snapshot.live_scoring.partial_week_simulation_required
+
+    def unexpected(*args, **kwargs):
+        pytest.fail(
+            "Unresolved evidence reached projected score preparation or execution"
+        )
+
+    monkeypatch.setattr(projected_baseline, "projected_scores", unexpected)
+    monkeypatch.setattr(projected_baseline, "build_current_week_input", unexpected)
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    loaded = store.load(snapshot.snapshot_id)
+    with pytest.raises(ApplicationServiceError, match=rationale) as error:
+        ApplicationService(ApplicationDependencies(store)).run_projected_baseline(
+            ProjectedBaselineRequest(
+                snapshot=SnapshotSelector(snapshot_id=snapshot.snapshot_id),
+                canonical_sha256=loaded.metadata.canonical_sha256,
+            )
+        )
+    assert error.value.code == "current_week_evidence_unresolved"

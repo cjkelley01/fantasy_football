@@ -39,7 +39,7 @@ test("snapshot changes isolate drafts and late responses cannot overwrite the ne
 test("failed submission is recoverable and does not appear successful",async()=>{const user=userEvent.setup();vi.spyOn(globalThis,"fetch").mockRejectedValue(new Error("offline"));render(<TradeLab snapshot={snapshot}/>);await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));await user.click(screen.getByRole("button",{name:"Add transaction step"}));await user.click(screen.getByRole("button",{name:/Evaluate final state/}));expect(await screen.findByText("The local decision engine is not reachable.")).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument();expect(screen.getByRole("button",{name:/Evaluate final state/})).toBeEnabled()});
 test("large configurable rosters retain keyboard controls and accessible analysis",async()=>{const large={...snapshot,teams:Array.from({length:14},(_,index)=>({...snapshot.teams[index%4],team_id:index+1,display_name:`Configured Team ${index+1}`}))};const {container}=render(<TradeLab snapshot={large}/>);const first=screen.getByRole("button",{name:/Avery Runner.*Select/});first.focus();expect(first).toHaveFocus();expect((await axe.run(container)).violations).toEqual([])});
 
-test("shows the whole exchange week and remembers a deliberate delay", async () => {
+test.each([true, false])("shows timing independently of simulation availability (%s)", async (canScore) => {
   const user = userEvent.setup();
   const timed: SnapshotSummary = {
     ...snapshot,
@@ -48,7 +48,8 @@ test("shows the whole exchange week and remembers a deliberate delay", async () 
       earliest_unresolved_period: null, next_fully_unplayed_period: 9,
       supported_simulation_week: null, partial_week_simulation_required: true,
       boundary_method: "unresolved", boundary_rationale: "", weeks: [],
-      unresolved_capabilities: [], current_week_execution_available: true,
+      unresolved_capabilities: [], current_week_execution_available: canScore,
+      current_week_limitations: canScore ? [] : ["An in-progress game cannot be sampled."],
       supported_trade_weeks: [8, 9, 10], player_earliest_trade_weeks: [[101, 8], [201, 9]],
     },
   };
@@ -57,6 +58,9 @@ test("shows the whole exchange week and remembers a deliberate delay", async () 
   await user.click(screen.getByRole("button", {name: /Avery Runner.*Select/}));
   await user.click(screen.getByRole("button", {name: /Casey Quarterback.*Select/}));
   await user.click(screen.getByRole("button", {name: "Add transaction step"}));
+  expect(screen.getByRole("button", {name: "Run Quick Analysis"})).toBeDisabled();
+  expect(screen.getByRole("button", {name: "Evaluate final state"})).toBeDisabled();
+  await user.click(screen.getByRole("button", {name: "Use effective timing"}));
   expect(screen.getByText("Effective week 9")).toBeInTheDocument();
   expect(screen.queryByRole("combobox", {name: "Scoring week"})).toBeNull();
   await user.click(screen.getByRole("button", {name: "Selected week"}));
@@ -65,13 +69,83 @@ test("shows the whole exchange week and remembers a deliberate delay", async () 
   await user.click(screen.getByRole("button", {name: "Earliest eligible"}));
   await user.click(screen.getByRole("button", {name: "Selected week"}));
   expect(screen.getByRole("combobox", {name: "Scoring week"})).toHaveValue("10");
+  if (!canScore) {
+    expect(screen.getByRole("status")).toHaveTextContent("Season simulation unavailable");
+    expect(screen.getByRole("button", {name: "Evaluate scenario"})).toBeDisabled();
+    expect(fetch).not.toHaveBeenCalled();
+    return;
+  }
   await user.click(screen.getByRole("button", {name: "Evaluate scenario"}));
   await screen.findByText("Evaluation complete");
   const posted = fetch.mock.calls.find(([input]) => String(input).endsWith("/runs/manual-scenario"));
-  expect(JSON.parse(String(posted?.[1]?.body)).scenario.effective_trades).toEqual([
+  const request = JSON.parse(String(posted?.[1]?.body));
+  expect(request.simulation.use_observed_current_week_lineup).toBe(true);
+  expect(request.scenario.effective_trades).toEqual([
     {selected_week: 10, transfers: [
       {player_id: 101, from_team_id: 1, to_team_id: 2},
       {player_id: 201, from_team_id: 2, to_team_id: 1},
     ]},
   ]);
+});
+
+test("runs Quick Analysis then submits the same committed trade for simulation",async()=>{
+  const user=userEvent.setup();
+  const preview={api_schema_version:"1.0",snapshot_id:snapshot.snapshot_id,canonical_sha256:snapshot.canonical_sha256,
+    completed_state_sha256:"b".repeat(64),first_scoring_week:8,final_scoring_week:8,explicit_changes:oneStep.transfers,
+    forced_drops:[],automatic_additions:[],teams:[{team_id:1,baseline_projected_points:17,hypothetical_projected_points:20,difference:3,weeks:[]}],assumptions:[]};
+  const fetch=mockEvaluation();
+  const simulation=fetch.getMockImplementation()!;
+  fetch.mockImplementation((input,init)=>String(input).endsWith("/analyses/trade-quick")?json(preview):simulation(input,init));
+  const unplayed: SnapshotSummary = {
+    ...snapshot,
+    live_scoring: {
+      current_scoring_period: 8, last_fully_completed_period: 7,
+      earliest_unresolved_period: null, next_fully_unplayed_period: 8,
+      supported_simulation_week: 8, partial_week_simulation_required: false,
+      boundary_method: "automatic", boundary_rationale: "", weeks: [],
+      unresolved_capabilities: [], current_week_execution_available: true,
+      supported_trade_weeks: [8, 9, 10], player_earliest_trade_weeks: [[101, 8], [201, 8]],
+    },
+  };
+  render(<TradeLab snapshot={unplayed}/>);
+  await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));
+  await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));
+  await user.click(screen.getByRole("button",{name:"Add transaction step"}));
+  expect(fetch).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button",{name:"Run Quick Analysis"}));
+  expect(await screen.findByRole("heading",{name:"Projected starter points"})).toBeInTheDocument();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(screen.queryByRole("heading",{name:"League-wide paired impact"})).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button",{name:"Evaluate final state"}));
+  expect(await screen.findByRole("heading",{name:"League-wide paired impact"})).toBeInTheDocument();
+  const quick=JSON.parse(String(fetch.mock.calls[0][1]?.body));
+  const manual=JSON.parse(String(fetch.mock.calls[1][1]?.body));
+  expect(quick).not.toHaveProperty("simulation");
+  expect(quick).not.toHaveProperty("precision");
+  expect(quick).not.toHaveProperty("outcome_model");
+  expect(manual.snapshot).toEqual(quick.snapshot);
+  expect(quick.scenario).not.toHaveProperty("effective_trades");
+  expect(manual.scenario).not.toHaveProperty("effective_trades");
+  expect(manual.simulation.use_observed_current_week_lineup).toBe(false);
+  expect(manual.simulation.ir_policy).toBe(quick.ir_policy);
+  expect(manual.scenario.changes).toEqual(quick.scenario.changes);
+  expect(manual.scenario.protected_players).toEqual(quick.scenario.protected_players);
+  await user.click(screen.getByRole("button",{name:"Protect Bailey Receiver"}));
+  expect(screen.queryByRole("heading",{name:"Projected starter points"})).not.toBeInTheDocument();
+});
+
+test("ignores a late Quick Analysis response after a snapshot change",async()=>{
+  const user=userEvent.setup();
+  let resolve!: (response:Response)=>void;
+  const pending=new Promise<Response>(done=>resolve=done);
+  const fetch=vi.spyOn(globalThis,"fetch").mockImplementation(()=>pending);
+  const view=render(<TradeLab snapshot={snapshot}/>);
+  await user.click(screen.getByRole("button",{name:/Avery Runner.*Select/}));
+  await user.click(screen.getByRole("button",{name:/Casey Quarterback.*Select/}));
+  await user.click(screen.getByRole("button",{name:"Add transaction step"}));
+  await user.click(screen.getByRole("button",{name:"Run Quick Analysis"}));
+  view.rerender(<TradeLab snapshot={{...snapshot,snapshot_id:"other-snapshot",canonical_sha256:"e".repeat(64)}}/>);
+  expect(fetch.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  await act(async()=>resolve(await json({snapshot_id:snapshot.snapshot_id,canonical_sha256:snapshot.canonical_sha256})));
+  expect(screen.queryByRole("heading",{name:"Projected starter points"})).not.toBeInTheDocument();
 });

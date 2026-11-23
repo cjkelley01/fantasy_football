@@ -20,7 +20,7 @@ from fantasy_football.canonical.validation import (
     authoritative_current_matchup_period_scoring_weeks,
     validate_snapshot,
 )
-from fantasy_football.live_scoring import NFLGameStatus
+from fantasy_football.live_scoring import NFLGameStatus, ScoreEvidenceStatus
 
 PARTIAL_WEEK_ARTIFACT_VERSION = 1
 
@@ -144,6 +144,7 @@ class DeterministicPlayerValue:
     player_id: int
     unstarted_realized_points: float | None = None
     approved_remaining_points: float | None = None
+    projected_final_points: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -660,7 +661,10 @@ def validate_proposed_lineup(
 
 
 def require_executable_partial_week_evidence(
-    snapshot: LeagueSnapshot, evidence: PartialWeekEvidence
+    snapshot: LeagueSnapshot,
+    evidence: PartialWeekEvidence,
+    *,
+    projected_final: bool = False,
 ) -> None:
     """Require evidence authority needed by the deterministic reference composer."""
 
@@ -727,6 +731,7 @@ def require_executable_partial_week_evidence(
                 )
         if (
             player.score_state is PlayerScoreState.IN_PROGRESS
+            and not projected_final
             and player.remaining_status is not RemainingContributionStatus.APPROVED
         ):
             _fail(
@@ -754,10 +759,29 @@ def compose_partial_week_scores(
     deterministic_values: tuple[DeterministicPlayerValue, ...],
     *,
     effective_owners: dict[int, int] | None = None,
+    projected_final: bool = False,
 ) -> PartialWeekScoreComposition:
     """Combine fixed, supplied remaining, and carry-in values exactly once."""
 
-    require_executable_partial_week_evidence(snapshot, evidence)
+    if type(projected_final) is not bool:
+        _fail("Projected-final scoring requires an explicit boolean mode.")
+    require_executable_partial_week_evidence(
+        snapshot, evidence, projected_final=projected_final
+    )
+    projections = {}
+    observations = {}
+    if projected_final:
+        projections = {
+            row.player_id: row
+            for row in snapshot.player_weeks
+            if row.scoring_week == evidence.scoring_period
+        }
+        if snapshot.live_scoring is not None:
+            observations = {
+                row.player_id: row
+                for row in snapshot.live_scoring.observations
+                if row.scoring_week == evidence.scoring_period
+            }
     validate_proposed_lineup(
         snapshot, evidence, proposed_lineup, effective_owners=effective_owners
     )
@@ -768,6 +792,7 @@ def compose_partial_week_scores(
         for field, points in (
             ("unstarted realized", value.unstarted_realized_points),
             ("approved remaining", value.approved_remaining_points),
+            ("projected final", value.projected_final_points),
         ):
             if points is not None:
                 _finite(points, f"player {value.player_id} {field}")
@@ -805,6 +830,7 @@ def compose_partial_week_scores(
         state = player_states[player_id]
         supplied_value = supplied.get(player_id)
         fixed = remaining = 0.0
+        forecast = None
         if state.score_state is PlayerScoreState.COMPLETED_FIXED:
             fixed = float(state.fixed_actual_points)
             if supplied_value is not None:
@@ -814,20 +840,49 @@ def compose_partial_week_scores(
         elif state.score_state is PlayerScoreState.IN_PROGRESS:
             fixed = float(state.fixed_actual_points)
             if (
-                supplied_value is None
-                or supplied_value.approved_remaining_points is None
-                or supplied_value.unstarted_realized_points is not None
+                supplied_value is not None
+                and supplied_value.projected_final_points is not None
             ):
-                _fail(
-                    f"in-progress player {player_id} requires exactly one approved remaining value"
-                )
-            remaining = float(supplied_value.approved_remaining_points)
+                row = projections.get(player_id)
+                observation = observations.get(player_id)
+                if (
+                    not projected_final
+                    or observation is None
+                    or observation.actual_status is not ScoreEvidenceStatus.CONFIRMED
+                    or observation.actual_points != fixed
+                    or observation.source_id != state.source_id
+                    or supplied_value.approved_remaining_points is not None
+                    or supplied_value.unstarted_realized_points is not None
+                    or row is None
+                    or row.raw_projection is None
+                    or supplied_value.projected_final_points != row.effective_projection
+                    or supplied_value.projected_final_points
+                    != state.full_game_projection
+                ):
+                    _fail(
+                        f"in-progress player {player_id} lacks a matching canonical final projection"
+                    )
+                forecast = float(supplied_value.projected_final_points)
+            else:
+                if (
+                    supplied_value is None
+                    or supplied_value.approved_remaining_points is None
+                    or supplied_value.unstarted_realized_points is not None
+                    or projected_final
+                    or state.remaining_status
+                    is not RemainingContributionStatus.APPROVED
+                ):
+                    _fail(
+                        f"in-progress player {player_id} requires exactly one approved remaining value"
+                    )
+                remaining = float(supplied_value.approved_remaining_points)
             consumed.add(player_id)
         elif state.score_state is PlayerScoreState.UNSTARTED:
             if (
                 supplied_value is None
                 or supplied_value.unstarted_realized_points is None
                 or supplied_value.approved_remaining_points is not None
+                or supplied_value.projected_final_points is not None
             ):
                 _fail(
                     f"unstarted player {player_id} requires exactly one deterministic full-game value"
@@ -850,7 +905,7 @@ def compose_partial_week_scores(
                 assignment.lineup_slot_id,
                 fixed,
                 remaining,
-                fixed + remaining,
+                fixed + remaining if forecast is None else forecast,
                 state.score_state,
             )
         )
@@ -876,7 +931,11 @@ def compose_partial_week_scores(
                 carry,
                 fixed,
                 remaining,
-                carry + fixed + remaining,
+                (
+                    carry + math.fsum(item.final_points for item in starters)
+                    if projected_final
+                    else carry + fixed + remaining
+                ),
                 starters,
             )
         )

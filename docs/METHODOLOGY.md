@@ -341,6 +341,19 @@ The proposed lineup is a separate complete player/team/slot assignment over the 
 
 Kickoff timestamps, NFL scheduled/completed status and assumed league-wide locking conventions cannot substitute for independently verified lock/change permission. Executable composition validates a **supplied hypothetical lineup**, not a current-week recommendation or optimizer. Current-week locks protect observed assignments; later weeks return to ordinary lineup selection instead of inheriting those locks forever.
 
+### Projection-fed season baseline
+
+The projected baseline supplies the canonical effective player-week projections to
+the same season coordinator used for each Monte Carlo path. It applies the configured
+weekly roster policy and produces one projected trajectory through standings and
+postseason. Verified final actuals replace projections in the observed week. An
+admissible in-progress ESPN full-game projection supplies the forecast final score
+directly, even below actual-so-far. The observed points still reconcile the original
+lineup and source totals. Missing required starter evidence blocks execution.
+Verified nonparticipation contributes no game points. The existing missing elective
+future projection policy remains distinguishable from an explicit source zero.
+An in-progress forecast does not authorize a stochastic remainder.
+
 ### Fixed actuals and supplied remaining realizations
 
 Each player record separates NFL game status, score state, fixed actuals, full-game projection, remaining-contribution approval and source. There are exactly five score states. **Unresolved authority is an evidence condition, not a sixth score-state enum.** Confirmed actual zero and missing evidence remain different.
@@ -405,6 +418,13 @@ Mid-period matchups need verified finite carry for both teams; first-week eviden
 NFL completion or `statsOfficial` alone establishes neither fantasy settlement, standings incorporation nor stat-correction finality. Raw score presence, wall time and hashes cannot close those gaps. Corrections need new immutable snapshot/evidence publication; old bytes/results are not rewritten. The existing [DATA observations](DATA.md#source-observations-and-limitations) remain bounded historical evidence: the 11 November 2026 unplayed sample verified candidate field presence/type, not active-game lock permissions, conditional remainders, live score latency, carry/bench semantics or fantasy finality.
 
 A source-validated effective-dated trade is a separate transition from the observed starting roster. Each trade moves all participants together, before scoring at its effective boundary. Current-week trades preserve locked assignments and score only the eligible remaining players for their new teams. Delayed trades preserve ordinary simulation through the preceding week and recheck ownership against each path's evolving state. Paired runs use identical player-week realizations. See the [Trade Lab timing contract](TECHNICAL_REFERENCE.md#effective-dated-trade-lab-execution).
+
+Eligibility can be established before the season can be forecast. With verified
+individual game-time locks, a started player's game lock can defer the entire
+trade to the next supported scoring boundary. Independent trade restrictions
+and league deadlines still apply. Immediate hypothetical approval does not
+change either restriction. Earlier observed points and lineup assignments stay
+with their original team.
 
 The opt-in deterministic path uses M3's **same season coordinator**, in this logical dependency sequence (the implementation performs composition during preparation and checks further season gates before returning a result):
 
@@ -852,6 +872,14 @@ Inspected baseline: revision `9f08b9a58258702d0b2b87fee345036c07812b7b`. Source 
 M8 connects their hypothetical starting states to M3–M7 without creating another season engine, valuation rule or probability estimator. An **action path**, its **completed evolving state**, and its **numerical evaluation** are distinct objects. Hypothetical completion is not M5's operational future acquisition policy and does not establish ESPN execution or acceptance.
 
 ### Explicit scenarios and one-time completion
+
+Trade Lab Quick Analysis uses the same one-time completion for a reciprocal
+two-team exchange on a supported full-week snapshot. It compares optimal
+projected starters under the unchanged and completed rosters for the same
+scoring weeks. The horizon sum holds those rosters fixed and preserves missing
+versus explicit zero projection evidence. This is a projected points
+comparison rather than V(R), a season forecast, or evidence of trade
+acceptance. [Trade Lab operation](USER_GUIDE.md#compare-projected-lineups-before-simulation)
 
 A manual scenario supplies exact ownership edits $(j,\text{from},\text{to})$ and protected player/team pins against a matching immutable baseline. A null source adds an unowned player; a null destination releases an owned player. Each player can be edited once, its source must match actual modeled ownership, teams/players must exist, and identical endpoints reject. Edits bind together, so a multi-team exchange does not need an artificial valid intermediate roster after every listed row. No duplicate ownership is permitted. Explicit releases need affirmative drop permission; an undroppable designation is not automatically a prohibition on transferring that player in a trade.
 

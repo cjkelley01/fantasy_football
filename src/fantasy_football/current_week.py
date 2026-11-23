@@ -70,11 +70,16 @@ def _reconciled_current_total(source_total, roster_total, actuals):
 
 
 def build_current_week_input(
-    snapshot: LeagueSnapshot, responses: Sequence[CapturedResponse]
+    snapshot: LeagueSnapshot,
+    responses: Sequence[CapturedResponse],
+    *,
+    projected_final: bool = False,
 ) -> MonteCarloPartialWeekInput:
     """Reject unsupported raw structures without leaking private source values."""
     try:
-        return _build_current_week_input(snapshot, responses)
+        return _build_current_week_input(
+            snapshot, responses, projected_final=projected_final
+        )
     except (
         KeyError,
         TypeError,
@@ -167,16 +172,8 @@ def _reconcile_standings_prefix(teams, schedule, prior_ids, regular_count):
     return settled
 
 
-def _build_current_week_input(
-    snapshot: LeagueSnapshot, responses: Sequence[CapturedResponse]
-) -> MonteCarloPartialWeekInput:
-    """Validate current source claims before granting partial execution.
-
-    Raw player-pool lock flags are checked against explicit NFL status. The
-    matchup's current-scoring-period roster is independent corroboration of the
-    canonical team roster. Standings must equal the completed historical prefix;
-    neither kickoff time nor today's date establishes any of these facts.
-    """
+def bind_current_week_sources(snapshot, responses):
+    """Bind current roster evidence to immutable snapshot sources before interpretation."""
     validate_snapshot(snapshot)
     _require(
         snapshot.snapshot_id is not None,
@@ -203,6 +200,8 @@ def _build_current_week_input(
         _require(
             source is not None
             and source.payload_sha256 == response.payload_sha256
+            and source.view == response.view
+            and source.parameters == response.parameters
             and hashlib.sha256(_raw_json_bytes(response.payload)).hexdigest()
             == source.payload_sha256,
             "Current-week source payload does not match immutable snapshot provenance.",
@@ -210,14 +209,36 @@ def _build_current_week_input(
         raw[response.source_id] = response
     initial = raw.get("league-initial")
     _require(
-        initial is not None
-        and {"mRoster", "mMatchup", "mStandings"} <= set(initial.view.split(",")),
-        "Current-week lineup and standings sources are unavailable.",
+        initial is not None and "mRoster" in initial.view.split(","),
+        "Current-week roster source is unavailable.",
     )
     root = initial.payload
     _require(
         root.get("scoringPeriodId") == week,
         "Source scoring period differs from the current snapshot.",
+    )
+    return live, raw, initial
+
+
+def _build_current_week_input(
+    snapshot: LeagueSnapshot,
+    responses: Sequence[CapturedResponse],
+    *,
+    projected_final: bool = False,
+) -> MonteCarloPartialWeekInput:
+    """Validate current source claims before granting partial execution.
+
+    Raw player-pool lock flags are checked against explicit NFL status. The
+    matchup's current-scoring-period roster is independent corroboration of the
+    canonical team roster. Standings must equal the completed historical prefix;
+    neither kickoff time nor today's date establishes any of these facts.
+    """
+    live, raw, initial = bind_current_week_sources(snapshot, responses)
+    week = live.current_scoring_period
+    root = initial.payload
+    _require(
+        {"mMatchup", "mStandings"} <= set(initial.view.split(",")),
+        "Current-week lineup and standings sources are unavailable.",
     )
     period = next(p for p in snapshot.matchup_periods if week in p.scoring_weeks)
     membership = live.current_matchup_period_scoring_weeks
@@ -331,9 +352,22 @@ def _build_current_week_input(
         elif game is None and player.nfl_team_id in bye_teams:
             state = PlayerScoreState.NONPARTICIPATING
         elif status is NFLGameStatus.IN_PROGRESS:
-            raise CurrentWeekEvidenceError(
-                "An NFL game is in progress; no approved remaining-performance model is available."
+            if not projected_final:
+                raise CurrentWeekEvidenceError(
+                    "An NFL game is in progress; no approved remaining-performance model is available."
+                )
+            _require(
+                lock
+                and observation is not None
+                and observation.actual_status is ScoreEvidenceStatus.CONFIRMED,
+                "An in-progress player's observed points or lineup lock is unverified.",
             )
+            actual = observation.actual_points
+            row = projections.get(pid)
+            if row is not None and row.raw_projection is not None:
+                projection = row.effective_projection
+            state = PlayerScoreState.IN_PROGRESS
+            remaining = RemainingContributionStatus.UNRESOLVED
         else:
             _require(
                 roles[entry.lineup_slot_id] is not LineupRole.STARTER,
@@ -414,10 +448,10 @@ def _build_current_week_input(
                     "Current scoring roster and player-pool lineup locks disagree.",
                 )
                 state = state_by_id[pid]
-                if (
-                    roles[slot] is LineupRole.STARTER
-                    and state.score_state is PlayerScoreState.COMPLETED_FIXED
-                ):
+                if roles[slot] is LineupRole.STARTER and state.score_state in {
+                    PlayerScoreState.COMPLETED_FIXED,
+                    PlayerScoreState.IN_PROGRESS,
+                }:
                     actuals.append(state.fixed_actual_points)
             points = data.get("pointsByScoringPeriod", {})
             current_points = points.get(str(week))
@@ -484,7 +518,9 @@ def _build_current_week_input(
             initial.source_id,
         ),
     )
-    require_executable_partial_week_evidence(snapshot, evidence)
+    require_executable_partial_week_evidence(
+        snapshot, evidence, projected_final=projected_final
+    )
     return MonteCarloPartialWeekInput(
         evidence,
         tuple(
