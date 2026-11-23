@@ -33,7 +33,7 @@ Current-week simulation uses verified final actuals for completed players and ex
 
 ## Install and launch safely
 
-Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writable checkout, 64-bit Python 3.12 with the `py` launcher, and Node **24.x, starting at 24.15.0**, with `npm.cmd` for the locked frontend toolchain. Python **3.12.10** and Node **24.19.0** are the recorded tested contributor versions, not a fresh clean-machine certification. Setup checks the stable three-part Node version and `npm.cmd` before installing dependencies; other major versions, Node below 24.15.0 and prereleases are rejected. `-VerifyOnly` checks an existing installation without requiring frontend-build prerequisites. **Node Toolchain Compatibility** remains In Review; clean-machine acceptance remains separate. Preserve dependency errors rather than forcing installation or updating locks.
+Use a trusted local Windows machine, PowerShell 5.1 or 7, Git, a private writable checkout, 64-bit Python 3.12 with the `py` launcher, and Node **24.x, starting at 24.15.0**, with `npm.cmd` for the locked frontend toolchain. Python **3.12.10** and Node **24.19.0** are the recorded tested contributor versions, not a fresh clean-machine certification. Setup checks the stable three-part Node version and `npm.cmd` before installing dependencies; other major versions, Node below 24.15.0 and prereleases are rejected. `-VerifyOnly` checks an existing installation without requiring frontend-build prerequisites. **Node Toolchain Compatibility** was accepted in [PR #156](https://github.com/tdkelley2001/fantasy_football/pull/156). Clean-machine acceptance remains separate. Preserve dependency errors rather than forcing installation or updating locks.
 
 1. Open PowerShell and obtain the repository:
 
@@ -247,7 +247,7 @@ The current Simulation Center export downloads **run metadata JSON only**, not a
 |---|---|
 | Immutable snapshot SQLite, normally `outputs/fantasy_football.sqlite3` | Published source evidence remains after shutdown. Do not edit canonical rows or remove it to retry an analysis. |
 | Application run SQLite, normally `outputs/fantasy_football.runs.sqlite3` | Separately bounded retained runs/results/lease state. Custom snapshot databases have an adjacent `.runs.sqlite3` file. Expiry/deletion follows current policy, not perpetual history or a promised continuous cleanup timer. |
-| Temporary engine search scratch | Execution-owned indexes/queues; not permanent application history. Known later-failure cleanup work remains Search Scratch Cleanup. |
+| Temporary engine search scratch | Execution-owned indexes/queues; not permanent application history. The engine closes temporary indexes on failure before result handoff. See [Search Scratch Cleanup](TECHNICAL_REFERENCE.md#ownership-and-lifetime). |
 | Numerical recovery checkpoints | Independent numerical lifecycle/identity, not automatic application restart or an unlimited archive; cleanup/expiry obligations remain open. |
 | Explicit exported files | Your files; normal application/index cleanup must not silently delete or reimport them. |
 | Logs/runtime metadata | Private `outputs/logs/war-room-<run-id>.stdout.log` / `.stderr.log`, plus `outputs/runtime/war-room-server.json` ownership and `war-room-shutdown.txt` control; preserve them for authenticated stop/recovery. |
@@ -284,7 +284,7 @@ After a verified shutdown, use the normal start command to reopen. Foreground de
 | Slow/capped run or pending cancellation | Inspect actual work/resource/precision status; page size is not a computation bound. Cancellation is cooperative, not a reason to kill an unknown process. |
 | Missing older result | Check current snapshot, browser history limits, expiry and deletion. A viewer cannot reconstruct data that is no longer retained. |
 
-Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, independent acceptance of Node Toolchain Compatibility and clean-machine/release evidence remain outstanding; neither setup success nor this guide declares release readiness.
+Invalid Host/Origin errors require the printed loopback URL or documented Vite proxy, not weaker guards. Procedures are source-checked against [setup](../scripts/setup-local.ps1), [start](../scripts/start-local.ps1), [stop](../scripts/stop-local.ps1) and [settings](../src/fantasy_football/config.py); they are not newly executed clean-machine or process verification. Current source/rule limits, provisional projections, clean-machine/release evidence remain outstanding; neither setup success nor this guide declares release readiness.
 
 ## Advanced existing CLI workflows
 
