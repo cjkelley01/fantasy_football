@@ -6,7 +6,7 @@ import type { CglHistory } from "./types/api";
 
 const season = (year: number, name: string): CglHistory["seasons"][number] => ({
   season: year, champion_team_id: 1,
-  teams: [{ team_id: 1, team_name: name, final_rank: 1,
+  teams: [{ team_id: 1, team_name: name, manager_ids: [], final_rank: 1,
     regular_season: { wins: 1, losses: 0, ties: 0, points_for: 12, points_against: 0 } }],
   matchups: [{ matchup_id: 1, scoring_periods: [15], stage: "championship_playoffs",
     playoff_round: 1, home_team_id: 1, away_team_id: null, home_score: null,

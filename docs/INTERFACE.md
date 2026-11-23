@@ -158,6 +158,8 @@ Completed runs navigate by explicit preferred run ID and matching snapshot: base
 
 ## Season Archive
 
+When the header has a manager selected for the archive's league, the selected season shows that manager's archived team, final rank and regular-season record for a unique mapping. Missing or ambiguous team mappings are shown above the full standings.
+
 The local Season Archive reads completed CGL history from the backend independently of analytical snapshot selection. It shows final standings, champion, championship series and byes, regular-season results, and archive revision. The selected year defaults to the latest completed entry. Missing configuration, empty history and a request failure have distinct messages. The season picker updates the URL. A direct link such as `/history/seasons/2025` opens that year, and an unavailable year shows an explicit message. Browser Back and Forward restore the workspace and archive year independently of the analytical snapshot.
 
 ## Accessibility and responsive behavior

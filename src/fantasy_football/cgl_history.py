@@ -51,6 +51,7 @@ class HistoryTeam(_Record):
     team_id: PositiveId
     team_season_id: Name
     team_name: Name
+    manager_ids: tuple[Name, ...] = ()
     final_rank: PositiveId
     playoff_seed: PositiveId | None
     regular_season: Standing
@@ -149,6 +150,10 @@ def _project_season(source: _CompletedSeasonInput) -> HistorySeason:
     if len(teams) != len(source.teams):
         raise CglHistoryError(f"season {year}: duplicate team ID")
     for team in source.teams:
+        if len(set(team.manager_ids)) != len(team.manager_ids):
+            raise CglHistoryError(
+                f"season {year}, team {team.team_id}: duplicate manager identity"
+            )
         if team.season != year or team.team_season_id != f"{year}:{team.team_id}":
             raise CglHistoryError(
                 f"season {year}, team {team.team_id}: invalid team-season identity"

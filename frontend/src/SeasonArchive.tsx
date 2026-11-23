@@ -6,10 +6,11 @@ const points = new Intl.NumberFormat(undefined, { maximumFractionDigits: 15 });
 const score = (value: number | null) => value === null ? "Unavailable" : points.format(value);
 type Season = CglHistory["seasons"][number];
 
-export function SeasonArchive({ initialYear, focusBracket = false, onYearChange }: {
+export function SeasonArchive({ initialYear, focusBracket = false, onYearChange, manager }: {
   initialYear?: number;
   focusBracket?: boolean;
   onYearChange?: (year: number) => void;
+  manager?: { leagueId: number; id: string; name: string };
 }) {
   const [history, setHistory] = useState<CglHistory | null>();
   const [year, setYear] = useState(initialYear);
@@ -46,15 +47,28 @@ export function SeasonArchive({ initialYear, focusBracket = false, onYearChange 
     {error ? <p role="alert">CGL history could not be loaded from the local service.</p>
       : history === undefined ? <p role="status">Loading season history…</p>
       : history === null ? <p>CGL history is not configured.</p>
-      : season ? <SeasonResults key={season.season} season={season} revision={history.source.revision} focusBracket={(onYearChange ? focusBracket : focusInitialBracket) && season.season === initialYear} />
+      : season ? <SeasonResults key={season.season} season={season} revision={history.source.revision} manager={manager?.leagueId === history.league_id ? manager : undefined} focusBracket={(onYearChange ? focusBracket : focusInitialBracket) && season.season === initialYear} />
       : requestedYear !== undefined ? <p>Completed results for {requestedYear} are unavailable in this archive.</p>
       : <p>The configured archive contains no completed seasons.</p>}
   </div>;
 }
 
-function SeasonResults({ season, revision, focusBracket }: { season: Season; revision: string; focusBracket: boolean }) {
+function SeasonResults({ season, revision, focusBracket, manager }: {
+  season: Season;
+  revision: string;
+  focusBracket: boolean;
+  manager?: { id: string; name: string };
+}) {
   const names = new Map(season.teams.map(team => [team.team_id, team.team_name]));
+  const managerTeams = manager ? season.teams.filter(team => team.manager_ids?.includes(manager.id)) : [];
+  const managerTeam = managerTeams.length === 1 ? managerTeams[0] : undefined;
   return <>
+    {manager && <section className="card">
+      <div className="card-head"><h2>{manager.name} in {season.season}</h2><span>Archived standings</span></div>
+      <p>{managerTeam ? <><strong>{managerTeam.team_name}</strong> · Final rank {managerTeam.final_rank} · Regular season {managerTeam.regular_season.wins}–{managerTeam.regular_season.losses}–{managerTeam.regular_season.ties}</>
+        : managerTeams.length > 1 ? "This archive lists this manager on multiple teams for this season."
+        : "This archive has no team mapping for this manager in this season."}</p>
+    </section>}
     <section className="card">
       <div className="card-head">
         <h2>{season.season} final standings</h2>

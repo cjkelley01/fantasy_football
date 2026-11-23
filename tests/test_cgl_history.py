@@ -25,6 +25,7 @@ def history_files(tmp_path):
             "team_id": team_id,
             "team_season_id": f"2025:{team_id}",
             "team_name": name,
+            **({"manager_ids": ["manager-a", "manager-b"]} if team_id == 1 else {}),
             "final_rank": team_id,
             "playoff_seed": team_id,
             "regular_season": standing.copy(),
@@ -95,6 +96,7 @@ def test_projects_only_completed_history_and_preserves_explicit_score_evidence(
     history = load_cgl_history(*write(), expected_league_id=7)
     (season,) = history.seasons
     assert (season.season, season.champion_team_id) == (2025, 1)
+    assert [team.manager_ids for team in season.teams] == [("manager-a", "manager-b"), ()]
     bye, final = season.matchups
     assert bye.away_team_id is None and bye.away_score is None
     assert (final.home_score, final.away_score, final.scoring_periods) == (
@@ -135,6 +137,7 @@ def test_history_route_serves_only_the_completed_projection(
         ("schema", "unsupported archive schema 3; expected 2"),
         ("league", "archive league does not match the configured league"),
         ("team", "season 2025: duplicate team ID"),
+        ("manager", "season 2025, team 1: duplicate manager identity"),
         ("reference", "matchup 2: invalid or unresolved matchup team reference"),
         ("champion", "champion and championship result disagree"),
         ("score", "season 2025: invalid home_score"),
@@ -150,6 +153,8 @@ def test_rejects_invalid_history(history_files, problem, message):
         data["league_id"] = 8
     elif problem == "team":
         season["teams"].append(deepcopy(season["teams"][0]))
+    elif problem == "manager":
+        season["teams"][0]["manager_ids"].append("manager-a")
     elif problem == "reference":
         final["away_team_id"] = 9
     elif problem == "champion":

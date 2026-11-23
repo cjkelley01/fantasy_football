@@ -307,6 +307,7 @@ export interface CglHistory {
     teams: {
       team_id: number;
       team_name: string;
+      manager_ids: string[];
       final_rank: number;
       regular_season: { wins: number; losses: number; ties: number; points_for: number; points_against: number };
     }[];

@@ -66,6 +66,43 @@ test("moves keyboard focus to the destination after mobile navigation", async ()
   expect(screen.getByRole("main")).toHaveFocus();
 });
 
+test("resolves archive seasons by the selected manager identity, including co-owners", async () => {
+  const team = { team_id: 14, team_name: "Archived Harbor", final_rank: 1,
+    regular_season: { wins: 3, losses: 0, ties: 0, points_for: 12, points_against: 0 } };
+  const key = `war-room-manager:${snapshot.league_id}:${snapshot.season}`;
+  localStorage.removeItem(key);
+  mockApi({
+    managers: { snapshot_id: snapshot.snapshot_id, default_team_id: 1, unresolved_owner_count: 0,
+      choices: [
+        { manager_id: "manager-a", display_name: "Avery", team_id: 1, is_primary: true },
+        { manager_id: "manager-b", display_name: "Blair", team_id: 1, is_primary: false },
+      ] },
+    history: { league_id: snapshot.league_id, source: { revision: "a".repeat(40) },
+      seasons: [
+        { season: 2024, champion_team_id: 14, teams: [{ ...team, manager_ids: ["manager-a"] }], matchups: [] },
+        { season: 2025, champion_team_id: 14, teams: [{ ...team, manager_ids: ["manager-a", "manager-b"] }], matchups: [] },
+        { season: 2026, champion_team_id: 14, teams: [
+          { ...team, manager_ids: ["manager-a", "manager-b"] },
+          { ...team, team_id: 15, team_name: "Archived Union", final_rank: 2, manager_ids: ["manager-b"] },
+        ], matchups: [] },
+      ] },
+  });
+  window.history.replaceState(null, "", "/history/seasons/2025");
+  const user = userEvent.setup();
+  render(<App />);
+  expect(await screen.findByRole("heading", { name: "Avery in 2025" })).toBeInTheDocument();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Manager perspective" }), JSON.stringify(["manager-b", 1]));
+  expect(screen.getByRole("heading", { name: "Blair in 2025" })).toBeInTheDocument();
+  expect(screen.getByText(/Final rank 1/)).toBeInTheDocument();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Season" }), "2024");
+  expect(screen.getByText(/no team mapping/)).toBeInTheDocument();
+  await user.selectOptions(screen.getByRole("combobox", { name: "Season" }), "2026");
+  expect(screen.getByText(/lists this manager on multiple teams/)).toBeInTheDocument();
+  expect(within(screen.getByRole("table", { name: "Final standings" })).getByText("Archived Union")).toBeInTheDocument();
+  expect(localStorage.getItem("war-room-snapshot")).toBe(snapshot.snapshot_id);
+  localStorage.removeItem(key);
+});
+
 test("browses verified results and scheduled pairings without mixing their scores", async () => {
   mockApi({
     detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } },
