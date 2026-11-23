@@ -6,7 +6,7 @@ For operating steps use [USER_GUIDE](USER_GUIDE.md); [HTTP API, DTOs and evoluti
 
 - [Visual standards](#visual-first-design-standard), [journey](#user-journey-and-navigation)
 - [Identity and requests](#identity-and-request-isolation), [interpretation and units](#analytical-presentation-and-units)
-- [League Overview](#league-overview), [Opportunity Explorer](#opportunity-explorer)
+- [League Overview](#league-overview), [Playoff Race](#playoff-race), [Opportunity Explorer](#opportunity-explorer)
 - [Trade Lab](#trade-lab), [Simulation Center](#simulation-center)
 - [Accessibility](#accessibility-and-responsive-behavior), [limitations](#limitations-and-future-work)
 - [Source/tests and visual evidence](#source-tests-and-visual-evidence)
@@ -29,11 +29,11 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home contains Dashboard, and My Team contains Team Overview.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview, League Matchups, Playoff Race and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home contains Dashboard, and My Team contains Team Overview.
 
 | Task | Workspace |
 |---|---|
-| Understand league outlook | Submit a baseline in Simulation Center; inspect its retained result in League Overview. Without a usable result, observed standings remain explicitly factual. |
+| Understand league outlook | Submit a baseline in Simulation Center; inspect its retained result in Playoff Race. Without a usable result, observed standings remain explicitly factual. |
 | Explore hypothetical actions | Configure a finite universe in Simulation Center; inspect retained paths/effects in Opportunity Explorer. |
 | Test a specific exchange | Commit a Trade Lab draft, review pins/settings and intentionally evaluate aggregate final ownership. |
 | Follow or reopen work | Monitor/cancel/select retained runs in Simulation Center and navigate to their matching result workspace. |
@@ -74,9 +74,11 @@ Confidence intervals measure Monte Carlo sampling uncertainty, not model error. 
 
 ## League Overview
 
-The overview leads with observed standings and the known team pairings for the snapshot's current scoring period. Recent results shows the latest prior regular-season period only when the captured ESPN schedule reconciles to that snapshot's standings. Results are as of the snapshot and can change with later stat corrections. Incomplete or conflicting evidence has an explicit unavailable state. A configured archive for the same league supplies the latest completed championship before the active snapshot's season. The bracket shortcut opens that year in Season Archive and leaves the active snapshot unchanged. The projected baseline and retained War Room forecast remain separately labeled below the observed and historical sections.
+The overview leads with observed standings and the known team pairings for the snapshot's current scoring period. Recent results shows the latest prior regular-season period only when the captured ESPN schedule reconciles to that snapshot's standings. Results are as of the snapshot and can change with later stat corrections. Incomplete or conflicting evidence has an explicit unavailable state. A configured archive for the same league supplies the latest completed championship before the active snapshot's season. The bracket shortcut opens that year in Season Archive and leaves the active snapshot unchanged. The projected baseline remains separately labeled below the observed and historical sections. Open Playoff Race for retained Monte Carlo results.
 
-Select a retained completed baseline with available result for the active snapshot. The newest usable matching run is the deterministic default (finish/creation time, then run ID); explicit selection or a preferred run from Simulation Center changes the complete evidence context. The viewer never submits work.
+## Playoff Race
+
+Open Playoff Race from Home, League Overview, or an applicable retained baseline in Simulation Center. Select a retained completed baseline with available result for the active snapshot. The newest usable matching run is the deterministic default (finish/creation time, then run ID); explicit selection or a preferred run from Simulation Center changes the complete evidence context. The viewer never submits work.
 
 | Implemented form | Meaning |
 |---|---|

@@ -6,7 +6,7 @@ import type { BackgroundRunRecord, SnapshotSummary } from "./types/api";
 
 const snapshotTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loaded", openTeam, openMatchups, openLeague, openSimulation, openTrades, openOpportunities }: {
+export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loaded", openTeam, openMatchups, openLeague, openPlayoffRace, openSimulation, openTrades, openOpportunities }: {
   snapshot: SnapshotSummary;
   projection?: ProjectedSeasonState;
   runs?: readonly BackgroundRunRecord[];
@@ -16,6 +16,7 @@ export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loa
   openTeam: () => void;
   openMatchups: () => void;
   openLeague: () => void;
+  openPlayoffRace: () => void;
   openSimulation: () => void;
 }) {
   const state = useManagerPerspective(snapshot);
@@ -83,8 +84,9 @@ export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loa
     <section className="analytics-panel home-summary">
       <h2>Monte Carlo outlook</h2>
       <p>{runListStatus === "loading" ? "Checking retained Monte Carlo runs." :
-        runListStatus === "unavailable" ? "Retained Monte Carlo results are unavailable." : hasRetainedBaseline ? "A retained run is listed for this snapshot. View compatible probability estimates and sampling intervals in League Overview." :
+        runListStatus === "unavailable" ? "Retained Monte Carlo results are unavailable." : hasRetainedBaseline ? "A retained run is listed for this snapshot. View compatible probability estimates and sampling intervals in Playoff Race." :
         "No retained baseline for this snapshot. Request Monte Carlo in Simulation Center for probability estimates."}</p>
+      <button type="button" onClick={openPlayoffRace}>Open Playoff Race</button>
     </section>
     <nav className="home-shortcuts" aria-label="League and analysis shortcuts">
       {!projection && <button className="primary-button" type="button" onClick={openLeague}>Open League Overview</button>}

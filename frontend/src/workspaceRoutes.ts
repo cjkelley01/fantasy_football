@@ -4,6 +4,7 @@ const paths = {
   opportunities: "/players-moves/opportunities",
   trades: "/players-moves/trade-lab",
   league: "/league/overview",
+  playoffs: "/league/playoff-race",
   matchups: "/league/matchups",
   insights: "/league/insights",
   history: "/history/seasons",
