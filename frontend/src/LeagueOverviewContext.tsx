@@ -53,11 +53,15 @@ export function ObservedScoresTable({ snapshot, result, label }: {
   </table></div>;
 }
 
-export function CurrentMatchups({ snapshot }: { snapshot: SnapshotSummary }) {
+export function currentMatchupPeriod(snapshot: SnapshotSummary) {
   const week = snapshot.live_scoring?.current_scoring_period;
-  const period = snapshot.matchup_periods.find(item =>
+  return snapshot.matchup_periods.find(item =>
     week !== undefined && item.scoring_weeks.includes(week),
   );
+}
+
+export function CurrentMatchups({ snapshot }: { snapshot: SnapshotSummary }) {
+  const period = currentMatchupPeriod(snapshot);
   const teams = new Map(snapshot.teams.map(team => [team.team_id, team.display_name]));
   const matchups = period ? snapshot.matchups.flatMap(item => {
     if (item.matchup_period_id !== period.matchup_period_id ||

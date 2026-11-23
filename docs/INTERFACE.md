@@ -29,7 +29,7 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. My Team contains Team Overview. Home joins the navigation when its first workflow is available.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home contains Dashboard, and My Team contains Team Overview.
 
 | Task | Workspace |
 |---|---|
@@ -67,6 +67,10 @@ The frontend formats supplied results; it does not recompute probabilities, inte
 Confidence intervals measure Monte Carlo sampling uncertainty, not model error. Incomplete paths/capabilities need prominent qualification: estimates conditional on completed valid paths are not unconditional league probabilities. Never silently renormalize missing work or call capped output exhaustive. A visible positive difference is not automatically significant; competitive does not mean confirmed best. Numerical attractiveness does not prove authorization or waiver success. Observed standings/points/seeds remain snapshot facts, not forecasts.
 
 [Monte Carlo](METHODOLOGY.md#monte-carlo-simulation-and-estimators), [manual scenarios](METHODOLOGY.md#manual-scenarios-and-action-search-methodology) and [search](METHODOLOGY.md#manual-scenarios-and-action-search-methodology) own formulas, paired sampling, multiplicity and stopping. The interface does not redefine them.
+
+## Dashboard
+
+**Home → Dashboard** uses the same remembered manager perspective as Team Overview. It shows the selected team's observed record, standing, points for and known matchup in the snapshot's current scoring period. The snapshot timestamp identifies the evidence. The roster and league matchup shortcuts open the full views. League Overview and Simulation Center remain reachable before a manager is selected. League Overview remains the default landing page in this local slice.
 
 ## League Overview
 

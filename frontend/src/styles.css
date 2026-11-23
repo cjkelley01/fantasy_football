@@ -193,3 +193,11 @@ main { min-width:0; }.surface{padding:42px clamp(20px,4vw,64px) 72px;max-width:1
 @media (max-width: 1250px) {
   .overview-source-grid { grid-template-columns: minmax(0, 1fr); }
 }
+
+.home-summary { padding: 18px; }
+.home-summary h2 { margin-top: 0; }
+.home-summary p { color: var(--muted); }
+.home-summary dl { display: flex; flex-wrap: wrap; gap: 16px; }
+.home-summary dt { color: var(--muted); font-size: 12px; }
+.home-summary dd { margin: 2px 0 0; font-weight: 700; }
+.home-shortcuts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }

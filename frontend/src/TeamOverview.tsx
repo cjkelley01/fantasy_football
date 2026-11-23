@@ -1,63 +1,15 @@
-import { useEffect, useState } from "react";
-import { api } from "./lib/api";
-import type { ManagerPerspective, ManagerPerspectives, SnapshotSummary } from "./types/api";
-
-const perspectiveKey = (choice: ManagerPerspective) => JSON.stringify([choice.manager_id, choice.team_id]);
+import { ManagerSelectionStatus, ManagerSelector, useManagerPerspective } from "./ManagerPerspective";
+import type { SnapshotSummary } from "./types/api";
 
 export function TeamOverview({ snapshot }: { snapshot: SnapshotSummary }) {
-  const [managers, setManagers] = useState<ManagerPerspectives | null>();
-  const [error, setError] = useState(false);
-  const [selected, setSelected] = useState("");
-  const storageKey = `war-room-manager:${snapshot.league_id}:${snapshot.season}`;
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void api.snapshotManagers(snapshot.snapshot_id, controller.signal).then(
-      result => {
-        if (controller.signal.aborted) return;
-        if (result && result.snapshot_id !== snapshot.snapshot_id) {
-          setError(true);
-          return;
-        }
-        setManagers(result);
-        const remembered = localStorage.getItem(storageKey);
-        setSelected(result?.choices.some(choice => perspectiveKey(choice) === remembered)
-          ? remembered ?? "" : "");
-      },
-      () => { if (!controller.signal.aborted) setError(true); },
-    );
-    return () => controller.abort();
-  }, [snapshot.snapshot_id, storageKey]);
-
-  const choices = managers?.choices ?? [];
-  const perspective = choices.find(choice => perspectiveKey(choice) === selected);
-  const teams = new Map(snapshot.teams.map(team => [team.team_id, team]));
-  const team = perspective && teams.get(perspective.team_id);
-
+  const state = useManagerPerspective(snapshot);
   return <div className="surface">
-    <section className="hero"><div><h1>Team Overview</h1>
-      <p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p>
-    </div>
-    {choices.length > 0 && <label className="snapshot-control">
-      <span>Manager perspective</span>
-      <select aria-label="Manager perspective" value={selected} onChange={event => {
-        const value = event.target.value;
-        setSelected(value);
-        if (value) localStorage.setItem(storageKey, value);
-        else localStorage.removeItem(storageKey);
-      }}>
-        <option value="">Choose a manager</option>
-        {choices.map(choice => <option key={perspectiveKey(choice)} value={perspectiveKey(choice)}>
-          {choice.display_name} · {teams.get(choice.team_id)?.display_name}
-        </option>)}
-      </select>
-    </label>}
+    <section className="hero">
+      <div><h1>Team Overview</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p></div>
+      <ManagerSelector state={state}/>
     </section>
-    {error ? <p role="alert">Manager perspectives could not be verified for this snapshot.</p>
-      : managers === undefined ? <p role="status">Loading manager perspectives…</p>
-      : choices.length === 0 ? <p>No mapped manager perspectives are available for this snapshot.</p>
-      : team ? <ObservedTeam snapshot={snapshot} team={team} />
-      : <p>Choose a manager to view their team in this snapshot.</p>}
+    {state.team ? <ObservedTeam snapshot={snapshot} team={state.team}/>
+      : <ManagerSelectionStatus state={state}/>}
   </div>;
 }
 

@@ -47,21 +47,26 @@ test("browses verified results and scheduled pairings without mixing their score
 test("remembers a manager perspective without changing the active snapshot", async () => {
   const key = `war-room-manager:${snapshot.league_id}:${snapshot.season}`;
   localStorage.removeItem(key);
-  mockApi({ managers: { snapshot_id: snapshot.snapshot_id, unresolved_owner_count: 1,
+  mockApi({ detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } },
+    managers: { snapshot_id: snapshot.snapshot_id, unresolved_owner_count: 1,
     choices: [{ manager_id: "manager-a", display_name: "Avery", team_id: 1, is_primary: true }] } });
   const user = userEvent.setup();
   render(<App />);
   await screen.findByRole("heading", { name: "Current league standings" });
-  await user.click(screen.getByRole("button", { name: "Team Overview" }));
+  await user.click(screen.getByRole("button", { name: "Dashboard" }));
   const selector = await screen.findByRole("combobox", { name: "Manager perspective" });
   const value = JSON.stringify(["manager-a", 1]);
   expect(selector).toHaveValue("");
   await user.selectOptions(selector, value);
   expect(screen.getByRole("heading", { name: "North Harbor" })).toBeInTheDocument();
-  expect(screen.getByText("Sanitized Player")).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: "League Overview" }));
-  await user.click(screen.getByRole("button", { name: "Team Overview" }));
+  expect(screen.getByText("Home vs. Red Zone Club")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "View team roster" }));
+  expect(await screen.findByText("Sanitized Player")).toBeInTheDocument();
   expect(await screen.findByRole("combobox", { name: "Manager perspective" })).toHaveValue(value);
+  await user.click(screen.getByRole("button", { name: "Dashboard" }));
+  expect(await screen.findByRole("combobox", { name: "Manager perspective" })).toHaveValue(value);
+  await user.click(screen.getByRole("button", { name: "View league matchups" }));
+  expect(screen.getByRole("heading", { name: "League Matchups" })).toBeInTheDocument();
   expect(localStorage.getItem("war-room-snapshot")).toBe(snapshot.snapshot_id);
   localStorage.removeItem(key);
 });
