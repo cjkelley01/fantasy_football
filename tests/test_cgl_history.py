@@ -3,7 +3,9 @@ import json
 from copy import deepcopy
 
 import pytest
+from fastapi.testclient import TestClient
 
+from fantasy_football.app.http import create_app
 from fantasy_football.cgl_history import CglHistoryError, load_cgl_history
 
 
@@ -110,6 +112,21 @@ def test_wrong_digest_prevents_parsing_and_preserves_previous_value(history_file
     with pytest.raises(CglHistoryError, match="archive SHA-256 mismatch"):
         active = load_cgl_history(archive, source, expected_league_id=7)
     assert active.seasons[0].champion_team_id == 1
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_history_route_serves_only_the_completed_projection(
+    history_files, tmp_path, configured
+):
+    _, write = history_files
+    history = load_cgl_history(*write(), expected_league_id=7) if configured else None
+    with TestClient(
+        create_app(database_path=tmp_path / "snapshots.db", history=history)
+    ) as client:
+        response = client.get("/api/v1/history/cgl")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == (history.model_dump(mode="json") if history else None)
 
 
 @pytest.mark.parametrize(

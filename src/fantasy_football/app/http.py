@@ -52,6 +52,7 @@ from fantasy_football.app.service import (
     ApplicationService,
     ApplicationServiceError,
 )
+from fantasy_football.cgl_history import CglHistory
 from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.monte_carlo import MonteCarloError
 from fantasy_football.monte_carlo_precision import PrecisionError
@@ -82,6 +83,7 @@ def create_app(
     refresh_coordinator: SnapshotRefreshCoordinator | None = None,
     frontend_directory: str | Path | None = None,
     launcher_run_id: str | None = None,
+    history: CglHistory | None = None,
 ) -> FastAPI:
     """Construct the credential-free local API with injectable storage/services."""
 
@@ -256,6 +258,11 @@ def create_app(
             process_id=os.getpid(),
             launcher_run_id=launcher_run_id,
         )
+
+    @app.get("/api/v1/history/cgl", response_model=CglHistory | None)
+    def cgl_history(response: Response) -> CglHistory | None:
+        response.headers["Cache-Control"] = "no-store"
+        return history
 
     @app.get("/api/v1/snapshots", response_model=tuple[SnapshotSummary, ...])
     def snapshots(

@@ -140,6 +140,10 @@ Cancellation requires backend acknowledgement and is cooperative; committed comp
 
 Completed runs navigate by explicit preferred run ID and matching snapshot: baseline → Overview, search → Explorer, manual → Trade Lab. Viewers independently validate provenance. Expired/deleted results stay unavailable. Export is **retrieved run metadata JSON only**, labeled scope/timestamp units/snapshot/checksum/run, not full candidate/state universes or saved request configuration. Numerical checkpoints are separate from interrupted application jobs and unsupported HTTP resume.
 
+## Season Archive
+
+The local Season Archive reads completed CGL history from the backend independently of analytical snapshot selection. It shows final standings, champion, championship series and byes, regular-season results, and archive revision. The selected year defaults to the latest completed entry. Missing configuration, empty history and a request failure have distinct messages. The wider sidebar and archive deep links remain part of WR-027's later navigation work.
+
 ## Accessibility and responsive behavior
 
 Exact text/accessibility labels accompany graphics; status cannot rely on color. Use native keyboard controls, visible focus, skip navigation, semantic headings and explicit loading/error/empty states. The placement matrix has a semantic table and narrow-screen local scroll rather than page overflow. Charts/detail collapse, Explorer links View selected path, paired rosters stack without dragging. Dark/light tokens and reduced-motion CSS support accessible contrast and motion.

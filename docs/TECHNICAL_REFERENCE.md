@@ -461,6 +461,7 @@ Path braces identify required URL strings; body `none` means no JSON body parame
 | Method | Route | Body DTO | Success DTO | HTTP |
 |---|---|---|---|---:|
 | GET | `/api/v1/health` | `none` | `HealthResponse` | 200 |
+| GET | `/api/v1/history/cgl` | `none` | `CglHistory` or JSON null | 200 |
 | GET | `/api/v1/snapshots` | `none` | `array[SnapshotSummary]` | 200 |
 | GET | `/api/v1/snapshots/{snapshot_id}` | `none` | `SnapshotSummary` | 200 |
 | GET | `/api/v1/refresh/profile` | `none` | `LeagueRefreshProfile` | 200 |

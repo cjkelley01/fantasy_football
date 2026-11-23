@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -38,11 +39,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     import uvicorn
 
     from fantasy_football.app.http import create_app
+    from fantasy_football.cgl_history import CglHistoryError, load_cgl_history
+
+    history = None
+    archive = os.environ.get("WAR_ROOM_HISTORY_ARCHIVE")
+    source = os.environ.get("WAR_ROOM_HISTORY_SOURCE")
+    league = os.environ.get("WAR_ROOM_HISTORY_LEAGUE_ID")
+    if any(value is not None for value in (archive, source, league)):
+        if (
+            not archive or not source or not league
+            or not league.isascii() or not league.isdecimal()
+        ):
+            parser.error(
+                "Configure WAR_ROOM_HISTORY_ARCHIVE, WAR_ROOM_HISTORY_SOURCE, "
+                "and WAR_ROOM_HISTORY_LEAGUE_ID together."
+            )
+        try:
+            history = load_cgl_history(
+                Path(archive), Path(source), expected_league_id=int(league)
+            )
+        except CglHistoryError as error:
+            parser.error(str(error))
 
     app = create_app(
         database_path=args.database,
         frontend_directory=args.frontend,
         launcher_run_id=args.run_id,
+        history=history,
     )
     configuration = uvicorn.Config(app, host=LOOPBACK_HOST, port=args.port)
     server = uvicorn.Server(configuration)

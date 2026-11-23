@@ -268,3 +268,28 @@ export interface ApiErrorEnvelope {
     readonly context: Readonly<Record<string, string | number | boolean | null>>;
   };
 }
+export interface CglHistory {
+  league_id: number;
+  source: { revision: string; sha256: string };
+  seasons: {
+    season: number;
+    champion_team_id: number;
+    teams: {
+      team_id: number;
+      team_name: string;
+      final_rank: number;
+      regular_season: { wins: number; losses: number; ties: number; points_for: number; points_against: number };
+    }[];
+    matchups: {
+      matchup_id: number;
+      scoring_periods: number[];
+      stage: "regular_season" | "championship_playoffs";
+      playoff_round: number | null;
+      home_team_id: number | null;
+      away_team_id: number | null;
+      home_score: number | null;
+      away_score: number | null;
+      winner: "HOME" | "AWAY" | "TIE" | "UNDECIDED";
+    }[];
+  }[];
+}

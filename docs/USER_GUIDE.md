@@ -134,6 +134,12 @@ If refresh reports a late error, inspect any publication identity/committed indi
 
 Missing projections are not confirmed actual zeros or proof a player will not participate. Policy-imputed zeros and explicit ESPN zeros remain distinct. A snapshot passing preservation validation can still lack an analytical capability. Inspect the finding; do not edit the snapshot or supply guessed evidence. Startup selects the newest saved snapshot for the configured league/season; saved snapshots remain in league context. Set `WAR_ROOM_AUTO_REFRESH=true` in local configuration to opt into read-only retrieval on startup; the default displays cached data and offers **Refresh now**. The header shows the actual league name and retrieval time; cached data is not a claim of a fresh ESPN observation.
 
+## Browse the local Season Archive
+
+Configure `WAR_ROOM_HISTORY_ARCHIVE` with the local schema-2 archive path, `WAR_ROOM_HISTORY_SOURCE` with its JSON source record containing `revision` and `sha256`, and `WAR_ROOM_HISTORY_LEAGUE_ID` with the matching ESPN league ID. Set all three process environment variables in the terminal before starting War Room. Absolute paths let the launcher resolve the files consistently. Keep both files outside Git.
+
+The server validates the pair on startup and serves the completed-season projection to **Season Archive**. A bad or incomplete configuration fails startup with a diagnostic. An app started without any of these variables remains usable and reports that history is unconfigured. To adopt a newer valid archive, restart with its matching source record. The app keeps serving its validated in-memory history while running.
+
 ## Run a baseline and evaluate hypothetical changes
 
 Baseline, Trade Lab and action search use the [mandatory marginal-lineup roster policy](TECHNICAL_REFERENCE.md#automatic-roster-execution) for new simulations. When a required acquisition needs a drop, the policy uses the approved full-horizon lineup valuation and snapshot ownership evidence. Missing evidence required for a drop stops the run. Retained historical results keep their original policy and identity.
