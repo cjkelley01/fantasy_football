@@ -145,6 +145,7 @@ class DeterministicPlayerValue:
     unstarted_realized_points: float | None = None
     approved_remaining_points: float | None = None
     projected_final_points: float | None = None
+    sampled_final_points: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -760,17 +761,23 @@ def compose_partial_week_scores(
     *,
     effective_owners: dict[int, int] | None = None,
     projected_final: bool = False,
+    sampled_final: bool = False,
 ) -> PartialWeekScoreComposition:
     """Combine fixed, supplied remaining, and carry-in values exactly once."""
 
-    if type(projected_final) is not bool:
-        _fail("Projected-final scoring requires an explicit boolean mode.")
+    if (
+        type(projected_final) is not bool
+        or type(sampled_final) is not bool
+        or (projected_final and sampled_final)
+    ):
+        _fail("Final scoring requires one explicit projected or sampled mode.")
+    full_game_final = projected_final or sampled_final
     require_executable_partial_week_evidence(
-        snapshot, evidence, projected_final=projected_final
+        snapshot, evidence, projected_final=full_game_final
     )
     projections = {}
     observations = {}
-    if projected_final:
+    if full_game_final:
         projections = {
             row.player_id: row
             for row in snapshot.player_weeks
@@ -793,6 +800,7 @@ def compose_partial_week_scores(
             ("unstarted realized", value.unstarted_realized_points),
             ("approved remaining", value.approved_remaining_points),
             ("projected final", value.projected_final_points),
+            ("sampled final", value.sampled_final_points),
         ):
             if points is not None:
                 _finite(points, f"player {value.player_id} {field}")
@@ -839,14 +847,17 @@ def compose_partial_week_scores(
                 )
         elif state.score_state is PlayerScoreState.IN_PROGRESS:
             fixed = float(state.fixed_actual_points)
-            if (
-                supplied_value is not None
-                and supplied_value.projected_final_points is not None
+            if supplied_value is not None and (
+                supplied_value.projected_final_points is not None
+                or supplied_value.sampled_final_points is not None
             ):
                 row = projections.get(player_id)
                 observation = observations.get(player_id)
                 if (
-                    not projected_final
+                    (supplied_value.projected_final_points is not None)
+                    != projected_final
+                    or (supplied_value.sampled_final_points is not None)
+                    != sampled_final
                     or observation is None
                     or observation.actual_status is not ScoreEvidenceStatus.CONFIRMED
                     or observation.actual_points != fixed
@@ -855,20 +866,27 @@ def compose_partial_week_scores(
                     or supplied_value.unstarted_realized_points is not None
                     or row is None
                     or row.raw_projection is None
-                    or supplied_value.projected_final_points != row.effective_projection
-                    or supplied_value.projected_final_points
-                    != state.full_game_projection
+                    or state.full_game_projection != row.effective_projection
+                    or (
+                        projected_final
+                        and supplied_value.projected_final_points
+                        != state.full_game_projection
+                    )
                 ):
                     _fail(
                         f"in-progress player {player_id} lacks a matching canonical final projection"
                     )
-                forecast = float(supplied_value.projected_final_points)
+                forecast = float(
+                    supplied_value.projected_final_points
+                    if projected_final
+                    else supplied_value.sampled_final_points
+                )
             else:
                 if (
                     supplied_value is None
                     or supplied_value.approved_remaining_points is None
                     or supplied_value.unstarted_realized_points is not None
-                    or projected_final
+                    or full_game_final
                     or state.remaining_status
                     is not RemainingContributionStatus.APPROVED
                 ):
@@ -883,6 +901,7 @@ def compose_partial_week_scores(
                 or supplied_value.unstarted_realized_points is None
                 or supplied_value.approved_remaining_points is not None
                 or supplied_value.projected_final_points is not None
+                or supplied_value.sampled_final_points is not None
             ):
                 _fail(
                     f"unstarted player {player_id} requires exactly one deterministic full-game value"
@@ -933,7 +952,7 @@ def compose_partial_week_scores(
                 remaining,
                 (
                     carry + math.fsum(item.final_points for item in starters)
-                    if projected_final
+                    if full_game_final
                     else carry + fixed + remaining
                 ),
                 starters,

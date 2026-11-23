@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass, replace
 import hashlib
 import itertools
 import json
 import math
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Sequence
 
 from fantasy_football.canonical.model import LeagueSnapshot, RosterEntry, SlotKind
 from fantasy_football.canonical.validation import (
@@ -21,9 +21,9 @@ from fantasy_football.evolving_state import (
     EvolvingLeagueState,
     IRPolicy,
     PlayerAvailability,
+    initialize_evolving_state,
     state_to_json,
     validate_evolving_state,
-    initialize_evolving_state,
 )
 from fantasy_football.lineup_optimizer import (
     optimize_starting_lineup,
@@ -31,6 +31,7 @@ from fantasy_football.lineup_optimizer import (
     prepare_projected_lineup_analysis,
 )
 from fantasy_football.monte_carlo import (
+    IN_PROGRESS_FINAL_ASSUMPTION,
     MonteCarloBatchResult,
     MonteCarloConfig,
     run_monte_carlo_batch,
@@ -50,7 +51,10 @@ from fantasy_football.player_outcomes import PlayerOutcomeModel, ProvisionalNorm
 from fantasy_football.reusable_baseline import ReusableBaseline
 from fantasy_football.roster_value import value_roster
 from fantasy_football.snapshot_store import SnapshotStore
-from fantasy_football.weekly_transactions import WaiverBoundaryPolicy, WeeklyTransactionPolicy
+from fantasy_football.weekly_transactions import (
+    WaiverBoundaryPolicy,
+    WeeklyTransactionPolicy,
+)
 
 
 class ScenarioEvaluationError(ValueError):
@@ -871,6 +875,21 @@ def prepare_search_lineup_explainer(snapshot: LeagueSnapshot):
     return explain
 
 
+def prepare_manual_transaction(snapshot, baseline, scenario, *, trades=(), observed_evidence=None):
+    """Use the established structural or effective-dated preparation for either mode."""
+    from fantasy_football.effective_trades import validate_trade_timeline
+
+    if trades:
+        validate_trade_timeline(
+            snapshot, baseline, trades, observed_evidence=observed_evidence,
+            changes=scenario.changes, pins=scenario.protected_pins,
+        )
+        return None
+    if observed_evidence is not None and scenario.changes:
+        _fail("Observed-week roster changes require an explicit verified trade timeline.")
+    return complete_manual_scenario(snapshot, baseline, scenario)
+
+
 def evaluate_manual_scenario(
     snapshot: LeagueSnapshot,
     baseline_state: EvolvingLeagueState,
@@ -883,7 +902,7 @@ def evaluate_manual_scenario(
 ) -> ManualScenarioComparison:
     """Compare complete baseline/scenario batches with matched player-week draws."""
 
-    completed = complete_manual_scenario(snapshot, baseline_state, scenario)
+    completed = prepare_manual_transaction(snapshot, baseline_state, scenario)
     return evaluate_completed_manual_scenario(
         snapshot,
         baseline_state,
@@ -1180,6 +1199,9 @@ def compare_completed_scenario_batches(
             "paired_difference_sampling_uncertainty_only",
             "bonferroni_familywise_paired_intervals_v1",
             "outcome_model_uncertainty_not_in_interval",
+        ) + (
+            (IN_PROGRESS_FINAL_ASSUMPTION,)
+            if IN_PROGRESS_FINAL_ASSUMPTION in baseline_batch.assumptions else ()
         ),
     )
 

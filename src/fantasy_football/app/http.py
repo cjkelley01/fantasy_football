@@ -41,6 +41,10 @@ from fantasy_football.app.contracts import (
     RecentLeagueResults,
     ProjectedBaselineRequest,
     ProjectedBaselineResult,
+    ProjectedOpportunityRequest,
+    ProjectedOpportunityResult,
+    ProjectedScenarioRequest,
+    ProjectedScenarioResult,
     SnapshotListQuery,
     SnapshotRefreshRecord,
     SnapshotRefreshRequest,
@@ -48,8 +52,6 @@ from fantasy_football.app.contracts import (
     SnapshotRefreshSubmission,
     SnapshotSelector,
     SnapshotSummary,
-    TradeQuickAnalysisRequest,
-    TradeQuickAnalysisResult,
 )
 from fantasy_football.app.current_results import league_results, recent_league_results
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
@@ -375,6 +377,13 @@ def create_app(
     ) -> ProjectedBaselineResult:
         return current.run_projected_baseline(body)
 
+    @app.post("/api/v1/analyses/projected-scenario", response_model=ProjectedScenarioResult)
+    def projected_scenario(
+        body: ProjectedScenarioRequest,
+        current: ApplicationService = Depends(dependency),
+    ) -> ProjectedScenarioResult:
+        return current.run_projected_scenario(body)
+
     @app.post("/api/v1/analyses/baseline", response_model=BaselineAnalysisResult)
     def baseline(
         body: BaselineAnalysisRequest,
@@ -382,19 +391,19 @@ def create_app(
     ) -> BaselineAnalysisResult:
         return current.run_baseline(body)
 
-    @app.post("/api/v1/analyses/trade-quick", response_model=TradeQuickAnalysisResult)
-    def trade_quick(
-        body: TradeQuickAnalysisRequest,
-        current: ApplicationService = Depends(dependency),
-    ) -> TradeQuickAnalysisResult:
-        return current.run_trade_quick_analysis(body)
-
     @app.post("/api/v1/analyses/manual-scenario", response_model=ManualScenarioResult)
     def manual_scenario(
         body: ManualScenarioRequest,
         current: ApplicationService = Depends(dependency),
     ) -> ManualScenarioResult:
         return current.run_manual_scenario(body)
+
+    @app.post("/api/v1/analyses/projected-opportunities", response_model=ProjectedOpportunityResult)
+    def projected_opportunities(
+        body: ProjectedOpportunityRequest,
+        current: ApplicationService = Depends(dependency),
+    ) -> ProjectedOpportunityResult:
+        return current.run_projected_opportunities(body)
 
     @app.post("/api/v1/analyses/action-search", response_model=ActionSearchResult)
     def action_search(

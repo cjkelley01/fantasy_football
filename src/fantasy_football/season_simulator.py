@@ -141,6 +141,7 @@ class DeterministicPartialWeekInput:
     values: tuple[DeterministicPlayerValue, ...]
     prior_postseason_scores: tuple[WeeklyTeamScore, ...] = ()
     projected_final: bool = False
+    sampled_final: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -680,6 +681,7 @@ def _prepare_partial_week(
         partial.values,
         effective_owners=effective_owners,
         projected_final=partial.projected_final,
+        sampled_final=partial.sampled_final,
     )
     cutoff = evidence.standings_cutoff
     period_start = evidence.matchup_period_scoring_weeks[0]
@@ -728,6 +730,7 @@ def _prepare_partial_week(
             {
                 "evidence": partial_week_to_json(evidence),
                 **({"projected_final": True} if partial.projected_final else {}),
+                **({"sampled_final": True} if partial.sampled_final else {}),
                 "lineup": sorted(
                     (asdict(item) for item in partial.lineup),
                     key=lambda item: item["player_id"],
@@ -737,7 +740,9 @@ def _prepare_partial_week(
                         {
                             key: value
                             for key, value in asdict(item).items()
-                            if key != "projected_final_points" or value is not None
+                            if key
+                            not in {"projected_final_points", "sampled_final_points"}
+                            or value is not None
                         }
                         for item in partial.values
                     ),

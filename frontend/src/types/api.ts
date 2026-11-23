@@ -261,43 +261,6 @@ export interface PrecisionSettings { readonly family_confidence_level:number;rea
 export interface NormalOutcomeModelConfiguration { readonly model_type:"provisional_normal";readonly base_stddev_points:number;readonly projection_scale:number; }
 export interface ManualScenarioRequest { readonly api_schema_version:"1.0";readonly snapshot:{readonly snapshot_id:string;readonly league_id:number;readonly season:number};readonly simulation:SimulationConfiguration;readonly precision:PrecisionSettings;readonly outcome_model:NormalOutcomeModelConfiguration;readonly scenario:{readonly scenario_id:string;readonly effective_trades?:readonly {readonly transfers:readonly RosterChangeInput[];readonly selected_week:number|null}[];readonly changes:readonly RosterChangeInput[];readonly protected_players:readonly ProtectedPlayerInput[]}; }
 
-export interface TradeQuickAnalysisRequest {
-  readonly api_schema_version: "1.0";
-  readonly snapshot: ManualScenarioRequest["snapshot"];
-  readonly canonical_sha256: string;
-  readonly ir_policy: SimulationConfiguration["ir_policy"];
-  readonly scenario: ManualScenarioRequest["scenario"];
-}
-
-export interface QuickProjectedLineup {
-  readonly projected_points: number;
-  readonly starters: readonly {readonly slot_id:number;readonly slot_index:number;readonly player_id:number;readonly points:number}[];
-  readonly bench_player_ids: readonly number[];
-  readonly reserve_player_ids: readonly number[];
-  readonly vacancies: readonly (readonly [number,number,string])[];
-  readonly missing_projection_player_ids: readonly number[];
-  readonly explicit_zero_player_ids: readonly number[];
-}
-
-export interface TradeQuickAnalysisResult {
-  readonly api_schema_version: "1.0";
-  readonly snapshot_id: string;
-  readonly canonical_sha256: string;
-  readonly completed_state_sha256: string;
-  readonly first_scoring_week: number;
-  readonly final_scoring_week: number;
-  readonly explicit_changes: readonly RosterChangeInput[];
-  readonly forced_drops: readonly {readonly team_id:number;readonly player_id:number}[];
-  readonly automatic_additions: readonly {readonly team_id:number;readonly player_id:number}[];
-  readonly teams: readonly {
-    readonly team_id:number;
-    readonly baseline_projected_points:number;
-    readonly hypothetical_projected_points:number;
-    readonly difference:number;
-    readonly weeks:readonly {readonly scoring_week:number;readonly baseline:QuickProjectedLineup;readonly hypothetical:QuickProjectedLineup;readonly difference:number}[];
-  }[];
-  readonly assumptions: readonly string[];
-}
 export interface BackgroundRunSubmission { readonly api_schema_version:"1.0";readonly run_id:string;readonly run_type:"baseline"|"manual_scenario"|"action_search";readonly status:RunStatus;readonly created_at_utc:string; }
 export interface BackgroundProgress { readonly api_schema_version:"1.0";readonly run_id:string;readonly status:RunStatus;readonly stage:string;readonly candidates_explored:number;readonly candidates_retained:number;readonly unique_completed_states:number;readonly state_evaluations_completed:number;readonly simulation_paths_completed:number;readonly candidate_coverage_complete:boolean;readonly evaluation_coverage_complete:boolean;readonly statistical_precision_complete:boolean;readonly ranking_resolved:boolean;readonly elapsed_seconds:number;readonly stop_reason:string|null; }
 export interface BaselineAnalysisRequest { readonly api_schema_version:"1.0";readonly snapshot:{readonly snapshot_id:string;readonly league_id:number;readonly season:number};readonly simulation:SimulationConfiguration;readonly precision:PrecisionSettings;readonly outcome_model:NormalOutcomeModelConfiguration; }
@@ -376,7 +339,7 @@ export interface ProjectedBaselineResult {
   weeks: readonly {
     scoring_week: number;
     lineups: readonly {team_id: number; realized_points: number; lineup: {assignments: readonly {player_id: number}[]}}[];
-    matchups: readonly {matchup_id: number; home_team_id: number; away_team_id: number; home_score: number; away_score: number}[];
+    matchups: readonly {matchup_id: number; home_team_id: number; away_team_id: number; home_score: number; away_score: number; outcome: string}[];
   }[];
   postseason: readonly {
     matchup_id: string; round_number: number; bracket_type: string;
@@ -394,4 +357,39 @@ export interface ProjectedBaselineResult {
   assumptions: readonly string[];
   unresolved_capabilities: readonly string[];
   missing_projection_count: number;
+}
+
+
+export interface ProjectedScenarioResult {
+  scenario_id: string;
+  timeline: readonly {scoring_week: number; transfers: readonly RosterChangeInput[]}[];
+  baseline: ProjectedBaselineResult;
+  hypothetical: ProjectedBaselineResult;
+  baseline_final_roster: readonly {player_id: number; team_id: number}[];
+  hypothetical_final_roster: readonly {player_id: number; team_id: number}[];
+  explicit_changes: readonly RosterChangeInput[];
+  forced_drops: readonly {team_id: number; player_id: number}[];
+  automatic_additions: readonly {team_id: number; player_id: number}[];
+}
+
+export interface ProjectedOpportunityResult {
+  snapshot_id: string;
+  canonical_sha256: string;
+  generated_candidates: number;
+  candidate_coverage_complete: boolean;
+  evaluation_coverage_complete: boolean;
+  truncation_reason: string | null;
+  baseline: ProjectedOpportunitySeason | null;
+  evaluations: readonly ProjectedOpportunitySeason[];
+  candidates: readonly (Pick<ProjectedScenarioResult, "timeline" | "explicit_changes" | "forced_drops" | "automatic_additions"> & {
+    candidate_id: string;
+    evaluation_index: number | null;
+    limitation: string | null;
+    caveats: readonly string[];
+  })[];
+}
+
+interface ProjectedOpportunitySeason {
+  season: ProjectedBaselineResult;
+  final_roster: ProjectedScenarioResult["baseline_final_roster"];
 }

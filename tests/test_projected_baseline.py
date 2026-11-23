@@ -7,6 +7,7 @@ from pydantic import TypeAdapter
 from fantasy_football.app.http import create_app
 from fantasy_football.app.service import ApplicationDependencies, ApplicationService
 from fantasy_football.automatic_rosters import automatic_policy_from_loaded_snapshot
+from fantasy_football.espn_adapter import translate_bundle
 from fantasy_football.evolving_state import IRPolicy
 from fantasy_football.live_scoring import NFLGameStatus
 from fantasy_football.monte_carlo import MonteCarloConfig, run_monte_carlo_path
@@ -28,9 +29,9 @@ from fantasy_football.weekly_transactions import (
     WaiverBoundaryPolicy,
     WeeklyTransactionPolicy,
 )
+from tests.adapter_fixtures import source_bundle
 from tests.test_app_service import FixtureStore
 from tests.test_scenario_evaluator import _scenario_snapshot
-from tests.test_trade_quick_analysis import unplayed_live_snapshot
 
 ROUTE = "/api/v1/analyses/projected-baseline"
 
@@ -105,7 +106,7 @@ def test_contradictory_and_unsupported_score_observations():
         "espn-page",
     )
     assert resolve_observed_score(state).points is None
-    with pytest.raises(ValueError, match="approved outcome mode"):
+    with pytest.raises(ValueError, match="requires a full-game projection"):
         resolve_observed_score(state, sampled_points=7)
     with pytest.raises(ValueError, match="projection and no actual"):
         resolve_observed_score(replace(state, score_state=PlayerScoreState.UNSTARTED))
@@ -225,3 +226,39 @@ def test_live_unplayed_baseline_requires_authoritative_period_membership(
     else:
         assert response.status_code == 422, response.json()
         assert "authoritative current matchup-period membership" in response.text
+
+
+def unplayed_live_snapshot():
+    snapshot = translate_bundle(source_bundle()).snapshot
+    live = snapshot.live_scoring
+    assert live is not None
+    assert live.supported_simulation_week == snapshot.first_simulation_week == 2
+    # Give each team one fillable starter slot for an otherwise unchanged live fixture.
+    return replace(
+        snapshot,
+        snapshot_id="unplayed-live",
+        rules=replace(
+            snapshot.rules,
+            lineup_slots=tuple(
+                slot for slot in snapshot.rules.lineup_slots if slot.slot_id in (0, 21)
+            ),
+            position_limits=(),
+            consolation=replace(
+                snapshot.rules.consolation, rounds=snapshot.rules.championship.rounds
+            ),
+        ),
+        players=tuple(
+            replace(
+                player, eligible_lineup_slot_ids=(0, *player.eligible_lineup_slot_ids)
+            )
+            if player.player_id == -101
+            else replace(player, acquisition_status="UNKNOWN")
+            if player.player_id == 5
+            else player
+            for player in snapshot.players
+        ),
+        roster_entries=tuple(
+            replace(entry, lineup_slot_id=0) if entry.player_id == -101 else entry
+            for entry in snapshot.roster_entries
+        ),
+    )

@@ -426,6 +426,14 @@ and league deadlines still apply. Immediate hypothetical approval does not
 change either restriction. Earlier observed points and lineup assignments stay
 with their original team.
 
+A manual projected comparison evaluates the same prepared season twice. The
+baseline retains the roster as published and uses the configured automatic
+transactions. The hypothetical adds the validated structural edit or dated
+timeline. Any current-week adjustment changes which eligible unstarted players
+contribute their resolved score. The current locked lineup and historical
+standings cutoff remain fixed. Placement, playoff entry, and the champion in
+each run are outcomes of those runs, with no associated probability estimate.
+
 The opt-in deterministic path uses M3's **same season coordinator**, in this logical dependency sequence (the implementation performs composition during preparation and checks further season gates before returning a result):
 
 1. Validate snapshot/companion linkage, timing, sources and preservation invariants; require the season path's verified companion-level authority and no unresolved dependent capabilities.
@@ -445,12 +453,12 @@ Supported season starts are single-week regular periods and reconstructible **fi
 | Ordinary whole-week V1 | Existing projected lineups, transactions and full-game draws | With live metadata, current unplayed week must start its independently supported full period; cannot skip unresolved preceding contributions/settlement. |
 | Deterministic partial composer | Supplied legal lineup with fixed actuals, approved full-game or deterministic remaining values and verified carry | Exact current observed-score reconciliation, timing, locks, cutoff and field-specific authorities; preservation/serialization alone is insufficient. |
 | Deterministic partial season | First composed week once, then the same ordinary coordinator | Adds verified companion-level authority, immediate period cutoff, pair/bye/history reconstruction and no retroactive roster edits. An admitted effective trade uses the separately validated boundary. |
-| Completed/unstarted partial Monte Carlo | Existing full-game draws for unstarted starters; verified completed actuals fixed across paths | Observed assignments, lock evidence, exact standings cutoff and full matchup carry must reconcile. Explicit NFL byes contribute zero; missing nonstarter states remain unavailable and cannot be promoted. |
+| Partial Monte Carlo | Existing full-game draws for unstarted and in-progress starters; verified completed actuals fixed across paths | Observed assignments, lock evidence, exact standings cutoff and full matchup carry must reconcile. Explicit NFL byes contribute zero; missing nonstarter states remain unavailable and cannot be promoted. |
 | Current-week browser forecasting | Source-bound Stage A input constructed server-side | No client-supplied evidence, conditional in-game sampler or retroactive current-week transaction permission. |
 
-Completed starters contribute their verified actual exactly once; completed bench players contribute nothing. Every unstarted player used for scoring needs an approved matching nonmissing canonical full-game projection (signed and explicit zero values remain distinct from missing). In-progress games reject without an independently approved conditional remainder model. Missing bench/reserve evidence can remain missing only while it contributes no starter score. A fantasy-team bracket bye does not manufacture player nonparticipation; the source translator currently rejects current fantasy-bye roster authority pending independent reconciliation. Ordinary calls without a partial companion retain their previous behavior and identities.
+Completed starters contribute their verified actual exactly once; completed bench players contribute nothing. Every unstarted player used for scoring needs an approved matching nonmissing canonical full-game projection (signed and explicit zero values remain distinct from missing). For an in-progress starter, use the existing full-game distribution centered on the authoritative ESPN projected final score. Actual-so-far verifies the observed score and locked lineup. It is not added to the draw, used as a floor, or used to adjust variance. The draw can fall below observed points. This unconditional approximation supplies no calibrated conditional live-game probabilities. Missing bench/reserve evidence can remain missing only while it contributes no starter score. A fantasy-team bracket bye does not manufacture player nonparticipation; the source translator currently rejects current fantasy-bye roster authority pending independent reconciliation. Ordinary calls without a partial companion retain their previous behavior and identities.
 
-Before sampling, Monte Carlo validates the companion, proposed lineup and the narrow current-player gate. The deterministic coordinator retains the additional period/cutoff/history execution checks; passing the sampler gate cannot waive them. Generate the existing **complete canonical player-week universe exactly once per path**. Map only unstarted proposed current non-bye starter draws to unstarted deterministic values, remove **all current-week scores** from the ordinary subsequent-week scenario, and call the same coordinator. Bench/reserve/bye draws remain in the original scenario identity but are not supplied as unused composition inputs. No second independent draw set, completed resimulation, in-game unconditional redraw or conditional distribution is added. Future-week draws and mathematics are unchanged.
+Before sampling, Monte Carlo validates the companion, proposed lineup and the narrow current-player gate. The deterministic coordinator retains the additional period/cutoff/history execution checks; passing the sampler gate cannot waive them. Generate the existing **complete canonical player-week universe exactly once per path**. Map only the unstarted and in-progress proposed current non-bye starter draws to full-game values, remove **all current-week scores** from the ordinary subsequent-week scenario, and call the same coordinator. Bench/reserve/bye draws remain in the original scenario identity but are not supplied as unused composition inputs. Existing draws supply in-progress finals directly. Completed results remain fixed and no second draw set or conditional distribution is introduced. Future-week draws and mathematics are unchanged.
 
 Three identity scopes are distinct:
 
@@ -473,7 +481,7 @@ Useful falsification cases and existing evidence include:
 | Replace missing actual with zero, or in-progress input without approved remainder | Preserve genuine zero; reject invented actual or unresolved execution; [state/composition fixtures](../tests/test_partial_week.py). |
 | Wrong cutoff, shortened full membership, omitted/duplicate/conflicting carry history | Reject inclusion/gap/authority/coverage mismatch; [period/carry integration](../tests/test_partial_season.py). |
 | First-week ordinary score, retroactive initial ownership or transaction ledger | Reject double contribution/current transaction; [once-only season tests](../tests/test_partial_season.py). |
-| Completed fixed, explicit NFL bye, missing nonstarter and unsupported in-progress states | Preserve verified fixed/bye scoring, reject unresolved starter or active-game execution; [MC gate/draw-once/equivalence evidence](../tests/test_partial_monte_carlo.py). |
+| Completed fixed, explicit NFL bye, missing nonstarter and verified in-progress states | Preserve verified fixed/bye scoring, reject unresolved starters, and apply in-progress full-game draws once; [MC gate/draw-once/equivalence evidence](../tests/test_partial_monte_carlo.py). |
 
 Inspected implementation revision: `a9cca474ae0157050cea8cc14368275e2435f17d` is inspectable in [foundation](../src/fantasy_football/partial_week.py), [serialization](../src/fantasy_football/partial_week_serialization.py), [season coordinator](../src/fantasy_football/season_simulator.py) and [Monte Carlo](../src/fantasy_football/monte_carlo.py). Tests prove synthetic/code behavior, not new live authentication or calibration. [Live Scoring and Lineup-Lock Evidence through Conditional Remaining-Performance Research](VALIDATION.md#precision-claims-and-progressive-inference-coverage) and [League Rules and Transaction Timing Evidence; Outcome Calibration and Scientific Promotion](VALIDATION.md#exactness-and-unresolved-mechanics) retain active-game evidence, permission, translation/API, wider state, bracket-history and conditional-method gates. Approved future conditional research requires authentic immutable intragame vintages and held-out group/clock/support/calibration/decision evidence; retrospective final scores or a supplied deterministic remainder cannot establish it. Broader supported states require independent scope, evidence and model approval; these interfaces do not establish release readiness.
 
@@ -873,13 +881,15 @@ M8 connects their hypothetical starting states to M3–M7 without creating anoth
 
 ### Explicit scenarios and one-time completion
 
-Trade Lab Quick Analysis uses the same one-time completion for a reciprocal
-two-team exchange on a supported full-week snapshot. It compares optimal
-projected starters under the unchanged and completed rosters for the same
-scoring weeks. The horizon sum holds those rosters fixed and preserves missing
-versus explicit zero projection evidence. This is a projected points
-comparison rather than V(R), a season forecast, or evidence of trade
-acceptance. [Trade Lab operation](USER_GUIDE.md#compare-projected-lineups-before-simulation)
+Projected opportunity evaluation uses the same season execution as projected
+manual comparison. A bounded evaluation shares the unchanged season and
+reuses an equivalent structural state or identical verified timeline.
+Live searches, including those for fully unplayed weeks, resolve standalone trades
+before execution so that a
+locked player's contribution remains with the original lineup. Each result
+is one projected trajectory, without a probability estimate or confidence
+ranking. Fixed and progressive Monte Carlo keep their existing estimators
+and matched baseline.
 
 A manual scenario supplies exact ownership edits $(j,\text{from},\text{to})$ and protected player/team pins against a matching immutable baseline. A null source adds an unowned player; a null destination releases an owned player. Each player can be edited once, its source must match actual modeled ownership, teams/players must exist, and identical endpoints reject. Edits bind together, so a multi-team exchange does not need an artificial valid intermediate roster after every listed row. No duplicate ownership is permitted. Explicit releases need affirmative drop permission; an undroppable designation is not automatically a prohibition on transferring that player in a trade.
 

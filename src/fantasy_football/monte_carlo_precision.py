@@ -13,6 +13,7 @@ from statistics import NormalDist
 from fantasy_football.canonical.model import LeagueSnapshot
 from fantasy_football.lineup_optimizer import prepare_lineup_optimization
 from fantasy_football.monte_carlo import (
+    IN_PROGRESS_FINAL_ASSUMPTION,
     MonteCarloBatchResult,
     MonteCarloConfig,
     combine_monte_carlo_batches,
@@ -324,6 +325,10 @@ def analyze_monte_carlo_precision(
         else:
             stopping_reason = StoppingReason.MAXIMUM_PATHS_REACHED
     all_checkpoints = checkpoints or (current,)
+    limitations = _LIMITATIONS + (
+        (IN_PROGRESS_FINAL_ASSUMPTION,)
+        if IN_PROGRESS_FINAL_ASSUMPTION in batch.assumptions else ()
+    )
     core = {
         "precision_config_sha256": config_sha256,
         "configuration": configuration,
@@ -339,7 +344,7 @@ def analyze_monte_carlo_precision(
         "teams": teams,
         "checkpoints": all_checkpoints,
         "incomplete_capabilities": batch.incomplete_capabilities,
-        "limitations": _LIMITATIONS,
+        "limitations": limitations,
     }
     analysis_sha256 = hashlib.sha256(
         json.dumps(
@@ -366,7 +371,7 @@ def analyze_monte_carlo_precision(
         teams,
         all_checkpoints,
         batch.incomplete_capabilities,
-        _LIMITATIONS,
+        limitations,
         batch,
     )
 

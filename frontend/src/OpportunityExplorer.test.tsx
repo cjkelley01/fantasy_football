@@ -57,3 +57,26 @@ test.each([
 ] as const)("reports %s retrieval failure independently without perpetual loading",async(kind,title)=>{vi.spyOn(globalThis,"fetch").mockImplementation(input=>{const url=String(input);if(url.endsWith("/result"))return response(summary);if(url.includes("/candidates?")&&kind==="page")return Promise.reject(new Error("page"));if(url.includes("/candidates?"))return response(page);if(url.includes("/candidates/")&&kind==="detail")return Promise.reject(new Error("detail"));if(url.includes("/candidates/"))return response(detail);if(url.includes("/states/")&&kind==="state")return Promise.reject(new Error("state"));if(url.includes("/states/"))return response(state);throw new Error(url)});render(<OpportunityExplorer snapshot={snapshot} runs={[run]}/>);expect(await screen.findByText(title)).toBeInTheDocument();expect(screen.queryByText(/Loading (bounded candidate page|selected path|shared-state evaluation)/)).not.toBeInTheDocument()});
 
 test("candidate page changes during detail loading cannot restore the prior selection",async()=>{const user=userEvent.setup(),pending=deferred<Response>(),nextCandidate={...candidates[1],candidate_id:"next-page-path",completed_state_sha256:"next-state"},nextPage={...page,offset:25,total:50,candidates:[nextCandidate]},nextDetail={...detail,candidate:nextCandidate},nextState={...state,completed_state_sha256:"next-state",candidate_ids:[nextCandidate.candidate_id]};vi.spyOn(globalThis,"fetch").mockImplementation(input=>{const url=String(input);if(url.endsWith("/result"))return response(summary);if(url.includes("offset=25"))return response(nextPage);if(url.includes("/candidates?"))return response(page);if(url.includes("candidate-positive"))return pending.promise;if(url.includes(nextCandidate.candidate_id))return response(nextDetail);if(url.includes("next-state"))return response(nextState);throw new Error(url)});render(<OpportunityExplorer snapshot={snapshot} runs={[run]}/>);await screen.findByText("+4.25");await user.click(screen.getByRole("button",{name:"Next"}));expect(await screen.findByText((_,node)=>node?.tagName==="SMALL"&&node.textContent?.includes("next-page-path")===true)).toBeInTheDocument();await act(async()=>pending.resolve(new Response(JSON.stringify(detail),{headers:{"Content-Type":"application/json"}})));expect(await screen.findByRole("heading",{name:"Standalone Trade"})).toBeInTheDocument();expect(screen.queryByRole("heading",{name:"Trade Then Acquisition"})).not.toBeInTheDocument()});
+
+test("finds bounded projected trades without starting a probability search", async () => {
+  const user = userEvent.setup();
+  const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(await json({
+    snapshot_id: snapshot.snapshot_id, canonical_sha256: snapshot.canonical_sha256,
+    generated_candidates: 7, candidate_coverage_complete: false, evaluation_coverage_complete: false,
+    truncation_reason: "Configured candidate limit reached.", baseline: null, evaluations: [],
+    candidates: [{candidate_id: "locked", evaluation_index: null, timeline: [],
+      explicit_changes: [{player_id: 101, from_team_id: 1, to_team_id: 2}],
+      limitation: "No supported trade boundary.", caveats: []}],
+  }));
+  render(<OpportunityExplorer snapshot={snapshot} runs={[]}/>);
+  await user.click(screen.getByRole("button", {name:"Find projected trades"}));
+  expect(await screen.findByText(/Candidate coverage incomplete/)).toBeInTheDocument();
+  await user.click(screen.getByText(snapshot.players.find(player=>player.player_id===101)?.display_name ?? "101"));
+  expect(screen.getByText("No supported trade boundary.")).toBeVisible();
+  expect(fetch).toHaveBeenCalledTimes(1);
+  const [route, request] = fetch.mock.calls[0];
+  expect(String(route)).toBe("/api/v1/analyses/projected-opportunities");
+  expect(JSON.parse(String(request?.body))).toMatchObject({
+    canonical_sha256: snapshot.canonical_sha256, requesting_team_id: 1, counterparty_team_id: 2,
+  });
+});

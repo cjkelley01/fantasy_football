@@ -216,7 +216,7 @@ Full state includes all teams' ownership/slots, shared availability/holds, curre
 | Identity | Included / intentionally separate |
 |---|---|
 | `simulation_configuration_fingerprint()` | `m2.6-simulation-config-v1`: snapshot identity/content, full public model_id/ordered parameters, IR/weekly/postseason policies, consolation configuration, require_complete and SIMULATION_SEMANTICS. Supplied initial evolving state is added; absent state adds no key. Seed/path range are excluded here. Dataclasses recursively preserve fields, enums use values, tuples remain ordered arrays; nonfinite floats reject. |
-| Partial configuration entry | Only when supplied: `lw2.3a-unstarted-partial-week-v1`, complete serialized companion, lineup sorted by player ID and prior postseason scores sorted by week/team, after permission validation. Absent partial input adds no key and does not change ordinary V1 fingerprints. This is a binding summary, not T4 integration implementation. |
+| Partial configuration entry | Only when supplied: `lw2.3a-unstarted-partial-week-v1` or, with verified in-progress evidence, `in-progress-unconditional-final-v1`, complete serialized companion, lineup sorted by player ID and prior postseason scores sorted by week/team, after permission validation. Absent partial input adds no key and does not change ordinary V1 fingerprints. This is a binding summary, not T4 integration implementation. |
 | `monte_carlo_run_identity()` | `m2.6-run-identity-v1`, simulation configuration digest and master_seed in compact sorted-key UTF-8 JSON. Exact first path/count stay separate so compatible contiguous partitions can combine; seed alone is not a complete run identity. |
 | `evaluation_fingerprint()` | `m5.3-shared-paired-evaluation-v1`: baseline/completed state pair, each simulation configuration and seed-bearing run identity, explicit seed/first index/path count and precision-configuration digest. **Unlike the run ID, evaluation identity binds exact range and precision.** It permits within-execution reuse for an exact state/configuration pair, not just a roster or path label. |
 | Application/request/presentation | [T5 identity scopes](#numerical-units-and-identity-scopes): analytical equivalence versus complete request/nonce/build-bound application execution and the unfiltered result-view identity. Later page filters do not acquire a new numerical experiment or automatic presentation fingerprint. Explicit/unknown build metadata does not authenticate source bytes. |
@@ -408,13 +408,13 @@ For validated evidence, recursively encode dataclass fields, enums as their stri
 
 `validate_proposed_lineup(snapshot, evidence, lineup)` accepts a separate tuple of `ProposedLineupAssignment(player_id, team_id, lineup_slot_id)`. Require exact observed-player coverage and ownership, legal capacities/eligibility, and unchanged locked/unresolved assignments. Only independently verified-changeable players may move. An unchanged unresolved lock can be preserved but cannot execute. These checks authorize no current-week transaction or optimizer/recommendation.
 
-`compose_partial_week_scores(snapshot, evidence, proposed_lineup, deterministic_values)` returns `PartialWeekScoreComposition`, with per-team carry/fixed/remaining/final totals and per-starter breakdown. `DeterministicPlayerValue(player_id, unstarted_realized_points=None, approved_remaining_points=None, projected_final_points=None)` holds explicit finite scoring values:
+`compose_partial_week_scores(snapshot, evidence, proposed_lineup, deterministic_values)` returns `PartialWeekScoreComposition`, with per-team carry/fixed/remaining/final totals and per-starter breakdown. `DeterministicPlayerValue(player_id, unstarted_realized_points=None, approved_remaining_points=None, projected_final_points=None, sampled_final_points=None)` holds explicit finite scoring values:
 
 | Starter state | Permitted supplied value / rejection |
 |---|---|
 | `completed_fixed` | Use confirmed fixed actual only, including signed/zero; any supplied value record rejects. |
 | `unstarted` | Exactly one unstarted_realized_points, no approved_remaining_points; approved full-game evidence is required. |
-| `in_progress` | The remainder interface uses fixed actual-so-far plus exactly one approved_remaining_points and APPROVED remainder semantics. The explicit projected-final mode instead requires the source-bound canonical full-game projection, uses it directly, and rejects a mixture of whole-game and remainder values. |
+| `in_progress` | The remainder interface uses fixed actual-so-far plus exactly one approved_remaining_points and APPROVED remainder semantics. Both full-game final modes require a source-bound canonical full-game projection. Projected-final uses it directly. Sampled-final uses one existing draw with that projection as input. Mixing final and remainder values rejects. |
 | `missing` / `nonparticipating` | Missing starter evidence fails execution. Verified NFL nonparticipation contributes zero game points without a supplied realization. |
 | Bench/reserve or explicit fantasy-team bye | No contribution/realization consumed; unused, unknown or duplicate value records reject. A fantasy-team bye is not an inference from an NFL bye. |
 
@@ -426,15 +426,15 @@ Observed current-week team points reconcile **exactly to fixed starter actuals**
 
 ### First-week routing and compatibility
 
-Opt in with `DeterministicPartialWeekInput(evidence, lineup, values, prior_postseason_scores=(), projected_final=False)` via `partial_week=`. The projected baseline alone opts into projected-final mode for source-validated in-progress totals. Collections must be immutable tuples. Evidence must describe the **first simulation week** and cannot omit a different live current week. With live metadata, independently supported full period membership is mandatory, including preceding weeks omitted from the horizon. The cutoff must end immediately before the actual period began, settle known earlier periods and never include a known current/future period. Supplied historical standings totals are not independently authenticated by this coordinator.
+Opt in with `DeterministicPartialWeekInput(evidence, lineup, values, prior_postseason_scores=(), projected_final=False, sampled_final=False)` via `partial_week=`. Only one final mode can be enabled. The sampled-final mode applies when Monte Carlo routes verified in-progress evidence. Collections must be immutable tuples. Evidence must describe the **first simulation week** and cannot omit a different live current week. With live metadata, independently supported full period membership is mandatory, including preceding weeks omitted from the horizon. The cutoff must end immediately before the actual period began, settle known earlier periods and never include a known current/future period. Supplied historical standings totals are not independently authenticated by this coordinator.
 
 Ordinary scenario scores must contain **subsequent weeks only**: any first-week score rejects, even for a bench player. First-week composition freezes the supplied legal lineup, routes no actors into weekly acquisitions, and rejects changed hypothetical initial rosters or a nonempty ledger. It reuses the regular resolver with `require_projected_availability=False` only for already validated observed starters; ownership, eligibility and capacities remain enforced. Future weeks resume ordinary transaction/lineup policy; current-week locks do not freeze future choices.
 
 Single-week regular periods and reconstructible first-round postseason starts/byes are supported. For a mid-period postseason start, each preceding current-period team/week must have exactly one finite `WeeklyTeamScore`, with team/week coverage and aggregate matching verified carry. Restore full membership and replay that history via `apply_postseason_team_scores()`; add only current resolved weekly points, **not carry again**. Advance only after the full period completes. The synthetic regression has membership (15,16,17), horizon (16,17), and team 1 carry 100 then weekly points 5 and 3: final 108, with no advancement after week 16. Missing/conflicting history, later-round starts needing unavailable bracket history and multiweek regular partial periods fail closed. [partial-week methodology](METHODOLOGY.md#standings-cutoff-period-carry-and-season-integration) owns cutoff/carry evidence; postseason mechanics remain in season methodology.
 
-Result shape stays unchanged. Configuration provenance appends `partial_week:v1:<sha256>` over an object with keys `evidence` (complete serialized companion string), `lineup` and `values` (dataclass dictionaries sorted by player ID), and `history` (prior score dictionaries sorted by scoring_week/team_id). Hash `json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")`, retaining default ASCII escaping and no newline. Projected-final mode adds `projected_final: true` and any supplied `projected_final_points`. These keys are absent from preexisting inputs and their hashes. This is separate from both source-basis digest and T3 Monte Carlo configuration identity. Absent partial input adds nothing and preserves whole-week identities/results. The deterministic scenario contains no model ID: model/parameter compatibility is enforced by the generating/Monte Carlo/evaluation boundary, not reconstructed from scores by this engine.
+Result shape stays unchanged. Configuration provenance appends `partial_week:v1:<sha256>` over an object with keys `evidence` (complete serialized companion string), `lineup` and `values` (dataclass dictionaries sorted by player ID), and `history` (prior score dictionaries sorted by scoring_week/team_id). Hash `json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False).encode("utf-8")`, retaining default ASCII escaping and no newline. Projected-final mode adds `projected_final: true` and any supplied `projected_final_points`. Sampled-final mode adds `sampled_final: true` and any supplied `sampled_final_points`. New keys are absent from preexisting inputs and their hashes. This is separate from both source-basis digest and T3 Monte Carlo configuration identity. Absent partial input adds nothing and preserves whole-week identities/results. The deterministic scenario contains no model ID: model/parameter compatibility is enforced by the generating/Monte Carlo/evaluation boundary, not reconstructed from scores by this engine.
 
-`MonteCarloPartialWeekInput(evidence, lineup, prior_postseason_scores=())` lives in [monte_carlo.py](../src/fantasy_football/monte_carlo.py). Completed states use verified fixed actuals; unstarted scoring players require APPROVED full-game semantics and matching **nonmissing** canonical effective projections. Explicit canonical NFL byes support nonparticipating zero contribution. Missing nonstarters may be preserved but cannot supply a starter contribution. In-progress and unresolved relevant states reject before drawing; deterministic acceptance of an approved remainder does not authorize conditional sampling. Generate the unchanged full canonical universe once; map only unstarted current non-bye starters to DeterministicPlayerValue, remove all first-week ordinary scores, then call this same season engine. T3 owns fingerprints; its historical partial discriminator remains byte-identical, with complete evidence content binding newly admitted states. [Partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence) owns pregame equivalence conditions, and T6 owns execution/recovery.
+`MonteCarloPartialWeekInput(evidence, lineup, prior_postseason_scores=())` lives in [monte_carlo.py](../src/fantasy_football/monte_carlo.py). Completed states use verified fixed actuals; unstarted scoring players require APPROVED full-game semantics and matching **nonmissing** canonical effective projections. Explicit canonical NFL byes support nonparticipating zero contribution. Missing nonstarters may be preserved but cannot supply a starter contribution. In-progress starters require matching canonical game, actual-so-far, and nonmissing full-game projection evidence before any draws. Unresolved required evidence rejects. Generate the unchanged full canonical universe once. Route unstarted and verified in-progress current starters to their respective full-game values, remove all first-week ordinary scores, and call the same season engine. Actual-so-far remains reconciliation evidence. It is never added to the sampled final, and the draw can fall below it. T3 owns fingerprints; its historical partial discriminator remains byte-identical, with complete evidence content binding newly admitted states. [Partial-week methodology](METHODOLOGY.md#supported-execution-states-and-pregame-equivalence) owns pregame equivalence conditions, and T6 owns execution/recovery.
 
 ### Error domains and evidence
 
@@ -474,9 +474,10 @@ Path braces identify required URL strings; body `none` means no JSON body parame
 | POST | `/api/v1/refreshes/{refresh_id}/cancel` | `none` | `SnapshotRefreshRecord` | 200 |
 | GET | `/api/v1/refreshes/{refresh_id}/result` | `none` | `SnapshotRefreshResult` | 200 |
 | POST | `/api/v1/analyses/projected-baseline` | `ProjectedBaselineRequest` | `ProjectedBaselineResult` | 200 |
+| POST | `/api/v1/analyses/projected-scenario` | `ProjectedScenarioRequest` | `ProjectedScenarioResult` | 200 |
 | POST | `/api/v1/analyses/baseline` | `BaselineAnalysisRequest` | `BaselineAnalysisResult` | 200 |
-| POST | `/api/v1/analyses/trade-quick` | `TradeQuickAnalysisRequest` | `TradeQuickAnalysisResult` | 200 |
 | POST | `/api/v1/analyses/manual-scenario` | `ManualScenarioRequest` | `ManualScenarioResult` | 200 |
+| POST | `/api/v1/analyses/projected-opportunities` | `ProjectedOpportunityRequest` | `ProjectedOpportunityResult` | 200 |
 | POST | `/api/v1/analyses/action-search` | `ActionSearchRequest` | `ActionSearchResult` | 200 |
 | POST | `/api/v1/runs/baseline` | `BaselineAnalysisRequest` | `BackgroundRunSubmission` | 202 |
 | POST | `/api/v1/runs/manual-scenario` | `ManualScenarioRequest` | `BackgroundRunSubmission` | 202 |
@@ -495,7 +496,25 @@ Path braces identify required URL strings; body `none` means no JSON body parame
 
 Projected baseline is a synchronous, snapshot-digest-bound execution of one season. The request accepts IR and waiver policies, incomplete-valuation handling, and an optional standings tiebreak seed. No outcome-model seed, path count, or precision settings are used. The response returns weekly matchups and lineups, rankings and postseason placements, the transaction ledger, scoring policy and source identifiers, and unresolved capabilities. The operation creates no retained run. Invalid or unsupported execution evidence returns 422.
 
-Trade Quick Analysis accepts the selected snapshot and its canonical digest, IR policy, and one reciprocal two-team manual exchange with optional pins. Effective-dated intents and unresolved or partial-week boundaries return 422. The server applies the same manual completion as simulation, then solves both rosters for each canonical horizon week. The result binds the completed-state fingerprint, reports explicit and automatic moves separately, and returns starting slots, bench, reserve, vacancy reasons, missing projection IDs and explicit zero IDs. Totals sum weekly projected points and deltas. The operation creates no run, draws, or statistical results. An optional Trade Lab simulation uses the same committed transaction and snapshot through the existing manual-scenario route.
+Projected scenario comparison adds the existing manual scenario intent to the
+projection request. The response contains both season results, their final
+rosters, the resolved effective timeline, explicit edits and structural roster
+completion actions. `prepare_projected_season()` resolves the common evidence
+and score table. `compare_projected_scenario()` uses the same manual transaction
+preparation as sampled comparison. It reuses the resolved scores across both
+runs and reselects their applicable current-week starter values after eligible
+transfers. Existing Monte Carlo request, path, and result identities are unchanged.
+The projection operation uses no sampling and creates no retained run.
+
+Retained Monte Carlo trade results carry the baseline engine run, configuration
+and precision identities alongside the paired estimates. Timed comparisons
+continue to reuse compatible baseline paths in the existing process-local
+store. Cross-workspace reuse requires exposing the corresponding standalone
+baseline estimates, completeness and precision through retained results. League
+Overview must match snapshot, evidence and policy context and prefer stronger
+compatible statistical evidence. A paired trade result never replaces the
+unchanged baseline or launches another run to populate League Overview.
+
 
 | GET query surface | Declared parameters / defaults |
 |---|---|
@@ -574,18 +593,17 @@ After validation, background submission checks closing/queue capacity under lock
 | `ProtectedPlayerInput` | `team_id: integer`; `player_id: integer` |
 | `EffectiveTradeInput` | `transfers: RosterChangeInput[]{minItems=1}`; `selected_week?: integer{>=1,<=25} or null=null` |
 | `ManualScenarioInput` | `scenario_id: string{minLength=1}`; `changes: RosterChangeInput[]`; `protected_players?: ProtectedPlayerInput[]=[]`; `effective_trades?: EffectiveTradeInput[]=[]` |
+| `ProjectedScenarioRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy?: "projection_based" / "strict"="projection_based"`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `standings_fallback_seed?: integer or null=null`; `scenario: ManualScenarioInput` |
+| `ProjectedScenarioResult` | `api_schema_version?: "1.0"="1.0"`; `scenario_id: string`; `timeline: EffectiveTrade[]`; `explicit_changes: RosterChangeInput[]`; `forced_drops: ScenarioRosterAction[]`; `automatic_additions: ScenarioRosterAction[]`; `baseline: ProjectedBaselineResult`; `hypothetical: ProjectedBaselineResult`; `baseline_final_roster: RosterEntry[]`; `hypothetical_final_roster: RosterEntry[]` |
+| `ProjectedOpportunityRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy?: "projection_based" / "strict"="projection_based"`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `standings_fallback_seed?: integer or null=null`; `requesting_team_id: integer`; `counterparty_team_id: integer` |
+| `ProjectedOpportunitySeason` | `season: ProjectedBaselineResult`; `final_roster: RosterEntry[]` |
+| `ProjectedOpportunityCandidate` | `candidate_id: string`; `actions: UnifiedAction[]`; `completed_state_sha256: string or null`; `timeline: EffectiveTrade[]`; `explicit_changes: RosterChangeInput[]`; `forced_drops: ScenarioRosterAction[]`; `automatic_additions: ScenarioRosterAction[]`; `caveats: string[]`; `evaluation_index: integer{>=0} or null`; `limitation: string or null` |
+| `ProjectedOpportunityResult` | `api_schema_version?: "1.0"="1.0"`; `snapshot_id: string`; `canonical_sha256: string`; `configuration_sha256: string`; `generated_candidates: integer{>=0}`; `candidate_coverage_complete: boolean`; `evaluation_coverage_complete: boolean`; `truncation_reason: string or null`; `baseline: ProjectedOpportunitySeason or null`; `evaluations: ProjectedOpportunitySeason[]`; `candidates: ProjectedOpportunityCandidate[]` |
 | `ManualScenarioRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `simulation: SimulationConfiguration`; `precision: PrecisionSettings`; `outcome_model: NormalOutcomeModelConfiguration`; `scenario: ManualScenarioInput` |
 | `PairedMetricResult` | `baseline_probability: number`; `scenario_probability: number`; `difference_probability_points: number`; `improved_paths: integer`; `worsened_paths: integer`; `unchanged_paths: integer`; `interval_lower_probability_points: number`; `interval_upper_probability_points: number` |
 | `TeamScenarioResult` | `team_id: integer`; `championship: PairedMetricResult`; `playoff_qualification: PairedMetricResult`; `final_placements: [integer, PairedMetricResult]{minItems=2,maxItems=2}[]` |
 | `WeeklyLineupResult` | `scoring_week: integer`; `baseline_starter_player_ids: integer[]`; `hypothetical_starter_player_ids: integer[]`; `baseline_bench_player_ids: integer[]`; `hypothetical_bench_player_ids: integer[]`; `baseline_reserve_player_ids: integer[]`; `hypothetical_reserve_player_ids: integer[]`; `baseline_projected_points: number`; `hypothetical_projected_points: number`; `projected_points_difference: number`; `baseline_vacancy_count: integer`; `hypothetical_vacancy_count: integer` |
 | `TeamLineupResult` | `team_id: integer`; `changed_scoring_weeks: integer[]`; `weeks: WeeklyLineupResult[]` |
-| `TradeQuickAnalysisRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy: "projection_based" / "strict"`; `scenario: ManualScenarioInput` |
-| `ProjectedStarter` | `slot_id: integer`; `slot_index: integer`; `player_id: integer`; `points: number` |
-| `QuickProjectedLineup` | `projected_points: number`; `starters: ProjectedStarter[]`; `bench_player_ids: integer[]`; `reserve_player_ids: integer[]`; `vacancies: [integer, integer, string]{minItems=3,maxItems=3}[]`; `missing_projection_player_ids: integer[]`; `explicit_zero_player_ids: integer[]` |
-| `QuickTradeWeek` | `scoring_week: integer`; `baseline: QuickProjectedLineup`; `hypothetical: QuickProjectedLineup`; `difference: number` |
-| `QuickTradeTeam` | `team_id: integer`; `baseline_projected_points: number`; `hypothetical_projected_points: number`; `difference: number`; `weeks: QuickTradeWeek[]` |
-| `QuickRosterAction` | `team_id: integer`; `player_id: integer` |
-| `TradeQuickAnalysisResult` | `api_schema_version?: "1.0"="1.0"`; `snapshot_id: string`; `canonical_sha256: string`; `completed_state_sha256: string`; `first_scoring_week: integer`; `final_scoring_week: integer`; `explicit_changes: RosterChangeInput[]`; `forced_drops: QuickRosterAction[]`; `automatic_additions: QuickRosterAction[]`; `teams: QuickTradeTeam[]`; `assumptions: string[]` |
 | `ManualScenarioResult` | `api_schema_version?: "1.0"="1.0"`; `provenance: AnalysisProvenance`; `scenario_id: string`; `scenario_sha256: string`; `precision_config_sha256: string`; `baseline_simulation_config_sha256: string`; `hypothetical_simulation_config_sha256: string`; `baseline_engine_run_identity_sha256: string`; `hypothetical_engine_run_identity_sha256: string`; `matched_path_count: integer`; `affected_team_ids: integer[]`; `forced_drop_player_ids: integer[]`; `automatic_addition_player_ids: integer[]`; `teams: TeamScenarioResult[]`; `lineup_explanations: TeamLineupResult[]`; `assumptions: string[]` |
 | `TradeShapeInput` | `outgoing_count: integer{>0}`; `incoming_count: integer{>0}` |
 | `UnifiedCandidateConfiguration` | `requesting_team_id: integer`; `action_families: "trade" / "trade_chain" / "acquisition"[]`; `action_orderings: "standalone_trade" / "standalone_chain" / "standalone_acquisition" / "trade_then_acquisition" / "acquisition_then_trade" / "chain_then_acquisition" / "multiple_acquisitions"[]`; `counterparty_team_ids?: integer[]=[]`; `tradeable_player_ids?: integer[]=[]`; `acquisition_player_ids?: integer[]=[]`; `eligible_drop_player_ids?: integer[] or null=null`; `trade_shapes?: TradeShapeInput[]=[]`; `minimum_trade_chain_length?: integer{>0}=2`; `maximum_trade_chain_length?: integer{>0}=2`; `maximum_total_action_count?: integer{>0}=2`; `acquisition_status_filter?: "free_agent" / "waivers" / "hold" / "unresolved"[] or null=null`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="unresolved"`; `protected_player_ids?: integer[]=[]` |
@@ -1001,6 +1019,27 @@ Use semantic headings/native controls, keyboard access, visible focus/skip navig
 Browser refresh preserves the ESPN current period without asserting an ordinary V1 safe boundary. Snapshot preservation and execution permission remain separate. The diagnostic/CLI strict explicit-week behavior is unchanged. Refresh failures distinguish configuration, authentication, transport, translation, canonical validation, storage and inspection using safe codes/messages without logging private exception text. Publication remains immutable. Before ESPN retrieval, refresh checks the existing configured database and schema. Missing or inaccessible stores return a storage diagnostic. Restore the configured file or restart with its correct path, then retry.
 
 `WAR_ROOM_AUTO_REFRESH=true` explicitly enables startup retrieval; default false displays the newest cached snapshot for the configured league/season. Startup submissions require that persistent authorization and reuse process-local active/recent attempts for five minutes; manual retries remain explicit. This is not a durable cross-process scheduler. Saved historical snapshots remain available in league context. No private configured database is opened by credential-free verification.
+
+### Projected opportunity preview
+
+Opportunity Explorer's synchronous projected preview uses the existing
+candidate generator and shared projected comparison. It admits two selected
+teams, at most 400 one-for-one roster pairings, six retained candidates, and
+a cooperative ten-second budget checked between generation and season runs.
+The response discloses generation and evaluation coverage separately. It
+returns one baseline and an indexed array of distinct evaluated seasons.
+Candidate rows preserve action provenance and reference an evaluation index
+or report why the candidate could not be evaluated. The preview is temporary.
+
+For canonical snapshots without live context, the core uses existing structural
+completions, including their acquisition and conditional waiver assumptions.
+For live snapshots, including fully unplayed weeks, the core uses explicit standalone ownership
+transitions before structural completion. The shared effective-trade resolver
+checks timing and actions against the same state as manual Trade Lab. Live
+chains, acquisitions, and waivers require separate execution semantics.
+Timed results carry their effective timeline and a null structural state
+fingerprint. Different timelines are never grouped by final roster. Existing
+sampled fixed and progressive search and retained indexing are unchanged.
 
 ### Effective-dated Trade Lab execution
 

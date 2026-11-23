@@ -1,4 +1,4 @@
-"""Application adapter for one projection-fed season."""
+"""Application serialization for projection-fed season analysis."""
 
 from fantasy_football.app.contracts import (
     ProjectedBaselineResult,
@@ -6,150 +6,65 @@ from fantasy_football.app.contracts import (
     ProjectedSeasonWeek,
 )
 from fantasy_football.automatic_rosters import automatic_policy_from_loaded_snapshot
-from fantasy_football.canonical.validation import (
-    authoritative_current_matchup_period_scoring_weeks,
-    validated_snapshot,
-)
-from fantasy_football.current_week import (
-    CurrentWeekEvidenceError,
-    build_current_week_input,
-)
+from fantasy_football.canonical.validation import validated_snapshot
 from fantasy_football.evolving_state import IRPolicy
-from fantasy_football.live_scoring import ScoringPeriodStatus, has_safe_v1_boundary
-from fantasy_football.partial_week import DeterministicPlayerValue, PlayerScoreState
-from fantasy_football.score_resolution import (
-    observed_starter_states,
-    projected_scores,
-    resolve_observed_score,
-)
-from fantasy_football.season_simulator import (
-    DeterministicPartialWeekInput,
-    DeterministicScoreScenario,
-    simulate_deterministic_season,
-)
+from fantasy_football.projected_season import prepare_projected_season
 from fantasy_football.weekly_transactions import (
     WaiverBoundaryPolicy,
     WeeklyTransactionPolicy,
 )
 
 
+def prepare_projection_request(loaded, request, *, observed_lineup=False):
+    return prepare_projected_season(
+        loaded.snapshot,
+        tuple(item.response for item in loaded.raw_sources),
+        IRPolicy(request.ir_policy),
+        WeeklyTransactionPolicy(
+            WaiverBoundaryPolicy(request.waiver_boundary),
+            request.reject_incomplete_valuations,
+            automatic_rosters=automatic_policy_from_loaded_snapshot(
+                loaded, request.standings_fallback_seed
+            ),
+        ),
+        observed_lineup=observed_lineup,
+    )
+
+
 def project_baseline(loaded, request) -> ProjectedBaselineResult:
-    snapshot = loaded.snapshot
-    current = None
-    with validated_snapshot(snapshot):
-        live = snapshot.live_scoring
-        if live is not None:
-            membership = authoritative_current_matchup_period_scoring_weeks(snapshot)
-            if snapshot.first_simulation_week != live.current_scoring_period:
-                raise CurrentWeekEvidenceError(
-                    "Projected baseline must begin at the verified current scoring week."
-                )
-            if not has_safe_v1_boundary(
-                live, authoritative_current_matchup_period_scoring_weeks=membership
-            ):
-                current_week = next(
-                    week
-                    for week in live.weeks
-                    if week.scoring_week == live.current_scoring_period
-                )
-                if (
-                    membership is None
-                    or membership != live.current_matchup_period_scoring_weeks
-                ):
-                    raise CurrentWeekEvidenceError(
-                        "Projected baseline requires authoritative current matchup-period membership."
-                    )
-                if current_week.status is not ScoringPeriodStatus.PARTIAL:
-                    rationale = (
-                        live.boundary_rationale
-                        if current_week.status is ScoringPeriodStatus.UNPLAYED
-                        else current_week.rationale
-                    )
-                    raise CurrentWeekEvidenceError(
-                        f"Projected baseline has no supported current scoring boundary: {rationale}"
-                    )
-                current = build_current_week_input(
-                    snapshot,
-                    tuple(item.response for item in loaded.raw_sources),
-                    projected_final=True,
-                )
-        partial = None
-        observations = []
-        observed_week = current.evidence.scoring_period if current else None
-        if current is not None:
-            current_projections = {
-                row.player_id: row
-                for row in snapshot.player_weeks
-                if row.scoring_week == observed_week and row.raw_projection is not None
-            }
-            values = []
-            for state in sorted(
-                observed_starter_states(snapshot, current),
-                key=lambda state: state.player_id,
-            ):
-                score = resolve_observed_score(state)
-                if score.points is None:
-                    raise CurrentWeekEvidenceError(
-                        f"Current starter {state.player_id} lacks a verified actual or full-game projection."
-                    )
-                uses_projection = state.score_state in {
-                    PlayerScoreState.IN_PROGRESS,
-                    PlayerScoreState.UNSTARTED,
-                }
-                observations.append(
-                    ProjectedObservedScore(
-                        player_id=state.player_id,
-                        scoring_week=current.evidence.scoring_period,
-                        points=score.points,
-                        basis=score.basis,
-                        observed_points=score.observed_points,
-                        source_id=state.source_id,
-                        projection_source_id=current_projections[
-                            state.player_id
-                        ].source_id
-                        if uses_projection
-                        else None,
-                    )
-                )
-                if state.score_state is PlayerScoreState.UNSTARTED:
-                    values.append(
-                        DeterministicPlayerValue(
-                            state.player_id, unstarted_realized_points=score.points
-                        )
-                    )
-                elif state.score_state is PlayerScoreState.IN_PROGRESS:
-                    values.append(
-                        DeterministicPlayerValue(
-                            state.player_id, projected_final_points=score.points
-                        )
-                    )
-            partial = DeterministicPartialWeekInput(
-                current.evidence,
-                current.lineup,
-                tuple(values),
-                current.prior_postseason_scores,
-                projected_final=True,
-            )
-        scenario = DeterministicScoreScenario(
-            "canonical-projections-v1",
-            projected_scores(
-                snapshot,
-                observed_week=observed_week,
-            ),
+    with validated_snapshot(loaded.snapshot):
+        inputs = prepare_projection_request(loaded, request)
+        result, observations = inputs.execute()
+    return projected_season_result(
+        loaded.metadata.canonical_sha256, inputs, result, observations
+    )
+
+
+def projected_season_result(canonical_sha256, inputs, result, observations):
+    snapshot = inputs.snapshot
+    current = inputs.current
+    observed_week = current.evidence.scoring_period if current else None
+    projection_sources = {
+        row.player_id: row.source_id
+        for row in snapshot.player_weeks
+        if observed_week is not None
+        and row.scoring_week == observed_week
+        and row.raw_projection is not None
+    }
+    observations = tuple(
+        ProjectedObservedScore(
+            player_id=pid,
+            scoring_week=observed_week,
+            points=score.points,
+            basis=score.basis,
+            observed_points=score.observed_points,
+            source_id=score.source_id,
+            projection_source_id=projection_sources.get(pid)
+            if score.basis in {"projection", "projected_final"}
+            else None,
         )
-        result = simulate_deterministic_season(
-            snapshot,
-            scenario,
-            ir_policy=IRPolicy(request.ir_policy),
-            transaction_policy=WeeklyTransactionPolicy(
-                WaiverBoundaryPolicy(request.waiver_boundary),
-                request.reject_incomplete_valuations,
-                automatic_rosters=automatic_policy_from_loaded_snapshot(
-                    loaded, request.standings_fallback_seed
-                ),
-            ),
-            partial_week=partial,
-        )
+        for pid, score in observations
+    )
     postseason = result.final_postseason_state
     champion = (
         next((p.team_id for p in postseason.placements if p.place == 1), None)
@@ -165,8 +80,8 @@ def project_baseline(loaded, request) -> ProjectedBaselineResult:
         and row.scoring_week != observed_week
     )
     return ProjectedBaselineResult(
-        snapshot_id=loaded.metadata.snapshot_id,
-        canonical_sha256=loaded.metadata.canonical_sha256,
+        snapshot_id=result.source_snapshot_id,
+        canonical_sha256=canonical_sha256,
         status=result.status.value,
         teams=result.team_records,
         weeks=tuple(
@@ -191,6 +106,12 @@ def project_baseline(loaded, request) -> ProjectedBaselineResult:
         missing_projection_count=sum(
             row.raw_projection is None for row in projected_rows
         ),
-        assumptions=("canonical-projections-v1", *result.configuration_provenance),
+        assumptions=(
+            "canonical-projections-v1",
+            f"ir_policy:{inputs.ir_policy.value}",
+            f"waiver_boundary:{inputs.transaction_policy.waiver_boundary.value}",
+            f"reject_incomplete_valuations:{inputs.transaction_policy.reject_incomplete_valuations}",
+            *result.configuration_provenance,
+        ),
         unresolved_capabilities=result.unresolved_capabilities,
     )

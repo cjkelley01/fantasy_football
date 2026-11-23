@@ -7,9 +7,13 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from fantasy_football.canonical.model import RosterEntry
+from fantasy_football.effective_trades import EffectiveTrade
 from fantasy_football.evolving_state import TransactionRecord
 from fantasy_football.postseason import PostseasonMatchup
+from fantasy_football.scenario_evaluator import ScenarioRosterAction
 from fantasy_football.season_simulator import FinalTeamSeasonRecord, FrozenTeamWeek
+from fantasy_football.unified_actions import UnifiedAction
 from fantasy_football.weekly_engine import MatchupResult
 
 API_SCHEMA_VERSION = "1.0"
@@ -360,6 +364,60 @@ class ManualScenarioInput(ContractModel):
     )
 
 
+class ProjectedScenarioRequest(ProjectedBaselineRequest):
+    scenario: ManualScenarioInput
+
+
+class ProjectedScenarioResult(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    scenario_id: str
+    timeline: tuple[EffectiveTrade, ...]
+    explicit_changes: tuple[RosterChangeInput, ...]
+    forced_drops: tuple[ScenarioRosterAction, ...]
+    automatic_additions: tuple[ScenarioRosterAction, ...]
+    baseline: ProjectedBaselineResult
+    hypothetical: ProjectedBaselineResult
+    baseline_final_roster: tuple[RosterEntry, ...]
+    hypothetical_final_roster: tuple[RosterEntry, ...]
+
+
+class ProjectedOpportunityRequest(ProjectedBaselineRequest):
+    requesting_team_id: int = Field(strict=True)
+    counterparty_team_id: int = Field(strict=True)
+
+
+class ProjectedOpportunitySeason(ContractModel):
+    season: ProjectedBaselineResult
+    final_roster: tuple[RosterEntry, ...]
+
+
+class ProjectedOpportunityCandidate(ContractModel):
+    candidate_id: str
+    actions: tuple[UnifiedAction, ...]
+    completed_state_sha256: str | None
+    timeline: tuple[EffectiveTrade, ...]
+    explicit_changes: tuple[RosterChangeInput, ...]
+    forced_drops: tuple[ScenarioRosterAction, ...]
+    automatic_additions: tuple[ScenarioRosterAction, ...]
+    caveats: tuple[str, ...]
+    evaluation_index: NonnegativeInt | None
+    limitation: str | None
+
+
+class ProjectedOpportunityResult(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    snapshot_id: str
+    canonical_sha256: str
+    configuration_sha256: str
+    generated_candidates: NonnegativeInt
+    candidate_coverage_complete: bool
+    evaluation_coverage_complete: bool
+    truncation_reason: str | None
+    baseline: ProjectedOpportunitySeason | None
+    evaluations: tuple[ProjectedOpportunitySeason, ...]
+    candidates: tuple[ProjectedOpportunityCandidate, ...]
+
+
 class ManualScenarioRequest(ContractModel):
     api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
     snapshot: SnapshotSelector
@@ -406,65 +464,6 @@ class TeamLineupResult(ContractModel):
     team_id: int
     changed_scoring_weeks: tuple[int, ...]
     weeks: tuple[WeeklyLineupResult, ...]
-
-
-class TradeQuickAnalysisRequest(ContractModel):
-    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
-    snapshot: SnapshotSelector
-    canonical_sha256: str
-    ir_policy: Literal["projection_based", "strict"]
-    scenario: ManualScenarioInput
-
-
-class ProjectedStarter(ContractModel):
-    slot_id: int
-    slot_index: int
-    player_id: int
-    points: float
-
-
-class QuickProjectedLineup(ContractModel):
-    projected_points: float
-    starters: tuple[ProjectedStarter, ...]
-    bench_player_ids: tuple[int, ...]
-    reserve_player_ids: tuple[int, ...]
-    vacancies: tuple[tuple[int, int, str], ...]
-    missing_projection_player_ids: tuple[int, ...]
-    explicit_zero_player_ids: tuple[int, ...]
-
-
-class QuickTradeWeek(ContractModel):
-    scoring_week: int
-    baseline: QuickProjectedLineup
-    hypothetical: QuickProjectedLineup
-    difference: float
-
-
-class QuickTradeTeam(ContractModel):
-    team_id: int
-    baseline_projected_points: float
-    hypothetical_projected_points: float
-    difference: float
-    weeks: tuple[QuickTradeWeek, ...]
-
-
-class QuickRosterAction(ContractModel):
-    team_id: int
-    player_id: int
-
-
-class TradeQuickAnalysisResult(ContractModel):
-    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
-    snapshot_id: str
-    canonical_sha256: str
-    completed_state_sha256: str
-    first_scoring_week: int
-    final_scoring_week: int
-    explicit_changes: tuple[RosterChangeInput, ...]
-    forced_drops: tuple[QuickRosterAction, ...]
-    automatic_additions: tuple[QuickRosterAction, ...]
-    teams: tuple[QuickTradeTeam, ...]
-    assumptions: tuple[str, ...]
 
 
 class ManualScenarioResult(ContractModel):

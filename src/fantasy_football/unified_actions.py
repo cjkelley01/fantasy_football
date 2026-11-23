@@ -20,8 +20,8 @@ from fantasy_football.evolving_state import (
     AcquisitionAvailability,
     EvolvingLeagueState,
     state_to_json,
-    validate_player_drop_permission,
     validate_evolving_state,
+    validate_player_drop_permission,
 )
 from fantasy_football.monte_carlo import MonteCarloConfig, run_monte_carlo_batch
 from fantasy_football.monte_carlo_parallel import (
@@ -61,7 +61,10 @@ from fantasy_football.trade_chains import (
     iter_incomplete_trade_chains,
     iter_multi_trade_chains,
 )
-from fantasy_football.trade_evaluation import completed_state_fingerprint, reuse_search_snapshot
+from fantasy_football.trade_evaluation import (
+    completed_state_fingerprint,
+    reuse_search_snapshot,
+)
 from fantasy_football.trade_screening import TradeScreeningConfiguration
 from fantasy_football.weekly_transactions import WaiverBoundaryPolicy
 
@@ -885,6 +888,21 @@ def _attempts(snapshot, state, configuration, config_sha, baseline_sha, rejectio
                 _acquisition_actions(first, 1),
                 {first.acquired_player_id},
             )
+
+
+def observed_single_trade_transitions(snapshot, state, configuration):
+    """Expose the established ordered ownership transitions before structural completion."""
+    if (
+        configuration.action_orderings != (ActionOrdering.STANDALONE_TRADE,)
+        or configuration.screening is not None
+    ):
+        _fail("Observed-week discovery supports standalone trades without structural screening.")
+    config_sha, _ = _validate_configuration(snapshot, state, configuration)
+    trade_config = _trade_configuration(configuration, state)
+    return config_sha, (
+        iter_single_trade_transitions(snapshot, state, trade_config)
+        if trade_config else iter(())
+    )
 
 
 def iter_unified_action_candidates(snapshot, state, configuration):

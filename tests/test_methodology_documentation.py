@@ -727,7 +727,8 @@ def test_partial_mc_does_not_exempt_nonstarting_rostered_players(slot, role) -> 
     validate_partial_week_evidence(snapshot, evidence)
     validate_proposed_lineup(snapshot, evidence, lineup)
     with pytest.raises(
-        MonteCarloError, match="requires completed-fixed or unstarted.*player 1"
+        MonteCarloError,
+        match=r"requires canonical live scoring evidence for players \[1\]",
     ):
         run_monte_carlo_path(
             snapshot,
@@ -797,7 +798,8 @@ def test_partial_mc_fantasy_bye_does_not_waive_player_gate() -> None:
     validate_partial_week_evidence(snapshot, evidence)
     _, config, _ = _mc_partial_case()
     with pytest.raises(
-        MonteCarloError, match=f"requires completed-fixed or unstarted.*player {target}"
+        MonteCarloError,
+        match=rf"requires canonical live scoring evidence for players \[{target}\]",
     ):
         run_monte_carlo_path(
             snapshot,
