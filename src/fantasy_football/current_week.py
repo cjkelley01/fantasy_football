@@ -72,14 +72,10 @@ def _reconciled_current_total(source_total, roster_total, actuals):
 def build_current_week_input(
     snapshot: LeagueSnapshot,
     responses: Sequence[CapturedResponse],
-    *,
-    projected_final: bool = False,
 ) -> MonteCarloPartialWeekInput:
     """Reject unsupported raw structures without leaking private source values."""
     try:
-        return _build_current_week_input(
-            snapshot, responses, projected_final=projected_final
-        )
+        return _build_current_week_input(snapshot, responses)
     except (
         KeyError,
         TypeError,
@@ -223,8 +219,6 @@ def bind_current_week_sources(snapshot, responses):
 def _build_current_week_input(
     snapshot: LeagueSnapshot,
     responses: Sequence[CapturedResponse],
-    *,
-    projected_final: bool = False,
 ) -> MonteCarloPartialWeekInput:
     """Validate current source claims before granting partial execution.
 
@@ -522,8 +516,9 @@ def _build_current_week_input(
     require_executable_partial_week_evidence(
         snapshot,
         evidence,
-        projected_final=projected_final
-        or any(state.score_state is PlayerScoreState.IN_PROGRESS for state in players),
+        projected_final=any(
+            state.score_state is PlayerScoreState.IN_PROGRESS for state in players
+        ),
     )
     return MonteCarloPartialWeekInput(
         evidence,

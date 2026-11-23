@@ -120,11 +120,11 @@ Temporary team/player/filter/editor choices do not change committed revision or 
 
 **Evaluate Trade** compares the unchanged and hypothetical seasons. The secondary **Explore probabilities** action uses the same committed draft and exposes seed, matched paths, confidence, precision, and provisional Normal settings. Both modes use the selected IR and waiver policies. Preflight validates finite/integral/range relationships, enums, nonnegative/nonzero dispersion and known rostered pins; backend remains authoritative. Player selection alone submits nothing.
 
-The timeline is an **intermediate structural hypothesis**. API 1.0 accepts aggregate final ownership, not an executable ordered chain. The engine performs deterministic completion and paired evaluation. Forced drops/automatic additions remain separate from explicit actions. Weekly before/after starter/bench/reserve/vacancy explanations show projected-point consequences, not new source player projections.
+Untimed drafts use aggregate final ownership as a structural hypothesis. Effective-dated drafts use the ordered transfers and verified scoring-week boundaries. Both paths use the shared season coordinator for comparison with the unchanged baseline. Forced drops/automatic additions remain separate from explicit actions. Weekly before/after starter/bench/reserve/vacancy explanations show projected-point consequences, not new source player projections.
 
 Each submission has a unique `trade-lab-<snapshot>-<uuid>` scenario ID, distinct from run ID and engine checksum. Polling/results validate active revision, run/type/scenario, snapshot/checksum, schema, terminal completion and availability. Retained-result requests also use a monotonic token; abort alone cannot prevent a late ignored response overwriting another run. Stale, cancelled, interrupted, failed, rejected, unavailable and mismatched outputs are not successful evidence.
 
-Simulation Center can reopen retained manual results, **without reconstructing their historical draft**: no request/draft endpoint exists. Scenario-library comparison, ordered-chain legality, acceptance and ESPN submission remain unsupported. Implemented forms are paired roster surfaces, numbered flow, signed paired intervals and explicit completion/lineup consequences; no drag action is required.
+Simulation Center can reopen retained manual results, **without reconstructing their historical draft**: no request/draft endpoint exists. Scenario-library comparison, general live chain search, counterparty acceptance and ESPN submission remain unsupported. Implemented forms are paired roster surfaces, numbered flow, signed paired intervals and explicit completion/lineup consequences; no drag action is required.
 
 ## Simulation Center
 

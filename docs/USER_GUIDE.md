@@ -120,7 +120,7 @@ If the app reports that the configured store is unavailable, restore access to t
 
 
 1. Open **Refresh ESPN league**. Confirm the configured league, season and public/private access mode. If the profile is unavailable, correct its reported configuration problem first; credentials remain server-side.
-2. Submit the refresh. The browser sends no explicit first week and preserves the ESPN current scoring period. Completed and unstarted games can be simulated when lineup, score, standings and carry evidence reconcile. In-progress games or unresolved evidence still block execution.
+2. Submit the refresh. The browser sends no explicit first week and preserves the ESPN current scoring period. Completed, unstarted, and in-progress games can be evaluated when their required lineup, score, projection, standings and carry evidence reconciles. Unresolved required evidence blocks execution.
 3. Review validation findings, missing projections, explicit zeros, unresolved capabilities and the published snapshot ID. A snapshot is an immutable as-of collection of league evidence, not a continuously updated live model. Each publication appends a new identity rather than rewriting the earlier snapshot.
 4. Confirm which snapshot is active. A successful publication selects its new snapshot; you can also deliberately choose a retained snapshot in **Active snapshot**. Check league, season, publication/retrieval context and simulation horizon in **League context → Source & build**. Older data can remain selectable; it must not be mistaken for current advice.
 

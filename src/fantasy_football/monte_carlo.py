@@ -70,7 +70,7 @@ class MonteCarloError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class MonteCarloPartialWeekInput:
-    """Fixed/completed and unstarted evidence; realizations use existing draws."""
+    """Source-bound observed scoring and lineups; realizations use existing draws."""
 
     evidence: PartialWeekEvidence
     lineup: tuple[ProposedLineupAssignment, ...]
@@ -385,7 +385,7 @@ def simulation_configuration_fingerprint(
             config.initial_evolving_state
         )
     if config.partial_week is not None:
-        _validate_pregame_partial_week(snapshot, config.partial_week)
+        _validate_partial_week_sampling(snapshot, config.partial_week)
         payload["partial_week"] = {
             "contract": (
                 "in-progress-unconditional-final-v1"
@@ -469,7 +469,7 @@ def _has_in_progress(partial: MonteCarloPartialWeekInput) -> bool:
     return any(state.score_state is PlayerScoreState.IN_PROGRESS for state in partial.evidence.players)
 
 
-def _validate_pregame_partial_week(
+def _validate_partial_week_sampling(
     snapshot: LeagueSnapshot, partial: MonteCarloPartialWeekInput
 ) -> None:
     if not isinstance(partial.lineup, tuple) or not isinstance(
@@ -652,7 +652,7 @@ def run_monte_carlo_path(
     try:
         with validated_snapshot(snapshot):
             if config.partial_week is not None:
-                _validate_pregame_partial_week(snapshot, config.partial_week)
+                _validate_partial_week_sampling(snapshot, config.partial_week)
             if lineup_workspace is None and not retain_result:
                 lineup_workspace = prepare_lineup_optimization(snapshot)
             if lineup_workspace is not None and lineup_workspace.snapshot is not snapshot:

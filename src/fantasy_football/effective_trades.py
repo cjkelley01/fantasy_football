@@ -74,11 +74,6 @@ def trade_weeks(snapshot):
     return tuple(weeks)
 
 
-def current_trade_eligibility(snapshot, partial, responses):
-    """Compatible entry point for callers with prepared observed scoring."""
-    return inspect_trade_timing(snapshot, responses)
-
-
 def inspect_trade_timing(snapshot, responses):
     """Verify timing from game and ownership/lock evidence, independent of scoring."""
     from fantasy_football.current_week import (

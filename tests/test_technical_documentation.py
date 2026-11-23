@@ -124,7 +124,9 @@ def test_product_workspace_availability_matches_shell_navigation() -> None:
             )
     for boundary in (
         "Current-week analysis and engine interfaces",
-        "completed fixed actuals plus unstarted-player draws",
+        "Verified final actuals stay fixed",
+        "unconditional full-game draw",
+        "Missing starter evidence",
         "Provisional / evidence-limited",
         "M8.4 release disposition remains pending",
         "safe whole-week boundary",

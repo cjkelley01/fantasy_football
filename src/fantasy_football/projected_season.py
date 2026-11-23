@@ -116,9 +116,10 @@ def prepare_projected_season(
                 raise CurrentWeekEvidenceError(
                     "Projected baseline must begin at the verified current scoring week."
                 )
-            if observed_lineup or not has_safe_v1_boundary(
+            safe_boundary = has_safe_v1_boundary(
                 live, authoritative_current_matchup_period_scoring_weeks=membership
-            ):
+            )
+            if observed_lineup or not safe_boundary:
                 current_week = next(
                     week
                     for week in live.weeks
@@ -132,9 +133,7 @@ def prepare_projected_season(
                         "Projected baseline requires authoritative current matchup-period membership."
                     )
                 allowed_statuses = {ScoringPeriodStatus.PARTIAL}
-                if observed_lineup and has_safe_v1_boundary(
-                    live, authoritative_current_matchup_period_scoring_weeks=membership
-                ):
+                if observed_lineup and safe_boundary:
                     allowed_statuses.add(ScoringPeriodStatus.UNPLAYED)
                 if current_week.status not in allowed_statuses:
                     rationale = (
@@ -145,11 +144,7 @@ def prepare_projected_season(
                     raise CurrentWeekEvidenceError(
                         f"Projected baseline has no supported current scoring boundary: {rationale}"
                     )
-                current = build_current_week_input(
-                    snapshot,
-                    responses,
-                    projected_final=True,
-                )
+                current = build_current_week_input(snapshot, responses)
 
         if observed_lineup and current is None:
             raise CurrentWeekEvidenceError(
