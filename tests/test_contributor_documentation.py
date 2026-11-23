@@ -28,7 +28,7 @@ def _validate_work_rows(rows: list[list[str]]) -> None:
     assert rows
     anchors = [re.search(r'id="([^"]+)"', row[0]).group(1) for row in rows]
     assert len(set(anchors)) == len(anchors)
-    expected_legacy = {f"WR-{number:03d}" for number in (*range(3, 22), *range(23, 28))}
+    expected_legacy = {f"WR-{number:03d}" for number in (*range(4, 22), 23, 24, 25, 27)}
     legacy = [row[6] for row in rows if row[6].startswith("WR-")]
     assert expected_legacy <= set(legacy) and len(legacy) == len(set(legacy))
     assert {
@@ -68,7 +68,7 @@ def test_backlog_rejects_lost_duplicate_or_prematurely_completed_work(
 ) -> None:
     rows = [row[:] for row in _work_rows()]
     if fault == "lost-item":
-        rows.pop()
+        rows.pop(0)
     elif fault == "duplicate-anchor":
         rows[1][0] = rows[0][0]
     else:

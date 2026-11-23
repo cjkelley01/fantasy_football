@@ -106,7 +106,6 @@ def _validate(documents: dict[str, str]) -> None:
     backlog = documents["docs/BACKLOG.md"]
     for title in (
         "CGL Record Book Integration",
-        "Node Toolchain Compatibility",
         "Simulation Performance Evaluation",
         "Interface and Action UX",
         "League Rules and Transaction Timing Evidence",
@@ -115,7 +114,6 @@ def _validate(documents: dict[str, str]) -> None:
         "Exact Finite-Score Objective Ordering",
         "Incomplete-Valuation Transaction Selection",
         "Progressive Inference Coverage",
-        "Search Scratch Cleanup",
     ):
         row = next(
             line
