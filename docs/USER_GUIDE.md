@@ -144,9 +144,9 @@ The server validates the pair on startup and serves the completed-season project
 
 ## Choose a manager perspective
 
-For local CGL use, set `WAR_ROOM_MANAGER_CROSSWALK` to the absolute path of a private JSON file with `league_id` and `owners`. Each owner entry maps an ESPN member ID to a CGL `manager_id` and `display_name`. Keep this file outside Git. The server validates it at startup. The manager endpoint compares the initial and reconciliation ownership sources of the selected saved snapshot and returns only matched CGL labels, keys and teams. ESPN member IDs stay on the server.
+For local CGL use, set `WAR_ROOM_MANAGER_CROSSWALK` to the absolute path of a private JSON file with `league_id` and `owners`. Each owner entry maps an ESPN member ID to a CGL `manager_id` and `display_name`. Keep this file outside Git. The server validates it at startup. Optionally set `default_manager_id` to a CGL manager key from the same file. It applies when that manager resolves to one primary team on the active snapshot and there is no valid remembered choice. The manager endpoint compares the initial and reconciliation ownership sources of the selected saved snapshot and returns only matched CGL labels, keys and teams. ESPN member IDs stay on the server.
 
-Choose a manager in **Home** or open **My Team → Team Overview** to choose a manager. The browser remembers the selection for the league and season. If a new snapshot lacks a matching membership, choose again. An unmapped owner remains unavailable as a selectable manager. The selector does not change the analysis snapshot or grant privileges.
+Choose a manager in the header, then open **My Team → Team Overview** to choose a manager. The browser remembers the selection for the league and season. If a new snapshot lacks a matching membership, choose again. An unmapped owner remains unavailable as a selectable manager. The selector does not change the analysis snapshot or grant privileges.
 
 ## Run a baseline and evaluate hypothetical changes
 

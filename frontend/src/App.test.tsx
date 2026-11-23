@@ -79,14 +79,18 @@ test("remembers a manager perspective without changing the active snapshot", asy
   const key = `war-room-manager:${snapshot.league_id}:${snapshot.season}`;
   localStorage.removeItem(key);
   mockApi({ detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } },
-    managers: { snapshot_id: snapshot.snapshot_id, unresolved_owner_count: 1,
-    choices: [{ manager_id: "manager-a", display_name: "Avery", team_id: 1, is_primary: true }] } });
+    managers: { snapshot_id: snapshot.snapshot_id, unresolved_owner_count: 1, default_team_id: 2,
+    choices: [
+      { manager_id: "manager-a", display_name: "Avery", team_id: 1, is_primary: true },
+      { manager_id: "manager-b", display_name: "Blair", team_id: 2, is_primary: true },
+    ] } });
   const user = userEvent.setup();
-  render(<App />);
+  const app = render(<App />);
   await screen.findByRole("heading", { name: "Home" });
   const selector = await screen.findByRole("combobox", { name: "Manager perspective" });
   const value = JSON.stringify(["manager-a", 1]);
-  expect(selector).toHaveValue("");
+  expect(within(screen.getByRole("banner")).getByRole("combobox",{ name: "Manager perspective" })).toBe(selector);
+  expect(selector).toHaveValue(JSON.stringify(["manager-b", 2]));
   await user.selectOptions(selector, value);
   expect(screen.getByRole("heading", { name: "North Harbor" })).toBeInTheDocument();
   expect(screen.getByText("Home vs. Red Zone Club")).toBeInTheDocument();
@@ -98,6 +102,9 @@ test("remembers a manager perspective without changing the active snapshot", asy
   await user.click(screen.getByRole("button", { name: "View league matchups" }));
   expect(screen.getByRole("heading", { name: "League Matchups" })).toBeInTheDocument();
   expect(localStorage.getItem("war-room-snapshot")).toBe(snapshot.snapshot_id);
+  app.unmount();
+  render(<App />);
+  expect(await screen.findByRole("combobox", { name: "Manager perspective" })).toHaveValue(value);
   localStorage.removeItem(key);
 });
 

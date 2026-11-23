@@ -1,13 +1,14 @@
 import {ProjectionReadiness} from "./ProjectedBaseline";
 import type {ProjectedSeasonState} from "./useProjectedSeason";
 import { currentMatchupPeriod } from "./LeagueOverviewContext";
-import { ManagerSelectionStatus, ManagerSelector, useManagerPerspective } from "./ManagerPerspective";
+import { ManagerSelectionStatus, type useManagerPerspective } from "./ManagerPerspective";
 import type { BackgroundRunRecord, SnapshotSummary } from "./types/api";
 
 const snapshotTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loaded", openTeam, openMatchups, openLeague, openPlayoffRace, openSimulation, openTrades, openOpportunities }: {
+export function HomeDashboard({ snapshot, managerState, projection, runs, runListStatus = "loaded", openTeam, openMatchups, openLeague, openPlayoffRace, openSimulation, openTrades, openOpportunities }: {
   snapshot: SnapshotSummary;
+  managerState: ReturnType<typeof useManagerPerspective>;
   projection?: ProjectedSeasonState;
   runs?: readonly BackgroundRunRecord[];
   runListStatus?: "loading" | "loaded" | "unavailable";
@@ -19,7 +20,7 @@ export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loa
   openPlayoffRace: () => void;
   openSimulation: () => void;
 }) {
-  const state = useManagerPerspective(snapshot);
+  const state = managerState;
   const period = currentMatchupPeriod(snapshot);
   const team = state.team;
   const matchups = period && team ? snapshot.matchups.filter(item =>
@@ -37,7 +38,6 @@ export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loa
       <div><h1>Home</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p>
         <p>Snapshot · {snapshotTime.format(new Date(snapshot.retrieval_finished_at_utc))}</p>
       </div>
-      <ManagerSelector state={state}/>
     </section>
     {team ? <div className="overview-source-grid">
       <section className="analytics-panel home-summary">

@@ -25,6 +25,7 @@ class ManagerCrosswalk(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
     league_id: TeamId
     owners: dict[Text, _Manager]
+    default_manager_id: Text | None = None
 
 
 class ManagerPerspective(_Manager):
@@ -36,6 +37,7 @@ class ManagerPerspectives(BaseModel):
     snapshot_id: str
     choices: tuple[ManagerPerspective, ...]
     unresolved_owner_count: int
+    default_team_id: TeamId | None = None
 
 
 class _TeamOwners(BaseModel):
@@ -66,6 +68,13 @@ def load_manager_crosswalk(path: Path) -> ManagerCrosswalk:
     if not keys or len(keys) != len(set(keys)):
         raise CglManagerError(
             "The local CGL manager ID mapping must have distinct manager keys."
+        )
+    if (
+        crosswalk.default_manager_id is not None
+        and crosswalk.default_manager_id not in keys
+    ):
+        raise CglManagerError(
+            "The default manager must be part of the local CGL mapping."
         )
     return crosswalk
 
@@ -139,10 +148,16 @@ def resolve_manager_perspectives(
                         is_primary=owner == primary,
                     )
                 )
+    defaults = [
+        choice.team_id
+        for choice in choices
+        if choice.is_primary and choice.manager_id == crosswalk.default_manager_id
+    ]
     return ManagerPerspectives(
         snapshot_id=loaded.metadata.snapshot_id,
         choices=tuple(
             sorted(choices, key=lambda choice: (choice.display_name, choice.team_id))
         ),
         unresolved_owner_count=unresolved,
+        default_team_id=defaults[0] if len(defaults) == 1 else None,
     )

@@ -14,6 +14,7 @@ def crosswalk():
     return ManagerCrosswalk.model_validate(
         {
             "league_id": 7,
+            "default_manager_id": "manager-a",
             "owners": {
                 "private-member-1": {
                     "manager_id": "manager-a",
@@ -66,6 +67,7 @@ def test_shared_memberships_keep_primary_and_exclude_unmapped_identifiers(crossw
         ("manager-b", False),
     ]
     assert result.unresolved_owner_count == 1
+    assert result.default_team_id == 1
     assert "private-" not in result.model_dump_json()
 
 

@@ -201,3 +201,10 @@ main { min-width:0; }.surface{padding:42px clamp(20px,4vw,64px) 72px;max-width:1
 .home-summary dt { color: var(--muted); font-size: 12px; }
 .home-summary dd { margin: 2px 0 0; font-weight: 700; }
 .home-shortcuts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+.header-manager-control select { width: min(230px, 30vw); }
+@media (max-width: 850px) {
+  .app-header:has(.header-manager-control) { flex-wrap: wrap; row-gap: 7px; }
+  .header-manager-control { flex-basis: 100%; }
+  .header-manager-control select { width: min(100%, 320px); }
+}

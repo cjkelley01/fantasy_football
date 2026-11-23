@@ -49,6 +49,7 @@ export interface ManagerPerspectives {
   readonly snapshot_id: string;
   readonly choices: readonly ManagerPerspective[];
   readonly unresolved_owner_count: number;
+  readonly default_team_id?: number | null;
 }
 
 export interface PlayerSummary {

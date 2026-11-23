@@ -1,12 +1,11 @@
-import { ManagerSelectionStatus, ManagerSelector, useManagerPerspective } from "./ManagerPerspective";
+import { ManagerSelectionStatus, type useManagerPerspective } from "./ManagerPerspective";
 import type { SnapshotSummary } from "./types/api";
 
-export function TeamOverview({ snapshot }: { snapshot: SnapshotSummary }) {
-  const state = useManagerPerspective(snapshot);
+export function TeamOverview({ snapshot, managerState }: { snapshot: SnapshotSummary; managerState: ReturnType<typeof useManagerPerspective> }) {
+  const state = managerState;
   return <div className="surface">
     <section className="hero">
       <div><h1>Team Overview</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p></div>
-      <ManagerSelector state={state}/>
     </section>
     {state.team ? <ObservedTeam snapshot={snapshot} team={state.team}/>
       : <ManagerSelectionStatus state={state}/>}
