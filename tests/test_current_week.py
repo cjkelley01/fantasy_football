@@ -5,10 +5,12 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
+from fantasy_football.app.http import create_app
 from fantasy_football.current_week import (
     CurrentWeekEvidenceError,
-    _reconcile_standings_prefix,
+    reconcile_standings_prefix,
     _reconciled_current_total,
     build_current_week_input,
 )
@@ -128,6 +130,28 @@ def _publish(tmp_path, bundle):
     metadata = publish_and_verify(store, result)
     loaded = store.load(metadata.snapshot_id)
     return loaded.snapshot, tuple(r.response for r in loaded.raw_sources)
+
+
+@pytest.mark.parametrize("unsettled", [False, True])
+def test_recent_results_only_exposes_reconciled_prior_scores(tmp_path, unsettled):
+    bundle = _bundle()
+    if unsettled:
+        bundle.league_initial.payload["schedule"][0]["winner"] = "UNDECIDED"
+    snapshot, _ = _publish(tmp_path, bundle)
+    with TestClient(create_app(database_path=tmp_path / "snapshots.sqlite3")) as client:
+        result = client.get(f"/api/v1/snapshots/{snapshot.snapshot_id}/recent-results")
+    if unsettled:
+        assert result.status_code == 422
+        assert result.json()["error"]["code"] == "recent_results_unverified"
+        assert "settlement is unresolved" in result.json()["error"]["message"]
+    else:
+        assert result.status_code == 200
+        assert result.headers["cache-control"] == "no-store"
+        data = result.json()
+        assert data["scoring_weeks"] == [1]
+        assert [(row["home_score"], row["away_score"], row["winner"]) for row in data["results"]] == [
+            (10, 7, "HOME"), (3, 4, "AWAY")
+        ]
 
 
 def test_completed_and_unstarted_source_reconciles(tmp_path):
@@ -309,15 +333,15 @@ def test_historical_standings_reconcile_exact_decimal_totals():
         }
         for period, home, away in [(1, 10.1, 1.1), (2, 20.2, 2.2)]
     ]
-    assert _reconcile_standings_prefix(teams, schedule, {1, 2}, 2) == {1, 2}
+    assert reconcile_standings_prefix(teams, schedule, {1, 2}, 2) == {1, 2}
     teams[0].points_for = teams[1].points_against = 10.1 + 20.2
     teams[1].points_for = teams[0].points_against = 1.1 + 2.2
-    assert _reconcile_standings_prefix(teams, schedule, {1, 2}, 2) == {1, 2}
+    assert reconcile_standings_prefix(teams, schedule, {1, 2}, 2) == {1, 2}
     teams[0].points_for = 30.300000000000004
     with pytest.raises(
         CurrentWeekEvidenceError, match="Cumulative standings do not reconcile"
     ):
-        _reconcile_standings_prefix(teams, schedule, {1, 2}, 2)
+        reconcile_standings_prefix(teams, schedule, {1, 2}, 2)
 
 
 def test_current_week_trade_rejects_before_paired_sampling(tmp_path, monkeypatch):

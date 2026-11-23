@@ -90,6 +90,21 @@ export interface MatchupSummary {
   readonly entry_status: string;
 }
 
+export interface RecentLeagueResults {
+  readonly snapshot_id: string;
+  readonly source_id: string;
+  readonly matchup_period_id: number;
+  readonly scoring_weeks: readonly number[];
+  readonly results: readonly {
+    readonly matchup_id: number;
+    readonly home_team_id: number;
+    readonly away_team_id: number;
+    readonly home_score: number;
+    readonly away_score: number;
+    readonly winner: "HOME" | "AWAY" | "TIE";
+  }[];
+}
+
 export interface LeagueStructure {
   readonly lineup_slot_capacities: readonly (readonly [number, number, string])[];
   readonly ordinary_roster_capacity: number;

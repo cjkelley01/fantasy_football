@@ -5,11 +5,12 @@ import { App } from "./App";
 import { activeRun, health, snapshot } from "./test/fixtures";
 
 function response(body: unknown, status=200) { return Promise.resolve(new Response(JSON.stringify(body), { status, headers:{"Content-Type":"application/json"} })); }
-function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown; managers?: unknown } = {}) {
+function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown; managers?: unknown; recentResults?: unknown } = {}) {
   vi.spyOn(globalThis,"fetch").mockImplementation((input) => {
     const url=String(input);
     if(url.includes("/health")) return response(health);
     if(url.endsWith("/managers")) return response(options.managers ?? null);
+    if(url.endsWith("/recent-results")) return response(options.recentResults ?? null);
     if(url.includes(`/snapshots/${snapshot.snapshot_id}`)) return response(options.detail ?? snapshot);
     if(url.endsWith("/snapshots")) return response(options.snapshots ?? [snapshot]);
     if(url.includes("/runs")) return response(options.runs ?? [activeRun]);
@@ -53,10 +54,19 @@ test("opens the matching historical bracket without changing the active snapshot
         regular_season: { wins: 1, losses: 0, ties: 0, points_for: 12, points_against: 0 } }],
     })),
   };
-  mockApi({ history: records, detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } } });
+  mockApi({
+    history: records, detail: { ...snapshot, live_scoring: { current_scoring_period: 8 } },
+    recentResults: {
+      snapshot_id: snapshot.snapshot_id, source_id: "fixture", matchup_period_id: 7, scoring_weeks: [7],
+      results: [{ matchup_id: 17, home_team_id: 1, away_team_id: 2, home_score: 0, away_score: 20.25, winner: "AWAY" }],
+    },
+  });
   const user = userEvent.setup();
   render(<App />);
   expect(await screen.findByText("Red Zone Club at North Harbor")).toBeInTheDocument();
+  const resultsTable = within(await screen.findByRole("table", { name: "Recent results" }));
+  expect(resultsTable.getByText("North Harbor · 0")).toBeInTheDocument();
+  expect(resultsTable.getByText("Sunday Union · 20.25")).toBeInTheDocument();
   await user.click(await screen.findByRole("button", { name: "View 2025 championship bracket" }));
   expect(await screen.findByRole("heading", { name: "Championship bracket" })).toHaveFocus();
   expect(screen.getByRole("combobox", { name: "Season" })).toHaveValue("2025");

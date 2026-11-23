@@ -80,6 +80,23 @@ class MatchupSummary(ContractModel):
     entry_status: str
 
 
+class ObservedMatchupResult(ContractModel):
+    matchup_id: int = Field(gt=0, strict=True)
+    home_team_id: int = Field(gt=0, strict=True)
+    away_team_id: int = Field(gt=0, strict=True)
+    home_score: float = Field(allow_inf_nan=False, strict=True)
+    away_score: float = Field(allow_inf_nan=False, strict=True)
+    winner: Literal["HOME", "AWAY", "TIE"]
+
+
+class RecentLeagueResults(ContractModel):
+    snapshot_id: str
+    source_id: str
+    matchup_period_id: int
+    scoring_weeks: tuple[int, ...]
+    results: tuple[ObservedMatchupResult, ...]
+
+
 class RuleCapability(ContractModel):
     capability: str
     status: str

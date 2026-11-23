@@ -1,6 +1,49 @@
 import { useEffect, useState } from "react";
 import { api } from "./lib/api";
-import type { CglHistory, SnapshotSummary } from "./types/api";
+import type { CglHistory, RecentLeagueResults, SnapshotSummary } from "./types/api";
+
+const score = new Intl.NumberFormat(undefined, { maximumFractionDigits: 15 });
+
+export function RecentResults({ snapshot }: { snapshot: SnapshotSummary }) {
+  const [response, setResponse] = useState<RecentLeagueResults | null>();
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void api.recentLeagueResults(snapshot.snapshot_id, controller.signal).then(
+      result => {
+        if (controller.signal.aborted) return;
+        if (result && (result.snapshot_id !== snapshot.snapshot_id ||
+            !Array.isArray(result.scoring_weeks) || !Array.isArray(result.results))) setFailed(true);
+        else setResponse(result);
+      },
+      () => { if (!controller.signal.aborted) setFailed(true); },
+    );
+    return () => controller.abort();
+  }, [snapshot.snapshot_id]);
+
+  const result = response?.snapshot_id === snapshot.snapshot_id ? response : null;
+  const teams = new Map(snapshot.teams.map(team => [team.team_id, team.display_name]));
+  return <section className="analytics-panel">
+    <h2>Recent results</h2>
+    {result ? <>
+      <p>Scoring {result.scoring_weeks.length === 1 ? "week" : "weeks"} {result.scoring_weeks.join("–")} · Reconciled as of this snapshot</p>
+      <div className="table-wrap"><table aria-label="Recent results">
+        <thead><tr><th scope="col">Away</th><th scope="col">Home</th><th scope="col">Result</th></tr></thead>
+        <tbody>{result.results.map(item => {
+          const home = teams.get(item.home_team_id);
+          const away = teams.get(item.away_team_id);
+          return <tr key={item.matchup_id}>
+            <td>{away} · {score.format(item.away_score)}</td>
+            <td>{home} · {score.format(item.home_score)}</td>
+            <td>{item.winner === "TIE" ? "Tie" : item.winner === "HOME" ? home : away}</td>
+          </tr>;
+        })}</tbody>
+      </table></div>
+    </> : <p>{failed ? "Recent scores could not be verified for this snapshot."
+      : response === undefined ? "Checking recent scores…"
+      : "No completed regular-season results are available for this snapshot."}</p>}
+  </section>;
+}
 
 export function CurrentMatchups({ snapshot }: { snapshot: SnapshotSummary }) {
   const week = snapshot.live_scoring?.current_scoring_period;

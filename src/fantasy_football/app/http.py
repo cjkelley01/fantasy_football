@@ -38,6 +38,7 @@ from fantasy_football.app.contracts import (
     LeagueRefreshProfile,
     ManualScenarioRequest,
     ManualScenarioResult,
+    RecentLeagueResults,
     ProjectedBaselineRequest,
     ProjectedBaselineResult,
     SnapshotListQuery,
@@ -50,6 +51,7 @@ from fantasy_football.app.contracts import (
     TradeQuickAnalysisRequest,
     TradeQuickAnalysisResult,
 )
+from fantasy_football.app.current_results import recent_league_results
 from fantasy_football.app.refresh import SnapshotRefreshCoordinator
 from fantasy_football.app.service import (
     ApplicationDependencies,
@@ -63,6 +65,7 @@ from fantasy_football.cgl_managers import (
     ManagerPerspectives,
     resolve_manager_perspectives,
 )
+from fantasy_football.current_week import CurrentWeekEvidenceError
 from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.monte_carlo import MonteCarloError
 from fantasy_football.monte_carlo_precision import PrecisionError
@@ -293,6 +296,14 @@ def create_app(
         return current.inspect_snapshot(
             SnapshotSelector(snapshot_id=snapshot_id, league_id=league_id, season=season)
         )
+
+    @app.get("/api/v1/snapshots/{snapshot_id}/recent-results", response_model=RecentLeagueResults | None)
+    def snapshot_recent_results(snapshot_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        try:
+            return recent_league_results(snapshot_store.load(snapshot_id))
+        except CurrentWeekEvidenceError as error:
+            return _error(422, "recent_results_unverified", "invalid_request", str(error))
 
     @app.get("/api/v1/snapshots/{snapshot_id}/managers", response_model=ManagerPerspectives | None)
     def snapshot_managers(snapshot_id: str, response: Response):

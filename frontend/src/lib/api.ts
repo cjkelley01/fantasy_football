@@ -6,6 +6,7 @@ import type {
   BackgroundActionSearchResultSummary, CandidateDetail, CandidateQueryPage, CompletedStateDetail,
   HealthResponse,
   ManagerPerspectives,
+  RecentLeagueResults,
   CglHistory,
   SnapshotSummary,
   LeagueRefreshProfile, SnapshotRefreshRequest, SnapshotRefreshSubmission,
@@ -64,6 +65,8 @@ export const api = {
     getJson<SnapshotSummary>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}`, signal),
   snapshotManagers: (snapshotId: string, signal?: AbortSignal) =>
     getJson<ManagerPerspectives | null>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}/managers`, signal),
+  recentLeagueResults: (snapshotId: string, signal?: AbortSignal) =>
+    getJson<RecentLeagueResults | null>(`/api/v1/snapshots/${encodeURIComponent(snapshotId)}/recent-results`, signal),
   refreshProfile:(signal?:AbortSignal)=>getJson<LeagueRefreshProfile>("/api/v1/refresh/profile",signal),
   submitRefresh:(request:SnapshotRefreshRequest,signal?:AbortSignal)=>postJson<SnapshotRefreshSubmission>("/api/v1/refreshes",request,signal),
   currentRefresh:(signal?:AbortSignal)=>getJson<SnapshotRefreshRecord|null>("/api/v1/refreshes/current",signal),

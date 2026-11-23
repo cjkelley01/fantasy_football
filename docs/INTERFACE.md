@@ -70,7 +70,7 @@ Confidence intervals measure Monte Carlo sampling uncertainty, not model error. 
 
 ## League Overview
 
-The overview leads with observed standings and the known team pairings for the snapshot's current scoring period. Matchup scores and settled current-season results require a source-backed results contract. A configured archive for the same league supplies the latest completed championship before the active snapshot's season. The bracket shortcut opens that year in Season Archive and leaves the active snapshot unchanged. The projected baseline and retained War Room forecast remain separately labeled below the observed and historical sections.
+The overview leads with observed standings and the known team pairings for the snapshot's current scoring period. Recent results shows the latest prior regular-season period only when the captured ESPN schedule reconciles to that snapshot's standings. Results are as of the snapshot and can change with later stat corrections. Incomplete or conflicting evidence has an explicit unavailable state. A configured archive for the same league supplies the latest completed championship before the active snapshot's season. The bracket shortcut opens that year in Season Archive and leaves the active snapshot unchanged. The projected baseline and retained War Room forecast remain separately labeled below the observed and historical sections.
 
 Select a retained completed baseline with available result for the active snapshot. The newest usable matching run is the deterministic default (finish/creation time, then run ID); explicit selection or a preferred run from Simulation Center changes the complete evidence context. The viewer never submits work.
 
