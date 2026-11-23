@@ -419,6 +419,13 @@ NFL completion or `statsOfficial` alone establishes neither fantasy settlement, 
 
 A source-validated effective-dated trade is a separate transition from the observed starting roster. Each trade moves all participants together, before scoring at its effective boundary. Current-week trades preserve locked assignments and score only the eligible remaining players for their new teams. Delayed trades preserve ordinary simulation through the preceding week and recheck ownership against each path's evolving state. Paired runs use identical player-week realizations. See the [Trade Lab timing contract](TECHNICAL_REFERENCE.md#effective-dated-trade-lab-execution).
 
+Eligibility can be established before the season can be forecast. With verified
+individual game-time locks, a started player's game lock can defer the entire
+trade to the next supported scoring boundary. Independent trade restrictions
+and league deadlines still apply. Immediate hypothetical approval does not
+change either restriction. Earlier observed points and lineup assignments stay
+with their original team.
+
 The opt-in deterministic path uses M3's **same season coordinator**, in this logical dependency sequence (the implementation performs composition during preparation and checks further season gates before returning a result):
 
 1. Validate snapshot/companion linkage, timing, sources and preservation invariants; require the season path's verified companion-level authority and no unresolved dependent capabilities.

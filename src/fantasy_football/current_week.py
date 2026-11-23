@@ -172,19 +172,8 @@ def _reconcile_standings_prefix(teams, schedule, prior_ids, regular_count):
     return settled
 
 
-def _build_current_week_input(
-    snapshot: LeagueSnapshot,
-    responses: Sequence[CapturedResponse],
-    *,
-    projected_final: bool = False,
-) -> MonteCarloPartialWeekInput:
-    """Validate current source claims before granting partial execution.
-
-    Raw player-pool lock flags are checked against explicit NFL status. The
-    matchup's current-scoring-period roster is independent corroboration of the
-    canonical team roster. Standings must equal the completed historical prefix;
-    neither kickoff time nor today's date establishes any of these facts.
-    """
+def bind_current_week_sources(snapshot, responses):
+    """Bind current roster evidence to immutable snapshot sources before interpretation."""
     validate_snapshot(snapshot)
     _require(
         snapshot.snapshot_id is not None,
@@ -211,6 +200,8 @@ def _build_current_week_input(
         _require(
             source is not None
             and source.payload_sha256 == response.payload_sha256
+            and source.view == response.view
+            and source.parameters == response.parameters
             and hashlib.sha256(_raw_json_bytes(response.payload)).hexdigest()
             == source.payload_sha256,
             "Current-week source payload does not match immutable snapshot provenance.",
@@ -218,14 +209,36 @@ def _build_current_week_input(
         raw[response.source_id] = response
     initial = raw.get("league-initial")
     _require(
-        initial is not None
-        and {"mRoster", "mMatchup", "mStandings"} <= set(initial.view.split(",")),
-        "Current-week lineup and standings sources are unavailable.",
+        initial is not None and "mRoster" in initial.view.split(","),
+        "Current-week roster source is unavailable.",
     )
     root = initial.payload
     _require(
         root.get("scoringPeriodId") == week,
         "Source scoring period differs from the current snapshot.",
+    )
+    return live, raw, initial
+
+
+def _build_current_week_input(
+    snapshot: LeagueSnapshot,
+    responses: Sequence[CapturedResponse],
+    *,
+    projected_final: bool = False,
+) -> MonteCarloPartialWeekInput:
+    """Validate current source claims before granting partial execution.
+
+    Raw player-pool lock flags are checked against explicit NFL status. The
+    matchup's current-scoring-period roster is independent corroboration of the
+    canonical team roster. Standings must equal the completed historical prefix;
+    neither kickoff time nor today's date establishes any of these facts.
+    """
+    live, raw, initial = bind_current_week_sources(snapshot, responses)
+    week = live.current_scoring_period
+    root = initial.payload
+    _require(
+        {"mMatchup", "mStandings"} <= set(initial.view.split(",")),
+        "Current-week lineup and standings sources are unavailable.",
     )
     period = next(p for p in snapshot.matchup_periods if week in p.scoring_weeks)
     membership = live.current_matchup_period_scoring_weeks

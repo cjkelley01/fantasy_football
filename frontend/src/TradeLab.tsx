@@ -26,7 +26,7 @@ function supportsUntimedTrade(snapshot: SnapshotSummary): boolean {
 function buildScenarioIntent(snapshot:SnapshotSummary,steps:readonly DraftStep[],protectedPlayers:readonly ProtectedPlayerInput[],scenarioId:string):ManualScenarioRequest["scenario"]{
   const replay=replayDraft(snapshot,steps),changes=replay.changes,knownPlayers=new Set(snapshot.players.map(item=>item.player_id)),knownTeams=new Set(snapshot.teams.map(item=>item.team_id)),pinIds=new Set<number>();const synchronizedPins=protectedPlayers.map(pin=>{if(!Number.isInteger(pin.player_id)||!knownPlayers.has(pin.player_id))throw new Error(`Protected selection references unknown player ${pin.player_id}.`);if(!Number.isInteger(pin.team_id)||!knownTeams.has(pin.team_id))throw new Error(`Protected selection references unknown team ${pin.team_id}.`);if(pinIds.has(pin.player_id))throw new Error(`Player ${pin.player_id} has duplicate protected selections.`);pinIds.add(pin.player_id);const owner=replay.ownership.get(pin.player_id);if(owner===undefined)throw new Error(`Protected player ${pin.player_id} is not rostered in the final draft.`);if(!knownTeams.has(owner))throw new Error(`Protected player ${pin.player_id} has invalid final owner ${owner}.`);return {player_id:pin.player_id,team_id:owner}});
   const timed = steps.some(step => step.timing !== undefined);
-  if (timed && !snapshot.live_scoring?.current_week_execution_available)
+  if (timed && !snapshot.live_scoring?.supported_trade_weeks?.length)
     throw new Error("Effective trade timing is unavailable for this snapshot.");
   if (timed && steps.some(step => step.timing === "selected" && step.selectedWeek === undefined))
     throw new Error("Choose a scoring week for every deliberately delayed step.");
@@ -67,7 +67,8 @@ function TradeWorkspace({snapshot,preferredRunId}:{snapshot:SnapshotSummary;pref
     const submitted=await api.submitManualScenario(request,abort.signal);if(submitted.run_type!=="manual_scenario")throw new Error("Background submission returned the wrong run type.");let run=await api.run(submitted.run_id,abort.signal);while(["queued","running","cancel_requested"].includes(run.status)){if(currentRevision!==revision.current)return;setStatus(run.status==="queued"?"Queued for local analysis":"Evaluating matched paths");await delay(250,abort.signal);run=await api.run(submitted.run_id,abort.signal)}if(run.status!=="completed"||!run.result_available)throw new Error(run.error_message??`Scenario ended as ${run.status}.`);const value=await api.manualScenarioResult(run.run_id,abort.signal),issue=validateResult(value,snapshot,run.run_id,request.scenario.scenario_id);if(issue)throw new Error(issue);if(currentRevision!==revision.current)return;setResult(value);setStale(false);setStatus("Evaluation complete")}catch(reason){if(!aborted(reason)&&currentRevision===revision.current){setError(message(reason));setStatus("Evaluation failed")}}finally{if(currentRevision===revision.current)setBusy(false)}};
   const tradeWeeks = snapshot.live_scoring?.supported_trade_weeks ?? [];
   const playerWeeks = new Map(snapshot.live_scoring?.player_earliest_trade_weeks ?? []);
-  const canTime = snapshot.live_scoring?.current_week_execution_available === true;
+  const canTime = tradeWeeks.length > 0;
+  const canScoreTimed = snapshot.live_scoring?.current_week_execution_available === true;
   const timed = steps.some(step => step.timing !== undefined);
   const untimedSupported = supportsUntimedTrade(snapshot);
   let precedingWeek = snapshot.first_simulation_week;
@@ -87,7 +88,7 @@ function TradeWorkspace({snapshot,preferredRunId}:{snapshot:SnapshotSummary;pref
     )));
   };
   const quickSupported = !timed && untimedSupported;
-  const canEvaluate = timed ? canTime && timings.every(timing => timing.valid) : untimedSupported;
+  const canEvaluate = timed ? canTime && canScoreTimed && timings.every(timing => timing.valid) : untimedSupported;
   const exchange=steps.length===1&&new Set(steps[0].transfers.map(move=>move.from_team_id)).size===2;
   const analyzeQuick=async()=>{
     const currentRevision=revision.current, abort=new AbortController();
@@ -150,6 +151,9 @@ function TradeWorkspace({snapshot,preferredRunId}:{snapshot:SnapshotSummary;pref
       </fieldset>;
     })}
     {timed && steps.length > 0 && <p>Analysis assumes immediate hypothetical approval, including commissioner intervention.</p>}
+    {timed && canTime && !canScoreTimed && <p role="status">
+      Season simulation unavailable. {snapshot.live_scoring?.current_week_limitations?.join(" ")}
+    </p>}
     <section className="evaluation-console" aria-labelledby="trade-quick-title">
       <h2 id="trade-quick-title">Quick Analysis</h2>
       <p>{quickSupported?"Compare projected optimal lineups for both teams without simulation.":"Available for untimed exchanges on supported full-week snapshots."}</p>

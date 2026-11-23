@@ -1006,3 +1006,34 @@ def test_native_delayed_trade_rejects_the_same_invalid_transition(kind):
         run_monte_carlo_path(snapshot, config, model, 0)
     assert str(native.value) == str(reference.value)
     assert ("owned" if kind == "ownership" else "limit") in str(native.value)
+
+
+def test_completed_player_trade_preserves_historical_prefix_and_original_actual():
+    from fantasy_football.effective_trades import EffectiveTrade, TradeTransfer
+
+    snapshot, config, model, _ = _locked_trade_case()
+    trade = EffectiveTrade(16, (TradeTransfer(3, 3, 4), TradeTransfer(4, 4, 3)))
+    baseline, original = run_monte_carlo_path(
+        snapshot, config, model, 0, retain_result=True
+    )
+    revised, delayed = run_monte_carlo_path(
+        snapshot,
+        replace(config, effective_trades=(trade,)),
+        model,
+        0,
+        retain_result=True,
+    )
+
+    assert revised.scenario_sha256 == baseline.scenario_sha256
+    assert delayed.initial_standings == original.initial_standings
+    assert delayed.weeks[0] == original.weeks[0]
+    scorer = next(
+        team for team in delayed.weeks[0].frozen_team_weeks if team.team_id == 3
+    )
+    assert [row.player_id for row in scorer.lineup.assignments] == [3]
+    assert scorer.realized_points == 7.0
+    owners = {
+        row.player_id: row.team_id
+        for row in delayed.final_evolving_state.roster_entries
+    }
+    assert (owners[3], owners[4]) == (4, 3)

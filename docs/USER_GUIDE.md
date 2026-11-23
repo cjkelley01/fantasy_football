@@ -141,6 +141,10 @@ Baseline, Trade Lab and action search use the [mandatory marginal-lineup roster 
 
 On a snapshot with verified trade timing, choose **Use effective timing** to schedule the draft. Each step then starts at **Earliest eligible**. Choose **Selected week** to reveal the week selector and delay that whole exchange. The displayed effective week accounts for all involved players and preceding steps. War Room assumes immediate hypothetical approval and preserves existing game locks. An exchange that needs additional roster moves to fit at its effective boundary is unsupported.
 
+When the snapshot verifies timing but season scoring is unavailable, Trade Lab
+still shows the effective week and the scoring limitation. Evaluation remains
+unavailable until the needed scoring evidence and mode are supported.
+
 ### Compare projected lineups before simulation
 
 On a supported full-week snapshot, commit one untimed exchange with players going

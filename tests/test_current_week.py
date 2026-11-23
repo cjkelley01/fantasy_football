@@ -215,7 +215,23 @@ def test_mutated_raw_source_is_rejected_without_republication(tmp_path):
 
 
 def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
+    from fantasy_football.app.contracts import ManualScenarioRequest, SnapshotSelector
+    from fantasy_football.app.service import (
+        ApplicationDependencies,
+        ApplicationService,
+        ApplicationServiceError,
+    )
+    from fantasy_football.effective_trades import (
+        EffectiveTrade,
+        EffectiveTradeError,
+        TradeTransfer,
+        prepare_trade_timeline,
+    )
+    from tests.test_app_service import _model, _precision, _simulation
+
     bundle = _bundle()
+    for source in (bundle.league_initial, bundle.league_reconciliation):
+        source.payload["settings"]["tradeSettings"]["deadlineDate"] = 1798000000000
     for team in bundle.pro_schedule.payload["settings"]["proTeams"]:
         for game in team.get("proGamesByScoringPeriod", {}).get("2", []):
             if game["homeProTeamId"] == 3:
@@ -225,6 +241,54 @@ def test_started_game_without_completion_has_no_approved_sampler(tmp_path):
         CurrentWeekEvidenceError, match="no approved remaining-performance model"
     ):
         build_current_week_input(snapshot, responses)
+
+    transfers = (TradeTransfer(2, 2, 4), TradeTransfer(4, 4, 2))
+    assert prepare_trade_timeline(snapshot, responses, ((None, transfers),)) == (
+        EffectiveTrade(3, transfers),
+    )
+    with pytest.raises(EffectiveTradeError, match="earlier than"):
+        prepare_trade_timeline(snapshot, responses, ((2, transfers),))
+
+    selector = SnapshotSelector(snapshot_id=snapshot.snapshot_id)
+    store = SnapshotStore(tmp_path / "snapshots.sqlite3")
+    service = ApplicationService(ApplicationDependencies(store))
+    summary = service.inspect_snapshot(selector).live_scoring
+    assert summary is not None and not summary.current_week_execution_available
+    assert dict(summary.player_earliest_trade_weeks)[2] == 3
+    assert dict(summary.player_earliest_trade_weeks)[4] == 2
+    assert summary.trade_timing_limitation is None
+    assert (
+        "no approved remaining-performance model" in summary.current_week_limitations[0]
+    )
+    moves = [
+        {
+            "player_id": move.player_id,
+            "from_team_id": move.from_team_id,
+            "to_team_id": move.to_team_id,
+        }
+        for move in transfers
+    ]
+    request = ManualScenarioRequest(
+        snapshot=selector,
+        simulation=_simulation(),
+        precision=_precision(),
+        outcome_model=_model(),
+        scenario={
+            "scenario_id": "timing-only",
+            "changes": moves,
+            "effective_trades": [{"selected_week": None, "transfers": moves}],
+        },
+    )
+    with pytest.raises(
+        ApplicationServiceError, match="Trade timing verified for scoring week"
+    ) as exc:
+        service.run_manual_scenario(request)
+    assert exc.value.code == "current_week_evidence_unresolved"
+    assert exc.value.context["effective_scoring_weeks"] == "3"
+
+    responses[0].payload["scoringPeriodId"] = 99
+    with pytest.raises(EffectiveTradeError, match="immutable snapshot provenance"):
+        prepare_trade_timeline(snapshot, responses, ((None, transfers),))
 
 
 def test_historical_standings_reconcile_exact_decimal_totals():
