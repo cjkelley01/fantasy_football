@@ -1,11 +1,18 @@
+import {ProjectionReadiness} from "./ProjectedBaseline";
+import type {ProjectedSeasonState} from "./useProjectedSeason";
 import { currentMatchupPeriod } from "./LeagueOverviewContext";
 import { ManagerSelectionStatus, ManagerSelector, useManagerPerspective } from "./ManagerPerspective";
-import type { SnapshotSummary } from "./types/api";
+import type { BackgroundRunRecord, SnapshotSummary } from "./types/api";
 
 const snapshotTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-export function HomeDashboard({ snapshot, openTeam, openMatchups, openLeague, openSimulation }: {
+export function HomeDashboard({ snapshot, projection, runs, runListStatus = "loaded", openTeam, openMatchups, openLeague, openSimulation, openTrades, openOpportunities }: {
   snapshot: SnapshotSummary;
+  projection?: ProjectedSeasonState;
+  runs?: readonly BackgroundRunRecord[];
+  runListStatus?: "loading" | "loaded" | "unavailable";
+  openTrades?: () => void;
+  openOpportunities?: () => void;
   openTeam: () => void;
   openMatchups: () => void;
   openLeague: () => void;
@@ -19,6 +26,11 @@ export function HomeDashboard({ snapshot, openTeam, openMatchups, openLeague, op
     (item.home_team_id === team.team_id || item.away_team_id === team.team_id),
   ) : [];
 
+  const projected = projection?.state.status === "available" ? projection.state.result : null;
+  const outlook = projected?.teams.find(row => row.team_id === team?.team_id);
+  const champion = snapshot.teams.find(row => row.team_id === projected?.champion_team_id);
+  const hasRetainedBaseline = runs?.some(run => run.snapshot_id === snapshot.snapshot_id &&
+    run.run_type === "baseline" && run.status === "completed" && run.result_available);
   return <div className="surface">
     <section className="hero">
       <div><h1>Home</h1><p>{snapshot.league_name ?? "Current league"} · {snapshot.season}</p>
@@ -54,8 +66,30 @@ export function HomeDashboard({ snapshot, openTeam, openMatchups, openLeague, op
         <button className="primary-button" type="button" onClick={openMatchups}>View league matchups</button>
       </section>
     </div> : <ManagerSelectionStatus state={state}/>}
+    {projection && <section className="analytics-panel home-summary">
+      <h2>Projected season outlook</h2>
+      <p>One projected season using ESPN projections and verified scoring evidence.</p>
+      <ProjectionReadiness projection={projection}/>
+      {projected && <p role="status">{projected.unresolved_capabilities.length > 0
+        ? "Projected season ready with limitations." : "Projected season ready to explore."}</p>}
+      {projected && (outlook || champion) && <dl>
+        {outlook?.final_regular_rank != null && <div><dt>Projected regular-season finish</dt><dd>{outlook.final_regular_rank}</dd></div>}
+        {outlook?.postseason_seed != null && <div><dt>Projected postseason seed</dt><dd>{outlook.postseason_seed}</dd></div>}
+        {outlook?.final_placement != null && <div><dt>Projected final placement</dt><dd>{outlook.final_placement}</dd></div>}
+        {champion && <div><dt>Projected champion</dt><dd>{champion.display_name}</dd></div>}
+      </dl>}
+      <button onClick={openLeague}>View projected season details</button>
+    </section>}
+    <section className="analytics-panel home-summary">
+      <h2>Monte Carlo outlook</h2>
+      <p>{runListStatus === "loading" ? "Checking retained Monte Carlo runs." :
+        runListStatus === "unavailable" ? "Retained Monte Carlo results are unavailable." : hasRetainedBaseline ? "A retained run is listed for this snapshot. View compatible probability estimates and sampling intervals in League Overview." :
+        "No retained baseline for this snapshot. Request Monte Carlo in Simulation Center for probability estimates."}</p>
+    </section>
     <nav className="home-shortcuts" aria-label="League and analysis shortcuts">
-      <button className="primary-button" type="button" onClick={openLeague}>View league overview and forecasts</button>
+      {!projection && <button className="primary-button" type="button" onClick={openLeague}>Open League Overview</button>}
+      {openTrades && <button type="button" onClick={openTrades}>Open Trade Lab</button>}
+      {openOpportunities && <button type="button" onClick={openOpportunities}>Open Opportunity Explorer</button>}
       <button className="primary-button" type="button" onClick={openSimulation}>Open Simulation Center</button>
     </nav>
   </div>;

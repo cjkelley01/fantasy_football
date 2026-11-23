@@ -168,11 +168,19 @@ snapshot change clear the comparison.
 
 ### Project one season
 
-In **League**, select **Run projected baseline** to evaluate one season for the
-selected snapshot. Expand the weekly results, postseason bracket, or transaction
-details. A projected champion is the winner of this single scenario. Choose
-**Open Monte Carlo** to estimate probabilities with the same selected snapshot.
-The projected result is temporary. Monte Carlo runs remain available in history.
+**Home** opens with the selected saved snapshot and its retrieval time. If startup
+refresh is enabled, you can use saved data while War Room refreshes ESPN. A
+validated publication becomes active automatically. A failed refresh leaves
+saved data selected and offers refresh details for recovery.
+
+War Room automatically prepares a projected season for the selected snapshot.
+**Home** summarizes the outlook and shows preparation status. If preparation
+fails, retry from the outlook. When evidence is unsupported, review the
+reason and refresh or select a different saved snapshot. **League Overview**
+uses the same session result and shows weekly results, the postseason bracket
+and transactions. A projected champion is the winner of this single scenario.
+Choose **Open Monte Carlo** for probability estimates. Monte Carlo is optional
+and its results remain available in run history.
 
 ### Evaluate a specific exchange
 

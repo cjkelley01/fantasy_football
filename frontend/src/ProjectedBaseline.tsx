@@ -1,49 +1,32 @@
-﻿import {useEffect, useRef, useState} from "react";
-import {api, ApiError} from "./lib/api";
-import type {ProjectedBaselineResult, SnapshotSummary} from "./types/api";
+import type {SnapshotSummary} from "./types/api";
+import type {ProjectedSeasonState} from "./useProjectedSeason";
 
-export function ProjectedBaseline({snapshot, openSimulation}: {
+export function ProjectionReadiness({projection}: {projection: ProjectedSeasonState}) {
+  const {state, retry} = projection;
+  if (state.status === "available") return null;
+  if (state.status === "unsupported" || state.status === "failed") {
+    return <div role="status">
+      <p>{state.status === "unsupported" ? "Projected season unsupported" : "Projected season failed"}. {state.message}</p>
+      {state.status === "failed" && <button onClick={retry}>Retry projected season</button>}
+    </div>;
+  }
+  return <p role="status">Preparing the projected season...</p>;
+}
+
+export function ProjectedBaseline({snapshot, projection, openSimulation}: {
   snapshot: SnapshotSummary;
+  projection: ProjectedSeasonState;
   openSimulation?: () => void;
 }) {
-  const pending = useRef<AbortController | null>(null);
-  const [result, setResult] = useState<ProjectedBaselineResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  useEffect(() => () => pending.current?.abort(), []);
-
-  async function analyze() {
-    const controller = new AbortController();
-    pending.current?.abort();
-    pending.current = controller;
-    setBusy(true);
-    setError(null);
-    setResult(null);
-    try {
-      const value = await api.projectedBaseline(snapshot, controller.signal);
-      if (controller.signal.aborted) return;
-      if (value.snapshot_id !== snapshot.snapshot_id || value.canonical_sha256 !== snapshot.canonical_sha256)
-        throw new Error("The projected season belongs to a different snapshot.");
-      setResult(value);
-    } catch (reason) {
-      if (!controller.signal.aborted)
-        setError(reason instanceof ApiError || reason instanceof Error ? reason.message : "Projected season unavailable.");
-    } finally {
-      if (!controller.signal.aborted) setBusy(false);
-    }
-  }
-
+  const result = projection.state.status === "available" ? projection.state.result : null;
   const team = (id: number | null) => id === null ? "TBD" :
     snapshot.teams.find(item => item.team_id === id)?.display_name ?? String(id);
   const player = (id: number) => snapshot.players.find(item => item.player_id === id)?.display_name ?? String(id);
   return <section className="analytics-panel" aria-labelledby="projected-season">
     <h2 id="projected-season">Projected season</h2>
     <p>Evaluate one season using observed scores and projections where supported. Use Monte Carlo for probability estimates.</p>
-    <button className="primary-button" disabled={busy} onClick={()=>void analyze()}>
-      {busy ? "Projecting season…" : "Run projected baseline"}
-    </button>
+    <ProjectionReadiness projection={projection}/>
     {openSimulation && <button onClick={openSimulation}>Open Monte Carlo</button>}
-    {error && <p role="alert">{error}</p>}
     {result && <>
       <p>{result.champion_team_id === null ? "Projected champion unavailable" :
         `Champion in this projected season: ${team(result.champion_team_id)}`}</p>
