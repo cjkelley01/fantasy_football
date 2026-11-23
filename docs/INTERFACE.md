@@ -29,7 +29,7 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses horizontal navigation; narrow screens use a menu. League Insights is visibly deferred.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home and My Team join the navigation when their first workflows are available.
 
 | Task | Workspace |
 |---|---|
@@ -142,7 +142,7 @@ Completed runs navigate by explicit preferred run ID and matching snapshot: base
 
 ## Season Archive
 
-The local Season Archive reads completed CGL history from the backend independently of analytical snapshot selection. It shows final standings, champion, championship series and byes, regular-season results, and archive revision. The selected year defaults to the latest completed entry. Missing configuration, empty history and a request failure have distinct messages. The wider sidebar and archive deep links remain part of WR-027's later navigation work.
+The local Season Archive reads completed CGL history from the backend independently of analytical snapshot selection. It shows final standings, champion, championship series and byes, regular-season results, and archive revision. The selected year defaults to the latest completed entry. Missing configuration, empty history and a request failure have distinct messages. Archive deep links remain part of WR-027's later navigation work.
 
 ## Accessibility and responsive behavior
 

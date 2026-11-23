@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import axe from "axe-core";
 import { App } from "./App";
@@ -12,12 +12,30 @@ function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknow
     if(url.includes(`/snapshots/${snapshot.snapshot_id}`)) return response(options.detail ?? snapshot);
     if(url.endsWith("/snapshots")) return response(options.snapshots ?? [snapshot]);
     if(url.includes("/runs")) return response(options.runs ?? [activeRun]);
+    if(url.endsWith("/history/cgl")) return response(null);
     throw new Error(`Unexpected URL ${url}`);
   });
 }
 async function openSnapshots(user:ReturnType<typeof userEvent.setup>){await user.click(screen.getByRole("button",{name:"Open league context"}));await user.click(screen.getByText("Saved snapshots"));}
 
 afterEach(()=>vi.restoreAllMocks());
+
+test("groups existing workspaces and keeps the archive reachable without snapshots", async () => {
+  mockApi({ snapshots: [], runs: [] });
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "No league data yet" });
+  const nav = within(screen.getByRole("navigation", { name: "Primary navigation" }));
+  const history = within(nav.getByRole("group", { name: "History" }));
+  const tools = within(nav.getByRole("group", { name: "Tools" }));
+  const moves = within(nav.getByRole("group", { name: "Players & Moves" }));
+  expect(tools.getByRole("button", { name: "Simulation Center" })).toBeInTheDocument();
+  expect(moves.getByRole("button", { name: "Trade Lab" })).toBeInTheDocument();
+  const archive = history.getByRole("button", { name: "Season Archive" });
+  await user.click(archive);
+  expect(await screen.findByText("CGL history is not configured.")).toBeInTheDocument();
+  expect(archive).toHaveAttribute("aria-current", "page");
+});
 
 test("loads the source-backed overview without fabricating analytics", async()=>{ mockApi(); render(<App/>); expect(await screen.findByRole("heading",{name:"Sanitized Gridiron League"})).toBeInTheDocument(); expect(screen.getByRole("heading",{name:"No completed baseline analysis"})).toBeInTheDocument(); expect(screen.getByRole("heading",{name:"Current league standings"})).toBeInTheDocument(); expect(screen.queryByText("Championship probability")).not.toBeInTheDocument(); expect(screen.getByText("1 active")).toBeInTheDocument(); });
 test("selects and persists another snapshot detail", async()=>{ const user=userEvent.setup(); const second={...snapshot,snapshot_id:"snapshot-beta",league_name:"Second Sanitized League",teams:[]}; vi.spyOn(globalThis,"fetch").mockImplementation((input)=>{ const url=String(input); if(url.includes("/health"))return response(health); if(url.endsWith("/snapshots"))return response([snapshot,second]); if(url.includes("snapshot-beta"))return response(second); if(url.includes("snapshot-alpha"))return response(snapshot); if(url.includes("/runs"))return response([]); throw new Error(url); }); render(<App/>); await screen.findAllByText("North Harbor"); await openSnapshots(user);await user.selectOptions(screen.getByRole("combobox",{name:"Active snapshot"}),"snapshot-beta");await user.keyboard("{Escape}"); expect(await screen.findByRole("heading",{name:"Second Sanitized League"})).toBeInTheDocument(); expect(localStorage.getItem("war-room-snapshot")).toBe("snapshot-beta"); });

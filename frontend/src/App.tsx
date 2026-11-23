@@ -12,13 +12,24 @@ import type { SnapshotRefreshResult } from "./types/api";
 
 type Destination = "league" | "opportunities" | "trades" | "simulation" | "insights" | "history";
 type Theme = "dark" | "light";
-const nav: readonly [Destination, string, typeof Users, boolean][] = [
-  ["league", "League Overview", Users, false],
-  ["history", "Season Archive", Trophy, false],
-  ["opportunities", "Opportunity Explorer", LayoutGrid, false],
-  ["trades", "Trade Lab", FlaskConical, false],
-  ["simulation", "Simulation Center", Activity, false],
-  ["insights", "League Insights", BarChart3, true],
+type NavigationItem = readonly [Destination, string, typeof Users, boolean];
+const navigationGroups: readonly { label: string; items: readonly NavigationItem[] }[] = [
+  { label: "Home", items: [] },
+  { label: "My Team", items: [] },
+  { label: "Players & Moves", items: [
+    ["opportunities", "Opportunity Explorer", LayoutGrid, false],
+    ["trades", "Trade Lab", FlaskConical, false],
+  ] },
+  { label: "League", items: [
+    ["league", "League Overview", Users, false],
+    ["insights", "League Insights", BarChart3, true],
+  ] },
+  { label: "History", items: [
+    ["history", "Season Archive", Trophy, false],
+  ] },
+  { label: "Tools", items: [
+    ["simulation", "Simulation Center", Activity, false],
+  ] },
 ];
 
 function initialTheme(): Theme {
@@ -96,7 +107,6 @@ export function App() {
     <a className="skip-link" href="#main-content">Skip to analytical content</a>
     <header className="app-header">
       <div className="brand"><div className="brand-mark"><Trophy/></div><div><strong>War Room</strong><span>Fantasy intelligence</span></div></div>
-      <nav className="desktop-nav" aria-label="Primary navigation"><NavButtons destination={destination} navigate={navigate}/></nav>
       <div className="header-tools">
         <div className="snapshot-control"><strong>{selected?.league_name??"Current league"}</strong>{selected&&<small>Updated {formatDate(selected.retrieval_finished_at_utc)}</small>}</div>
         <button className="icon-button" aria-label="Refresh ESPN league" onClick={()=>setRefreshOpen(true)}><RefreshCw/></button>
@@ -107,7 +117,14 @@ export function App() {
         <button ref={menuTrigger} className="icon-button menu-trigger" aria-label="Open navigation" aria-expanded={menuOpen} onClick={()=>setMenuOpen(true)}><Menu/></button>
       </div>
     </header>
+    <div className="workspace-layout">
+      <nav className="workspace-sidebar" aria-label="Primary navigation">
+        <NavButtons destination={destination} navigate={navigate}/>
+      </nav>
+      <div className="workspace-content">
     {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{destination==="history"?<SeasonArchive/>:loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
+      </div>
+    </div>
     <LeagueRefresh open={refreshOpen} onClose={()=>setRefreshOpen(false)} onPublished={acceptPublication} automaticStart={automaticRefresh} leagueName={selected?.league_name} onOpen={()=>setRefreshOpen(true)}/>
     {(menuOpen||contextOpen)&&<div className="scrim" aria-hidden="true" onClick={()=>{setMenuOpen(false);setContextOpen(false);}}/>}
     {menuOpen&&<aside ref={menuPanel} className="mobile-menu open" role="dialog" aria-modal="true" aria-label="Mobile primary navigation">
@@ -123,10 +140,24 @@ export function App() {
   </div>;
 }
 
-function NavButtons({destination,navigate}:{destination:Destination;navigate:(id:Destination)=>void}) { return <>{nav.map(([id,label,Icon,future])=><button key={id} className={destination===id?"active":""} aria-current={destination===id?"page":undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span>{future&&<small>Future</small>}</button>)}</>; }
+function NavButtons({
+  destination, navigate,
+}: { destination: Destination; navigate: (id: Destination) => void }) {
+  return navigationGroups.filter(group => group.items.length > 0).map(group => (
+    <div key={group.label} role="group" aria-label={group.label} className="workspace-nav-group">
+      <p>{group.label}</p>
+      {group.items.map(([id, label, Icon, future]) => (
+        <button key={id} type="button" className={destination === id ? "active" : ""}
+          aria-current={destination === id ? "page" : undefined} onClick={() => navigate(id)}>
+          <Icon aria-hidden="true"/><span>{label}</span>{future && <small>Future</small>}
+        </button>
+      ))}
+    </div>
+  ));
+}
 function drawerFocus(open:boolean,panel:React.RefObject<HTMLElement|null>,close:React.RefObject<HTMLButtonElement|null>,trigger:React.RefObject<HTMLButtonElement|null>,setOpen:(value:boolean)=>void) {
   if(!open)return;
-  const background=[document.querySelector<HTMLElement>(".app-header"),document.querySelector<HTMLElement>("#main-content")].filter((item):item is HTMLElement=>item!==null);
+  const background=document.querySelectorAll<HTMLElement>(".app-header, .workspace-sidebar, #main-content");
   background.forEach(item=>item.inert=true);
   close.current?.focus();
   const handler=(event:KeyboardEvent)=>{
