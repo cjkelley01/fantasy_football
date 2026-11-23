@@ -473,6 +473,7 @@ Path braces identify required URL strings; body `none` means no JSON body parame
 | POST | `/api/v1/analyses/projected-scenario` | `ProjectedScenarioRequest` | `ProjectedScenarioResult` | 200 |
 | POST | `/api/v1/analyses/baseline` | `BaselineAnalysisRequest` | `BaselineAnalysisResult` | 200 |
 | POST | `/api/v1/analyses/manual-scenario` | `ManualScenarioRequest` | `ManualScenarioResult` | 200 |
+| POST | `/api/v1/analyses/projected-opportunities` | `ProjectedOpportunityRequest` | `ProjectedOpportunityResult` | 200 |
 | POST | `/api/v1/analyses/action-search` | `ActionSearchRequest` | `ActionSearchResult` | 200 |
 | POST | `/api/v1/runs/baseline` | `BaselineAnalysisRequest` | `BackgroundRunSubmission` | 202 |
 | POST | `/api/v1/runs/manual-scenario` | `ManualScenarioRequest` | `BackgroundRunSubmission` | 202 |
@@ -590,6 +591,10 @@ After validation, background submission checks closing/queue capacity under lock
 | `ManualScenarioInput` | `scenario_id: string{minLength=1}`; `changes: RosterChangeInput[]`; `protected_players?: ProtectedPlayerInput[]=[]`; `effective_trades?: EffectiveTradeInput[]=[]` |
 | `ProjectedScenarioRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy?: "projection_based" / "strict"="projection_based"`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `standings_fallback_seed?: integer or null=null`; `scenario: ManualScenarioInput` |
 | `ProjectedScenarioResult` | `api_schema_version?: "1.0"="1.0"`; `scenario_id: string`; `timeline: EffectiveTrade[]`; `explicit_changes: RosterChangeInput[]`; `forced_drops: ScenarioRosterAction[]`; `automatic_additions: ScenarioRosterAction[]`; `baseline: ProjectedBaselineResult`; `hypothetical: ProjectedBaselineResult`; `baseline_final_roster: RosterEntry[]`; `hypothetical_final_roster: RosterEntry[]` |
+| `ProjectedOpportunityRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `canonical_sha256: string`; `ir_policy?: "projection_based" / "strict"="projection_based"`; `waiver_boundary?: "unresolved" / "modeled_weekly_v1"="modeled_weekly_v1"`; `reject_incomplete_valuations?: boolean=true`; `standings_fallback_seed?: integer or null=null`; `requesting_team_id: integer`; `counterparty_team_id: integer` |
+| `ProjectedOpportunitySeason` | `season: ProjectedBaselineResult`; `final_roster: RosterEntry[]` |
+| `ProjectedOpportunityCandidate` | `candidate_id: string`; `actions: UnifiedAction[]`; `completed_state_sha256: string or null`; `timeline: EffectiveTrade[]`; `explicit_changes: RosterChangeInput[]`; `forced_drops: ScenarioRosterAction[]`; `automatic_additions: ScenarioRosterAction[]`; `caveats: string[]`; `evaluation_index: integer{>=0} or null`; `limitation: string or null` |
+| `ProjectedOpportunityResult` | `api_schema_version?: "1.0"="1.0"`; `snapshot_id: string`; `canonical_sha256: string`; `configuration_sha256: string`; `generated_candidates: integer{>=0}`; `candidate_coverage_complete: boolean`; `evaluation_coverage_complete: boolean`; `truncation_reason: string or null`; `baseline: ProjectedOpportunitySeason or null`; `evaluations: ProjectedOpportunitySeason[]`; `candidates: ProjectedOpportunityCandidate[]` |
 | `ManualScenarioRequest` | `api_schema_version?: "1.0"="1.0"`; `snapshot: SnapshotSelector`; `simulation: SimulationConfiguration`; `precision: PrecisionSettings`; `outcome_model: NormalOutcomeModelConfiguration`; `scenario: ManualScenarioInput` |
 | `PairedMetricResult` | `baseline_probability: number`; `scenario_probability: number`; `difference_probability_points: number`; `improved_paths: integer`; `worsened_paths: integer`; `unchanged_paths: integer`; `interval_lower_probability_points: number`; `interval_upper_probability_points: number` |
 | `TeamScenarioResult` | `team_id: integer`; `championship: PairedMetricResult`; `playoff_qualification: PairedMetricResult`; `final_placements: [integer, PairedMetricResult]{minItems=2,maxItems=2}[]` |
@@ -1010,6 +1015,27 @@ Use semantic headings/native controls, keyboard access, visible focus/skip navig
 Browser refresh preserves the ESPN current period without asserting an ordinary V1 safe boundary. Snapshot preservation and execution permission remain separate. The diagnostic/CLI strict explicit-week behavior is unchanged. Refresh failures distinguish configuration, authentication, transport, translation, canonical validation, storage and inspection using safe codes/messages without logging private exception text. Publication remains immutable. Before ESPN retrieval, refresh checks the existing configured database and schema. Missing or inaccessible stores return a storage diagnostic. Restore the configured file or restart with its correct path, then retry.
 
 `WAR_ROOM_AUTO_REFRESH=true` explicitly enables startup retrieval; default false displays the newest cached snapshot for the configured league/season. Startup submissions require that persistent authorization and reuse process-local active/recent attempts for five minutes; manual retries remain explicit. This is not a durable cross-process scheduler. Saved historical snapshots remain available in league context. No private configured database is opened by credential-free verification.
+
+### Projected opportunity preview
+
+Opportunity Explorer's synchronous projected preview uses the existing
+candidate generator and shared projected comparison. It admits two selected
+teams, at most 400 one-for-one roster pairings, six retained candidates, and
+a cooperative ten-second budget checked between generation and season runs.
+The response discloses generation and evaluation coverage separately. It
+returns one baseline and an indexed array of distinct evaluated seasons.
+Candidate rows preserve action provenance and reference an evaluation index
+or report why the candidate could not be evaluated. The preview is temporary.
+
+For canonical snapshots without live context, the core uses existing structural
+completions, including their acquisition and conditional waiver assumptions.
+For live snapshots, including fully unplayed weeks, the core uses explicit standalone ownership
+transitions before structural completion. The shared effective-trade resolver
+checks timing and actions against the same state as manual Trade Lab. Live
+chains, acquisitions, and waivers require separate execution semantics.
+Timed results carry their effective timeline and a null structural state
+fingerprint. Different timelines are never grouped by final roster. Existing
+sampled fixed and progressive search and retained indexing are unchanged.
 
 ### Effective-dated Trade Lab execution
 

@@ -9,7 +9,7 @@ import type {
   LeagueRefreshProfile, SnapshotRefreshRequest, SnapshotRefreshSubmission,
   SnapshotRefreshRecord, SnapshotRefreshResult,
   BackgroundProgress, BaselineAnalysisRequest, ActionSearchRequest,
-  ProjectedScenarioResult,
+  ProjectedScenarioResult, ProjectedOpportunityResult,
   ProjectedBaselineResult,
 } from "../types/api";
 
@@ -51,6 +51,12 @@ async function postJson<T>(path:string,body:unknown,signal?:AbortSignal):Promise
 async function deleteRequest(path:string,signal?:AbortSignal):Promise<void>{const response=await fetch(path,{method:"DELETE",signal});if(!response.ok){let payload:ApiErrorEnvelope|undefined;try{payload=await response.json() as ApiErrorEnvelope}catch{/* typed fallback */}throw new ApiError(payload?.error.message??`Request failed (${response.status}).`,response.status,payload?.error.code)}}
 
 export const api = {
+  projectedOpportunities: (snapshot: SnapshotSummary, team: number, counterparty: number, signal?: AbortSignal) =>
+    postJson<ProjectedOpportunityResult>("/api/v1/analyses/projected-opportunities", {
+      snapshot: {snapshot_id: snapshot.snapshot_id, league_id: snapshot.league_id, season: snapshot.season},
+      canonical_sha256: snapshot.canonical_sha256,
+      requesting_team_id: team, counterparty_team_id: counterparty,
+    }, signal),
   projectedScenario: (snapshot: SnapshotSummary, scenario: ManualScenarioRequest["scenario"],
       policy: Pick<ManualScenarioRequest["simulation"], "ir_policy" | "waiver_boundary">, signal?: AbortSignal) =>
     postJson<ProjectedScenarioResult>("/api/v1/analyses/projected-scenario", {

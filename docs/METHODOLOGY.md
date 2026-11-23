@@ -881,6 +881,16 @@ M8 connects their hypothetical starting states to M3–M7 without creating anoth
 
 ### Explicit scenarios and one-time completion
 
+Projected opportunity evaluation uses the same season execution as projected
+manual comparison. A bounded evaluation shares the unchanged season and
+reuses an equivalent structural state or identical verified timeline.
+Live searches, including those for fully unplayed weeks, resolve standalone trades
+before execution so that a
+locked player's contribution remains with the original lineup. Each result
+is one projected trajectory, without a probability estimate or confidence
+ranking. Fixed and progressive Monte Carlo keep their existing estimators
+and matched baseline.
+
 A manual scenario supplies exact ownership edits $(j,\text{from},\text{to})$ and protected player/team pins against a matching immutable baseline. A null source adds an unowned player; a null destination releases an owned player. Each player can be edited once, its source must match actual modeled ownership, teams/players must exist, and identical endpoints reject. Edits bind together, so a multi-team exchange does not need an artificial valid intermediate roster after every listed row. No duplicate ownership is permitted. Explicit releases need affirmative drop permission; an undroppable designation is not automatically a prohibition on transferring that player in a trade.
 
 Pins are checked **after edits**: a receiver may pin a newly acquired player; a pin naming its former owner rejects. They protect automatic completion drops, not a separate veto over binding explicit edits, and do not constrain later M5 weekly decisions. Canonical slot/position capacities and eligibility still govern structural occupancy; original reserve occupants are retained during automatic capacity repair. Occupying a starter slot here does not freeze a later optimized weekly lineup. Unsupported/contradictory ownership, pins, occupancy or completion fails with context rather than returning a plausible substitute state.

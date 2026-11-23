@@ -198,8 +198,19 @@ def compare_projected_scenario(inputs, scenario, *, trades=()):
             observed_evidence=inputs.current.evidence if inputs.current else None,
         )
         baseline = inputs.execute()
-        hypothetical = inputs.execute(
-            initial_state=completed.state if completed is not None else None,
-            trades=trades,
-        )
+        hypothetical = execute_projected_hypothetical(inputs, completed, trades=trades)
         return baseline, hypothetical, completed
+
+
+def execute_projected_hypothetical(inputs, completed, *, trades=()):
+    """Execute a previously validated structural completion or resolved timeline."""
+    if completed is not None and (
+        trades or completed.snapshot_id != inputs.snapshot.snapshot_id
+    ):
+        raise ValueError(
+            "Projected scenario preparation is incompatible with the snapshot or timeline."
+        )
+    return inputs.execute(
+        initial_state=completed.state if completed is not None else None,
+        trades=trades,
+    )

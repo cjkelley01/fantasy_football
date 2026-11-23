@@ -40,6 +40,8 @@ from fantasy_football.app.contracts import (
     ManualScenarioResult,
     ProjectedBaselineRequest,
     ProjectedBaselineResult,
+    ProjectedOpportunityRequest,
+    ProjectedOpportunityResult,
     ProjectedScenarioRequest,
     ProjectedScenarioResult,
     SnapshotListQuery,
@@ -352,6 +354,13 @@ def create_app(
         current: ApplicationService = Depends(dependency),
     ) -> ManualScenarioResult:
         return current.run_manual_scenario(body)
+
+    @app.post("/api/v1/analyses/projected-opportunities", response_model=ProjectedOpportunityResult)
+    def projected_opportunities(
+        body: ProjectedOpportunityRequest,
+        current: ApplicationService = Depends(dependency),
+    ) -> ProjectedOpportunityResult:
+        return current.run_projected_opportunities(body)
 
     @app.post("/api/v1/analyses/action-search", response_model=ActionSearchResult)
     def action_search(

@@ -177,6 +177,16 @@ Review [interpretation](#interpret-and-compare-results) before acting outside Wa
 
 ### Search a finite set of alternatives
 
+In **Opportunity Explorer**, choose a requesting team and counterparty, then
+select **Find projected trades** for a bounded one-for-one preview. Expand
+a candidate to inspect both projected seasons using the same lineup,
+standings and postseason display as Trade Lab. On live snapshots, including
+fully unplayed weeks, trade timing requires verified platform evidence, and
+an eligible trade may start in a later week. Unsupported timing is shown
+on its candidate. Generation and evaluation coverage are reported separately.
+The Monte Carlo search below is available for larger scopes and
+probability estimates. Its retained results are unchanged.
+
 Use a snapshot with a supported full-week simulation start. Opportunity Explorer
 cannot apply completed search actions as initial roster edits in a partial-week
 simulation. For a specific trade during the current week, use **Trade Lab** and

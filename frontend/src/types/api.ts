@@ -317,3 +317,25 @@ export interface ProjectedScenarioResult {
   forced_drops: readonly {team_id: number; player_id: number}[];
   automatic_additions: readonly {team_id: number; player_id: number}[];
 }
+
+export interface ProjectedOpportunityResult {
+  snapshot_id: string;
+  canonical_sha256: string;
+  generated_candidates: number;
+  candidate_coverage_complete: boolean;
+  evaluation_coverage_complete: boolean;
+  truncation_reason: string | null;
+  baseline: ProjectedOpportunitySeason | null;
+  evaluations: readonly ProjectedOpportunitySeason[];
+  candidates: readonly (Pick<ProjectedScenarioResult, "timeline" | "explicit_changes" | "forced_drops" | "automatic_additions"> & {
+    candidate_id: string;
+    evaluation_index: number | null;
+    limitation: string | null;
+    caveats: readonly string[];
+  })[];
+}
+
+interface ProjectedOpportunitySeason {
+  season: ProjectedBaselineResult;
+  final_roster: ProjectedScenarioResult["baseline_final_roster"];
+}

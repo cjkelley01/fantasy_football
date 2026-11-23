@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 from itertools import islice
+from time import monotonic
 from uuid import uuid4
 
 from fantasy_football.app.contracts import (
@@ -33,6 +34,10 @@ from fantasy_football.app.contracts import (
     ProbabilityValue,
     ProjectedBaselineRequest,
     ProjectedBaselineResult,
+    ProjectedOpportunityCandidate,
+    ProjectedOpportunityRequest,
+    ProjectedOpportunityResult,
+    ProjectedOpportunitySeason,
     ProjectedScenarioRequest,
     ProjectedScenarioResult,
     RosterAssignment,
@@ -886,6 +891,97 @@ class ApplicationService:
                 result.assumptions + result.scenario.assumptions
                 if request.scenario.effective_trades
                 else result.assumptions
+            ),
+        )
+
+    def run_projected_opportunities(
+        self, request: ProjectedOpportunityRequest
+    ) -> ProjectedOpportunityResult:
+        from fantasy_football.app.projected_baseline import (
+            prepare_projection_request,
+            projected_season_result,
+        )
+        from fantasy_football.automatic_rosters import AutomaticRosterError
+        from fantasy_football.current_week import CurrentWeekEvidenceError
+        from fantasy_football.partial_week import PartialWeekError
+        from fantasy_football.projected_opportunities import (
+            evaluate_projected_opportunities,
+        )
+        from fantasy_football.season_simulator import SeasonSimulationError
+
+        loaded = self._load(request.snapshot)
+        digest = loaded.metadata.canonical_sha256
+        if request.canonical_sha256 != digest:
+            raise ApplicationServiceError(
+                "snapshot_identity_mismatch", "invalid_request",
+                "The snapshot content differs from the analysis selection.",
+            )
+        snapshot = loaded.snapshot
+        team, counterparty = request.requesting_team_id, request.counterparty_team_id
+        pools = tuple(
+            tuple(row.player_id for row in snapshot.roster_entries if row.team_id == team_id)
+            for team_id in (team, counterparty)
+        )
+        if team == counterparty or not all(pools) or len(pools[0]) * len(pools[1]) > 400:
+            raise ApplicationServiceError(
+                "projected_search_scope_unsupported", "invalid_request",
+                "Choose two different rostered teams with at most 400 possible one-for-one exchanges.",
+            )
+        config = UnifiedActionSearchConfiguration(
+            team, (ActionFamily.TRADE,), (ActionOrdering.STANDALONE_TRADE,),
+            counterparty_team_ids=(counterparty,), tradeable_player_ids=pools[0] + pools[1],
+            trade_shapes=(TradeShape(1, 1),), waiver_boundary=WaiverBoundaryPolicy(request.waiver_boundary),
+            maximum_completed_paths=6,
+        )
+        responses = tuple(item.response for item in loaded.raw_sources)
+        deadline = monotonic() + 10
+        try:
+            with validated_snapshot(snapshot):
+                inputs = prepare_projection_request(
+                    loaded, request, observed_lineup=snapshot.live_scoring is not None,
+                )
+                search = evaluate_projected_opportunities(
+                    inputs, responses, config, should_stop=lambda: monotonic() >= deadline,
+                )
+        except CurrentWeekEvidenceError as exc:
+            raise ApplicationServiceError(
+                "current_week_evidence_unresolved", "unsupported_configuration", str(exc)
+            ) from exc
+        except (SeasonSimulationError, PartialWeekError, AutomaticRosterError) as exc:
+            raise ApplicationServiceError(
+                "engine_request_rejected", "unsupported_configuration", str(exc)
+            ) from exc
+
+        def season(output):
+            return ProjectedOpportunitySeason(
+                season=projected_season_result(digest, inputs, *output),
+                final_roster=output[0].final_evolving_state.roster_entries,
+            )
+
+        return ProjectedOpportunityResult(
+            snapshot_id=request.snapshot.snapshot_id, canonical_sha256=digest,
+            configuration_sha256=search.configuration_sha256,
+            generated_candidates=search.generated_candidates,
+            candidate_coverage_complete=search.coverage_complete,
+            evaluation_coverage_complete=search.evaluation_complete,
+            truncation_reason=search.truncation_reason,
+            baseline=season(search.baseline) if search.baseline is not None else None,
+            evaluations=tuple(season(output) for output in search.evaluations),
+            candidates=tuple(
+                ProjectedOpportunityCandidate(
+                    candidate_id=item.candidate.candidate_id, actions=item.candidate.actions,
+                    completed_state_sha256=item.candidate.completed_state_sha256,
+                    timeline=item.timeline,
+                    explicit_changes=tuple(
+                        {"player_id": move.player_id, "from_team_id": move.from_team_id, "to_team_id": move.to_team_id}
+                        for move in item.candidate.scenario.changes
+                    ),
+                    forced_drops=item.candidate.completed.forced_drops if item.candidate.completed else (),
+                    automatic_additions=item.candidate.completed.automatic_additions if item.candidate.completed else (),
+                    caveats=item.candidate.caveats,
+                    evaluation_index=item.evaluation_index, limitation=item.limitation,
+                )
+                for item in search.candidates
             ),
         )
 

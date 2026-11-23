@@ -13,6 +13,7 @@ from fantasy_football.evolving_state import TransactionRecord
 from fantasy_football.postseason import PostseasonMatchup
 from fantasy_football.scenario_evaluator import ScenarioRosterAction
 from fantasy_football.season_simulator import FinalTeamSeasonRecord, FrozenTeamWeek
+from fantasy_football.unified_actions import UnifiedAction
 from fantasy_football.weekly_engine import MatchupResult
 
 API_SCHEMA_VERSION = "1.0"
@@ -361,6 +362,43 @@ class ProjectedScenarioResult(ContractModel):
     hypothetical: ProjectedBaselineResult
     baseline_final_roster: tuple[RosterEntry, ...]
     hypothetical_final_roster: tuple[RosterEntry, ...]
+
+
+class ProjectedOpportunityRequest(ProjectedBaselineRequest):
+    requesting_team_id: int = Field(strict=True)
+    counterparty_team_id: int = Field(strict=True)
+
+
+class ProjectedOpportunitySeason(ContractModel):
+    season: ProjectedBaselineResult
+    final_roster: tuple[RosterEntry, ...]
+
+
+class ProjectedOpportunityCandidate(ContractModel):
+    candidate_id: str
+    actions: tuple[UnifiedAction, ...]
+    completed_state_sha256: str | None
+    timeline: tuple[EffectiveTrade, ...]
+    explicit_changes: tuple[RosterChangeInput, ...]
+    forced_drops: tuple[ScenarioRosterAction, ...]
+    automatic_additions: tuple[ScenarioRosterAction, ...]
+    caveats: tuple[str, ...]
+    evaluation_index: NonnegativeInt | None
+    limitation: str | None
+
+
+class ProjectedOpportunityResult(ContractModel):
+    api_schema_version: Literal["1.0"] = API_SCHEMA_VERSION
+    snapshot_id: str
+    canonical_sha256: str
+    configuration_sha256: str
+    generated_candidates: NonnegativeInt
+    candidate_coverage_complete: bool
+    evaluation_coverage_complete: bool
+    truncation_reason: str | None
+    baseline: ProjectedOpportunitySeason | None
+    evaluations: tuple[ProjectedOpportunitySeason, ...]
+    candidates: tuple[ProjectedOpportunityCandidate, ...]
 
 
 class ManualScenarioRequest(ContractModel):
