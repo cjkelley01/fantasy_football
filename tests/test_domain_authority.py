@@ -20,6 +20,12 @@ PERMANENT = {
     "docs/USER_GUIDE.md",
     "docs/VALIDATION.md",
 }
+PRODUCT_PLANNING = {
+    "docs/CGL_PRODUCT_PLAN.md",
+    "docs/CGL_FEATURE_INVENTORY.md",
+    "docs/CGL_DATA_IDENTITY_PROPOSAL.md",
+    "docs/CGL_NAVIGATION_PROPOSAL.md",
+}
 REQUIREMENTS = {
     "README.md": [
         "expected championship probability",
@@ -95,7 +101,9 @@ REQUIREMENTS = {
 
 
 def _validate_inventory(paths: set[str]) -> None:
-    assert paths == PERMANENT, "Missing/unexpected permanent authority"
+    assert PERMANENT <= paths <= PERMANENT | PRODUCT_PLANNING, (
+        "Missing/unexpected permanent authority"
+    )
 
 
 def _validate(documents: dict[str, str]) -> None:
