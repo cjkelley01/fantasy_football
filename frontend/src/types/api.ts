@@ -38,6 +38,19 @@ export interface TeamSummary {
   readonly waiver_priority: number | null;
 }
 
+export interface ManagerPerspective {
+  readonly manager_id: string;
+  readonly display_name: string;
+  readonly team_id: number;
+  readonly is_primary: boolean;
+}
+
+export interface ManagerPerspectives {
+  readonly snapshot_id: string;
+  readonly choices: readonly ManagerPerspective[];
+  readonly unresolved_owner_count: number;
+}
+
 export interface PlayerSummary {
   readonly player_id: number;
   readonly display_name: string | null;

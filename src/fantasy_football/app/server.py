@@ -40,6 +40,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     from fantasy_football.app.http import create_app
     from fantasy_football.cgl_history import CglHistoryError, load_cgl_history
+    from fantasy_football.cgl_managers import CglManagerError, load_manager_crosswalk
+
+    manager_crosswalk = None
+    crosswalk_path = os.environ.get("WAR_ROOM_MANAGER_CROSSWALK")
+    if crosswalk_path is not None:
+        try:
+            manager_crosswalk = load_manager_crosswalk(Path(crosswalk_path))
+        except CglManagerError as error:
+            parser.error(str(error))
 
     history = None
     archive = os.environ.get("WAR_ROOM_HISTORY_ARCHIVE")
@@ -66,6 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         frontend_directory=args.frontend,
         launcher_run_id=args.run_id,
         history=history,
+        manager_crosswalk=manager_crosswalk,
     )
     configuration = uvicorn.Config(app, host=LOOPBACK_HOST, port=args.port)
     server = uvicorn.Server(configuration)

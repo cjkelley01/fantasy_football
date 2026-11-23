@@ -5,10 +5,11 @@ import { App } from "./App";
 import { activeRun, health, snapshot } from "./test/fixtures";
 
 function response(body: unknown, status=200) { return Promise.resolve(new Response(JSON.stringify(body), { status, headers:{"Content-Type":"application/json"} })); }
-function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown } = {}) {
+function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknown; history?: unknown; managers?: unknown } = {}) {
   vi.spyOn(globalThis,"fetch").mockImplementation((input) => {
     const url=String(input);
     if(url.includes("/health")) return response(health);
+    if(url.endsWith("/managers")) return response(options.managers ?? null);
     if(url.includes(`/snapshots/${snapshot.snapshot_id}`)) return response(options.detail ?? snapshot);
     if(url.endsWith("/snapshots")) return response(options.snapshots ?? [snapshot]);
     if(url.includes("/runs")) return response(options.runs ?? [activeRun]);
@@ -19,6 +20,28 @@ function mockApi(options: { snapshots?: unknown; detail?: unknown; runs?: unknow
 async function openSnapshots(user:ReturnType<typeof userEvent.setup>){await user.click(screen.getByRole("button",{name:"Open league context"}));await user.click(screen.getByText("Saved snapshots"));}
 
 afterEach(()=>vi.restoreAllMocks());
+
+test("remembers a manager perspective without changing the active snapshot", async () => {
+  const key = `war-room-manager:${snapshot.league_id}:${snapshot.season}`;
+  localStorage.removeItem(key);
+  mockApi({ managers: { snapshot_id: snapshot.snapshot_id, unresolved_owner_count: 1,
+    choices: [{ manager_id: "manager-a", display_name: "Avery", team_id: 1, is_primary: true }] } });
+  const user = userEvent.setup();
+  render(<App />);
+  await screen.findByRole("heading", { name: "Current league standings" });
+  await user.click(screen.getByRole("button", { name: "Team Overview" }));
+  const selector = await screen.findByRole("combobox", { name: "Manager perspective" });
+  const value = JSON.stringify(["manager-a", 1]);
+  expect(selector).toHaveValue("");
+  await user.selectOptions(selector, value);
+  expect(screen.getByRole("heading", { name: "North Harbor" })).toBeInTheDocument();
+  expect(screen.getByText("Sanitized Player")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "League Overview" }));
+  await user.click(screen.getByRole("button", { name: "Team Overview" }));
+  expect(await screen.findByRole("combobox", { name: "Manager perspective" })).toHaveValue(value);
+  expect(localStorage.getItem("war-room-snapshot")).toBe(snapshot.snapshot_id);
+  localStorage.removeItem(key);
+});
 
 test("opens the matching historical bracket without changing the active snapshot", async () => {
   const records = {

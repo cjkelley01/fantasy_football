@@ -29,7 +29,7 @@ Mandatory tactical fields, constellations, spatial maps and the immersive room m
 
 ## User journey and navigation
 
-Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. Home and My Team join the navigation when their first workflows are available.
+Follow [USER_GUIDE first use](USER_GUIDE.md#install-and-launch-safely), then deliberately select the intended canonical snapshot. The shell unifies snapshot selection, connection, observed active-run count, refresh, theme and source/build context. Desktop uses a static sidebar. The narrow-screen menu uses the same group order and destinations. Players & Moves contains Opportunity Explorer and Trade Lab, League contains League Overview and the deferred League Insights, History contains Season Archive, and Tools contains Simulation Center. My Team contains Team Overview. Home joins the navigation when its first workflow is available.
 
 | Task | Workspace |
 |---|---|
@@ -141,6 +141,10 @@ The timeline uses backend status and `started_at_utc`. Queued/Running are active
 Cancellation requires backend acknowledgement and is cooperative; committed completion can win. Terminal deletion is separately confirmed by identity. History searches/filters snapshot/type/status and shows expiry. The **browser requests the newest 50 records**, then filters locally, not complete lifetime history or a server snapshot query. API list capacity can be larger; 50 is the current browser choice.
 
 Completed runs navigate by explicit preferred run ID and matching snapshot: baseline → Overview, search → Explorer, manual → Trade Lab. Viewers independently validate provenance. Expired/deleted results stay unavailable. Export is **retrieved run metadata JSON only**, labeled scope/timestamp units/snapshot/checksum/run, not full candidate/state universes or saved request configuration. Numerical checkpoints are separate from interrupted application jobs and unsupported HTTP resume.
+
+## Team Overview
+
+**My Team → Team Overview** reads manager options for the active snapshot. It remembers a confirmed manager/team choice locally for each league and season and revalidates that choice when the snapshot changes. A manager selection changes the displayed roster and observed team record. The analytical snapshot and run state stay separate. Shared owners with a confirmed manager key are independently selectable. Without an explicit or remembered choice, the league-wide context has no default manager.
 
 ## Season Archive
 

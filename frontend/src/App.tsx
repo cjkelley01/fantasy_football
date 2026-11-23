@@ -8,14 +8,17 @@ import { TradeLab } from "./TradeLab";
 import { SimulationCenter } from "./SimulationCenter";
 import { LeagueRefresh } from "./LeagueRefresh";
 import { SeasonArchive } from "./SeasonArchive";
+import { TeamOverview } from "./TeamOverview";
 import type { SnapshotRefreshResult } from "./types/api";
 
-type Destination = "league" | "opportunities" | "trades" | "simulation" | "insights" | "history";
+type Destination = "league" | "opportunities" | "trades" | "simulation" | "insights" | "history" | "team";
 type Theme = "dark" | "light";
 type NavigationItem = readonly [Destination, string, typeof Users, boolean];
 const navigationGroups: readonly { label: string; items: readonly NavigationItem[] }[] = [
   { label: "Home", items: [] },
-  { label: "My Team", items: [] },
+  { label: "My Team", items: [
+    ["team", "Team Overview", Users, false],
+  ] },
   { label: "Players & Moves", items: [
     ["opportunities", "Opportunity Explorer", LayoutGrid, false],
     ["trades", "Trade Lab", FlaskConical, false],
@@ -123,7 +126,7 @@ export function App() {
         <NavButtons destination={destination} navigate={navigate}/>
       </nav>
       <div className="workspace-content">
-    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{destination==="history"?<SeasonArchive initialYear={archiveYear} focusBracket={archiveYear !== undefined}/>:loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")} openArchive={year=>{navigate("history");setArchiveYear(year)}}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
+    {profileUnavailable&&<p role="status" className="runtime-caveat">Configured ESPN connection is unavailable. Displayed saved data has not been verified as the current configured league; open Refresh details to check configuration.</p>}<main id="main-content" tabIndex={-1}>{destination==="history"?<SeasonArchive initialYear={archiveYear} focusBracket={archiveYear !== undefined}/>:loading&&!selected?<LoadingState/>:error?<FailureState error={error} retry={retry} refresh={()=>setRefreshOpen(true)}/>:!selected?<EmptyState refresh={()=>setRefreshOpen(true)}/>:destination==="team"?<TeamOverview key={selected.snapshot_id} snapshot={selected}/>:destination==="league"?<LeagueOverview snapshot={selected} runs={runs} preferredRunId={preferredRun} openSimulation={()=>navigate("simulation")} openArchive={year=>{navigate("history");setArchiveYear(year)}}/>:destination==="opportunities"?<OpportunityExplorer snapshot={selected} runs={runs} preferredRunId={preferredRun}/>:destination==="trades"?<TradeLab snapshot={selected} preferredRunId={preferredRun}/>:destination==="simulation"?<SimulationCenter snapshot={selected} runs={runs} onRunsChange={setRuns} openResult={openRun}/>:<FutureWorkspace activeRuns={activeRuns}/>}</main>
       </div>
     </div>
     <LeagueRefresh open={refreshOpen} onClose={()=>setRefreshOpen(false)} onPublished={acceptPublication} automaticStart={automaticRefresh} leagueName={selected?.league_name} onOpen={()=>setRefreshOpen(true)}/>

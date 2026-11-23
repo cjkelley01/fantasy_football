@@ -110,7 +110,7 @@ def test_product_workspace_availability_matches_shell_navigation() -> None:
         r'\["\w+", "([^"]+)", \w+, (true|false)\]',
         read("frontend/src/App.tsx"),
     )
-    assert len(navigation) == 6
+    assert len(navigation) == 7
     product = read("README.md")
     interface = read("docs/INTERFACE.md")
     for name, deferred in navigation:

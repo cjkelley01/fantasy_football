@@ -7,6 +7,7 @@ ESPN access is **read-only**. War Room **never submits real transactions**, pred
 ## Current capabilities
 
 The local WR-027 [Season Archive](docs/INTERFACE.md#season-archive) can display completed CGL history from an explicitly configured backend archive.
+The local [Team Overview](docs/INTERFACE.md#team-overview) uses a configured CGL manager crosswalk to show a selected manager's observed team and roster.
 
 New application simulations use the provisional mandatory marginal-lineup
 acquisition and full-horizon drop policy. The policy uses the shared scoring,

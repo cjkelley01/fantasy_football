@@ -57,6 +57,12 @@ from fantasy_football.app.service import (
     ApplicationServiceError,
 )
 from fantasy_football.cgl_history import CglHistory
+from fantasy_football.cgl_managers import (
+    CglManagerError,
+    ManagerCrosswalk,
+    ManagerPerspectives,
+    resolve_manager_perspectives,
+)
 from fantasy_football.evolving_state import TransactionStateError
 from fantasy_football.monte_carlo import MonteCarloError
 from fantasy_football.monte_carlo_precision import PrecisionError
@@ -88,6 +94,7 @@ def create_app(
     frontend_directory: str | Path | None = None,
     launcher_run_id: str | None = None,
     history: CglHistory | None = None,
+    manager_crosswalk: ManagerCrosswalk | None = None,
 ) -> FastAPI:
     """Construct the credential-free local API with injectable storage/services."""
 
@@ -286,6 +293,16 @@ def create_app(
         return current.inspect_snapshot(
             SnapshotSelector(snapshot_id=snapshot_id, league_id=league_id, season=season)
         )
+
+    @app.get("/api/v1/snapshots/{snapshot_id}/managers", response_model=ManagerPerspectives | None)
+    def snapshot_managers(snapshot_id: str, response: Response):
+        response.headers["Cache-Control"] = "no-store"
+        if manager_crosswalk is None:
+            return None
+        try:
+            return resolve_manager_perspectives(snapshot_store.load(snapshot_id), manager_crosswalk)
+        except CglManagerError as error:
+            return _error(422, "manager_evidence_invalid", "invalid_request", str(error))
 
     @app.get("/api/v1/refresh/profile", response_model=LeagueRefreshProfile)
     def refresh_profile(
